@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS } from '../kit'
+import { Icon, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { updateTask, deleteTask } from '../lib/db'
 
@@ -114,39 +114,80 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
   </div>
 }
 
+// ── due-date helpers (relative to the app's real "today") ───────
+const dnum = (d) => (d ? d.y * 10000 + d.m * 100 + d.d : null)
+const TODAY_N = dnum(TODAY)
+const WEEK_N = (() => { const d = new Date(TODAY.y, TODAY.m, TODAY.d + 7); return dnum({ y: d.getFullYear(), m: d.getMonth(), d: d.getDate() }) })()
+
+// Filters for the cross-project Open-tasks roll-up. Each is a predicate over a
+// surfaced task row (real shape: { dueDate:{y,m,d} } | { due:'Thu' } | next | waiting).
+const FILTERS = [
+  { id: 'all', label: 'All', match: () => true },
+  { id: 'today', label: 'Today', match: (x) => x.dueDate && dnum(x.dueDate) <= TODAY_N },     // due today + overdue
+  { id: 'week', label: 'This week', match: (x) => x.dueDate && dnum(x.dueDate) <= WEEK_N },    // through the next 7 days
+  { id: 'next', label: 'Next', match: (x) => !!x.next },
+  { id: 'waiting', label: 'Waiting', match: (x) => !!x.waiting },
+]
+
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const { t, f } = useApp()
   const { reload } = useData()
+  const [filter, setFilter] = usePersisted('course.openTasksFilter', 'all')
 
-  const rows = []
+  const all = []
   const seen = new Set()
   projects.forEach((p) => (p.tasks || []).forEach((x) => {
     if (x.done) return
     if (!(x.next || x.due || x.dueDate || x.waiting)) return
     if (seen.has(x.id)) return
     seen.add(x.id)
-    rows.push({ ...x, projectId: p.id, projectName: p.name, area: p.area })
+    all.push({ ...x, projectId: p.id, projectName: p.name, area: p.area })
   }))
-  const rank = (x) => ((x.due || x.dueDate) ? 0 : x.next ? 1 : 2)
-  rows.sort((a, b) => rank(a) - rank(b))
-  if (!rows.length) return null
+  if (!all.length) return null
+
+  const counts = Object.fromEntries(FILTERS.map((fl) => [fl.id, all.filter(fl.match).length]))
+  const active = FILTERS.find((fl) => fl.id === filter) || FILTERS[0]
+  const rows = all.filter(active.match)
+  // due first (earliest date), then surfaced Next, then Waiting
+  const rank = (x) => (x.dueDate ? 0 : x.due ? 1 : x.next ? 2 : 3)
+  rows.sort((a, b) => rank(a) - rank(b) || (dnum(a.dueDate) || 9e8) - (dnum(b.dueDate) || 9e8))
 
   const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
   const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
   const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
 
+  const chip = (fl) => {
+    const on = filter === fl.id
+    const n = counts[fl.id]
+    if (fl.id !== 'all' && n === 0) return null
+    return <span key={fl.id} onClick={() => setFilter(fl.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+      fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+      color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'),
+      borderRadius: 8, padding: '5px 11px', transition: 'background .12s, color .12s' }}
+      onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.tagBg }}
+      onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = t.sel }}>
+      {fl.label}<span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700,
+        color: on ? t.onAccent : t.t3, opacity: on ? 0.85 : 1 }}>{n}</span></span>
+  }
+
   return <div style={{ marginTop: 30 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
       <Icon n="checkup-list" s={16} c={t.t2} />
       <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>Open tasks</span>
-      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{rows.length} on deck</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{rows.length} {filter === 'all' ? 'on deck' : 'shown'}</span>
       <div style={{ flex: 1, height: 1, background: t.line }} />
     </div>
-    <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-      {rows.map((x, i) => <OpenTaskRow key={x.projectId + x.id} x={x} first={i === 0} onToggle={toggle}
-        onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
-    </Card>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
+      {FILTERS.map(chip)}
+    </div>
+    {rows.length === 0
+      ? <Card style={{ padding: '22px 16px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
+          Nothing {active.label.toLowerCase() === 'all' ? 'open' : 'in ' + active.label.toLowerCase()} right now.</Card>
+      : <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
+          {rows.map((x, i) => <OpenTaskRow key={x.projectId + x.id} x={x} first={i === 0} onToggle={toggle}
+            onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
+        </Card>}
     {sheetTask && <TaskSheet task={sheetTask.task} projectId={sheetTask.projectId}
       onPatch={patch} onDelete={remove} onClose={() => setSheetTask(null)} />}
   </div>
