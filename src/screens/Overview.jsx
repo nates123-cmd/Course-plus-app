@@ -120,20 +120,24 @@ const TODAY_N = dnum(TODAY)
 const WEEK_N = (() => { const d = new Date(TODAY.y, TODAY.m, TODAY.d + 7); return dnum({ y: d.getFullYear(), m: d.getMonth(), d: d.getDate() }) })()
 
 // Filters for the cross-project Open-tasks roll-up. Each is a predicate over a
-// surfaced task row (real shape: { dueDate:{y,m,d} } | { due:'Thu' } | next | waiting).
+// surfaced task row (real shape: { dueDate:{y,m,d} } | { due:'Thu' } | next |
+// waiting | projStatus }). "Focus" is the default: what actually needs doing —
+// anything due today/overdue, plus the surfaced Next action of any Active project.
+const isDueToday = (x) => x.dueDate && dnum(x.dueDate) <= TODAY_N
 const FILTERS = [
-  { id: 'all', label: 'All', match: () => true },
-  { id: 'today', label: 'Today', match: (x) => x.dueDate && dnum(x.dueDate) <= TODAY_N },     // due today + overdue
+  { id: 'focus', label: 'Focus', match: (x) => isDueToday(x) || (x.next && x.projStatus === 'active') },
+  { id: 'today', label: 'Today', match: isDueToday },                                          // due today + overdue
   { id: 'week', label: 'This week', match: (x) => x.dueDate && dnum(x.dueDate) <= WEEK_N },    // through the next 7 days
   { id: 'next', label: 'Next', match: (x) => !!x.next },
   { id: 'waiting', label: 'Waiting', match: (x) => !!x.waiting },
+  { id: 'all', label: 'All', match: () => true },
 ]
 
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const { t, f } = useApp()
   const { reload } = useData()
-  const [filter, setFilter] = usePersisted('course.openTasksFilter', 'all')
+  const [filter, setFilter] = usePersisted('course.openTasksFilter.v2', 'focus')
 
   const all = []
   const seen = new Set()
@@ -142,7 +146,7 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
     if (!(x.next || x.due || x.dueDate || x.waiting)) return
     if (seen.has(x.id)) return
     seen.add(x.id)
-    all.push({ ...x, projectId: p.id, projectName: p.name, area: p.area })
+    all.push({ ...x, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status })
   }))
   if (!all.length) return null
 
@@ -160,7 +164,7 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const chip = (fl) => {
     const on = filter === fl.id
     const n = counts[fl.id]
-    if (fl.id !== 'all' && n === 0) return null
+    if (fl.id !== 'all' && fl.id !== 'focus' && n === 0) return null
     return <span key={fl.id} onClick={() => setFilter(fl.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
       fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
       color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'),
