@@ -4,14 +4,17 @@ import './styles.css'
 import App from './App.jsx'
 import { AuthGate } from './auth/AuthGate.jsx'
 import { DataProvider } from './DataContext.jsx'
+import { ErrorBoundary } from './ErrorBoundary.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthGate>
-      <DataProvider>
-        <App />
-      </DataProvider>
-    </AuthGate>
+    <ErrorBoundary>
+      <AuthGate>
+        <DataProvider>
+          <App />
+        </DataProvider>
+      </AuthGate>
+    </ErrorBoundary>
   </StrictMode>,
 )
 
