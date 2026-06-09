@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.DS_Store
+*.local
+
+.claude/worktrees/
+
+# local design reference (not shipped)
+_ref/

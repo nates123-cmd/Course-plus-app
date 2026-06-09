@@ -1,0 +1,179 @@
+/* Token system — Course × Scribe merged, Direction B (humanist sans, green
+   accent). One set, two themes, toggled via [data-theme] on <html>.
+   BASE = document surface; WORK = the status-forward project side (risk/good,
+   project status, area hues) — both layered into the same var-map so the kit
+   reads them as t.* exactly like the prototype's tk(dir, mode). */
+:root,
+:root[data-theme='light'] {
+  --bg: #f4f5f6;
+  --panel: #fbfbfc;
+  --card: #ffffff;
+  --raise: #ffffff;
+  --line: #e7e9eb;
+  --line2: #d6dadd;
+  --t1: #1b2024;
+  --t2: #5a626a;
+  --t3: #8b939b;
+  --accent: #277059;
+  --onAccent: #ffffff;
+  --accentBg: rgba(39, 112, 89, 0.10);
+  --accentLine: rgba(39, 112, 89, 0.26);
+  --sel: #e9ebed;
+  --tagBg: #eceef0;
+  --tagText: #4a525a;
+  --shadow: 0 1px 2px rgba(20, 24, 28, 0.05), 0 8px 30px rgba(20, 24, 28, 0.07);
+  --ph: #8b939b;
+  --selection: rgba(39, 112, 89, 0.14);
+  /* work / status */
+  --risk: #b0573f;
+  --riskBg: rgba(176, 87, 63, 0.10);
+  --riskLine: rgba(176, 87, 63, 0.26);
+  --good: #5f7a4a;
+  --goodBg: rgba(95, 122, 74, 0.12);
+  --area_arrow: #456089;
+  --area_sds: #94703a;
+  --area_brain: #6f5685;
+  --onArea: #ffffff;
+}
+:root[data-theme='dark'] {
+  --bg: #121517;
+  --panel: #171b1e;
+  --card: #1a1e22;
+  --raise: #1f242a;
+  --line: #262b30;
+  --line2: #333a40;
+  --t1: #e4e8eb;
+  --t2: #8b949d;
+  --t3: #5c656d;
+  --accent: #4fb89e;
+  --onAccent: #121517;
+  --accentBg: rgba(79, 184, 158, 0.13);
+  --accentLine: rgba(79, 184, 158, 0.28);
+  --sel: #222a30;
+  --tagBg: #232a2f;
+  --tagText: #9fb0bd;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 34px rgba(0, 0, 0, 0.40);
+  --ph: #5c656d;
+  --selection: rgba(79, 184, 158, 0.18);
+  /* work / status */
+  --risk: #d4775a;
+  --riskBg: rgba(212, 119, 90, 0.14);
+  --riskLine: rgba(212, 119, 90, 0.30);
+  --good: #8aa06a;
+  --goodBg: rgba(138, 160, 106, 0.14);
+  --area_arrow: #8aa3c4;
+  --area_sds: #c4a06a;
+  --area_brain: #b48ac4;
+  --onArea: #16130e;
+}
+
+html, body { margin: 0; padding: 0; height: 100%; }
+* { box-sizing: border-box; }
+#root { height: 100vh; }
+body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: 'Hanken Grotesk', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+input::placeholder, textarea::placeholder { color: var(--ph); }
+::selection { background: var(--selection); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ti-loader-2 { animation: spin 0.9s linear infinite; }
+
+/* Recorder pulse + artifact "just landed" highlight fade */
+@keyframes rec-pulse { 0% { box-shadow: 0 0 0 0 rgba(176,87,63,0.45); } 70% { box-shadow: 0 0 0 12px rgba(176,87,63,0); } 100% { box-shadow: 0 0 0 0 rgba(176,87,63,0); } }
+.rec-pulse { animation: rec-pulse 1.6s ease-out infinite; }
+@keyframes land-fade { from { background: var(--accentBg); } to { background: var(--card); } }
+.just-landed { animation: land-fade 1.6s ease-out; }
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Record screen — level meter bars + transcript line entrance */
+@keyframes wave { 0%,100%{transform:scaleY(0.3)} 50%{transform:scaleY(1)} }
+@keyframes lineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Task row press-and-hold sweep (Overview / Project open-task lists) */
+@keyframes taskHold { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* Suite-wide: chrome is non-selectable; re-enable on inputs + user content. */
+body { user-select: none; -webkit-tap-highlight-color: transparent; }
+input, textarea, [contenteditable='true'], .selectable { user-select: text; }
+
+/* ── Auth gate ─────────────────────────────────────────────── */
+.auth-shell {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  font-family: 'Hanken Grotesk', sans-serif;
+}
+.auth-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 30px 28px;
+  box-shadow: var(--shadow);
+}
+.auth-eyebrow {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--t1);
+  margin-bottom: 18px;
+}
+.auth-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--t1);
+  margin: 0 0 18px;
+}
+.auth-form { display: flex; flex-direction: column; gap: 9px; }
+.auth-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.auth-input {
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  background: var(--bg);
+  padding: 10px 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--t1);
+  outline: 0;
+}
+.auth-input:focus { border-color: var(--accent); }
+.auth-btn {
+  margin-top: 4px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--onAccent);
+  padding: 10px 13px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-btn:disabled { opacity: 0.5; cursor: default; }
+.auth-btn-link {
+  background: transparent;
+  border: 0;
+  color: var(--t3);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-top: 2px;
+}
+.auth-hint { font-size: 13px; color: var(--t2); line-height: 1.5; margin: 0 0 4px; }
+.auth-error { font-size: 12px; color: #c0392b; }
+
+/* Readable content (note body, AI answers/output) — selectable incl children. */
+.selectable, .selectable * { user-select: text; -webkit-user-select: text; }

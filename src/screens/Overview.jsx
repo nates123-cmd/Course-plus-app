@@ -1,0 +1,235 @@
+// Overview.jsx — the "Work" overview + per-Area screens (Direction B). Ported
+// faithfully from the prototype's course-overview.jsx, rewired to the real data
+// spine: useApp() for theme/route/nav, useData() for the area→project tree, and
+// db.js for task writes. No window.* globals — everything is imported.
+//
+// Surface model: an "Open tasks" card rolls up each project's surfaced actions
+// (its `next` task plus any due/waiting task, not done) across all projects,
+// ranked due → next → waiting. Tap toggles done; press-and-hold opens TaskSheet.
+// Below, projects are grouped by Area into responsive ProjectCard grids.
+import { useState } from 'react'
+import { useApp } from '../ctx'
+import { useData } from '../DataContext'
+import { Icon, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS } from '../kit'
+import { TaskSheet, useLongPress } from './TaskSheet'
+import { updateTask, deleteTask } from '../lib/db'
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const todayLabel = () => {
+  const d = new Date(TODAY.y, TODAY.m, TODAY.d)
+  return `${WEEKDAYS[d.getDay()]}, ${MONTHS[TODAY.m]} ${TODAY.d}`
+}
+
+// render a task's due cell — real shape is { dueDate:{y,m,d} } | { due:'Thu' }
+const dueText = (x) => (x.dueDate ? fmtDate(x.dueDate) : x.due) || null
+const projDueText = (p) => (p.due ? `${MONTHS[p.due.m]} ${p.due.d}` : null)
+
+function taskProgress(p) {
+  const tasks = p.tasks || []
+  return { done: tasks.filter((x) => x.done).length, total: tasks.length }
+}
+
+// ── ProjectCard ─────────────────────────────────────────────────
+// Left status accent bar + name + Priority/StatusPill + meta row, then either a
+// surfaced Next action line or, when on hold, the waiting-on / check-in line.
+function ProjectCard({ p }) {
+  const { t, f, go } = useApp()
+  const { actionsForProject } = useData()
+  const { done, total } = taskProgress(p)
+  const next = (p.tasks || []).find((x) => x.next && !x.done)
+  const onHold = p.status === 'on-hold'
+  const openActions = actionsForProject(p.id).filter((a) => /you|open|in progress/i.test(a.owner || '')).length
+  const dueLabel = projDueText(p)
+  const sk = statusSkin(t, p.status)
+  const accent = p.status === 'idea' ? areaColor(t, p.area) : sk.dot
+
+  return <Card hover onClick={() => go({ screen: 'project', id: p.id })}
+    style={{ padding: 0, overflow: 'hidden', opacity: onHold ? 0.82 : 1, display: 'flex' }}>
+    <span style={{ width: 3, flex: 'none', background: accent }} />
+    <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 13px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{ fontFamily: f.title, fontSize: 16.5, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
+          color: t.t1, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+        {p.priority && <Priority level={p.priority} />}
+        <StatusPill id={p.status} size="sm" />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7, fontFamily: f.ui,
+        fontSize: 12, color: t.t3, flexWrap: 'wrap', whiteSpace: 'nowrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Icon n="square-check" s={13} /><span>{`${done}/${total} tasks`}</span></span>
+        {openActions > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Icon n="checkup-list" s={13} /><span>{`${openActions} open item${openActions === 1 ? '' : 's'}`}</span></span>}
+        {dueLabel && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+          color: p.status === 'active' ? t.risk : t.t3 }}><Icon n="flag" s={13} /><span>{`Due ${dueLabel}`}</span></span>}
+      </div>
+
+      {next && !onHold && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 11,
+        paddingTop: 10, borderTop: '1px solid ' + t.line }}>
+        <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.12em',
+          textTransform: 'uppercase', color: t.accent }}>Next</span>
+        <span style={{ fontFamily: f.body, fontSize: 13, color: t.t2, flex: 1, minWidth: 0, overflow: 'hidden',
+          textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{next.label}</span>
+        {dueText(next) && <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{dueText(next)}</span>}
+      </div>}
+
+      {onHold && p.hold && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11,
+        paddingTop: 10, borderTop: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12, color: t.t3 }}>
+        <Icon n="player-pause" s={13} />Waiting on {p.hold.waitingOn} · check {p.hold.checkIn}</div>}
+    </div>
+  </Card>
+}
+
+// ── one cross-project open-task row ─────────────────────────────
+function OpenTaskRow({ x, first, onToggle, onOpen }) {
+  const { t, f, go } = useApp()
+  const { pressing, handlers } = useLongPress(() => onOpen(x), () => onToggle(x), 450)
+  const due = dueText(x)
+  const stop = {
+    onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(),
+    onClick: (e) => { e.stopPropagation(); go({ screen: 'project', id: x.projectId }) },
+  }
+  return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+    borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
+    touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
+    background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
+    {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
+      background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
+    <span style={{ width: 17, height: 17, borderRadius: 5, flex: 'none', zIndex: 1,
+      border: '1.5px solid ' + t.t3, background: 'transparent' }} />
+    <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: t.t1, overflow: 'hidden',
+      textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, fontFamily: f.ui,
+      fontSize: 11, fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}>
+      <Icon n="player-pause" s={11} />{x.waiting}</span>}
+    {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk,
+      fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
+    {x.next && !due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.label, fontSize: 9, fontWeight: 700,
+      letterSpacing: '0.12em', textTransform: 'uppercase', color: t.accent }}>Next</span>}
+    <span {...stop} title="Open project" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, maxWidth: 150,
+      fontFamily: f.ui, fontSize: 11.5, fontWeight: 500, color: t.t2, background: t.sel, borderRadius: 7, padding: '3px 9px', cursor: 'pointer' }}
+      onMouseEnter={(e) => e.currentTarget.style.color = t.t1}
+      onMouseLeave={(e) => e.currentTarget.style.color = t.t2}>
+      <AreaDot areaId={x.area} s={6} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.projectName}</span></span>
+  </div>
+}
+
+// ── Open tasks card (cross-project) ─────────────────────────────
+function OpenTasks({ projects, sheetTask, setSheetTask }) {
+  const { t, f } = useApp()
+  const { reload } = useData()
+
+  const rows = []
+  const seen = new Set()
+  projects.forEach((p) => (p.tasks || []).forEach((x) => {
+    if (x.done) return
+    if (!(x.next || x.due || x.dueDate || x.waiting)) return
+    if (seen.has(x.id)) return
+    seen.add(x.id)
+    rows.push({ ...x, projectId: p.id, projectName: p.name, area: p.area })
+  }))
+  const rank = (x) => ((x.due || x.dueDate) ? 0 : x.next ? 1 : 2)
+  rows.sort((a, b) => rank(a) - rank(b))
+  if (!rows.length) return null
+
+  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
+  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
+  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+
+  return <div style={{ marginTop: 30 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+      <Icon n="checkup-list" s={16} c={t.t2} />
+      <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>Open tasks</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{rows.length} on deck</span>
+      <div style={{ flex: 1, height: 1, background: t.line }} />
+    </div>
+    <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
+      {rows.map((x, i) => <OpenTaskRow key={x.projectId + x.id} x={x} first={i === 0} onToggle={toggle}
+        onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
+    </Card>
+    {sheetTask && <TaskSheet task={sheetTask.task} projectId={sheetTask.projectId}
+      onPatch={patch} onDelete={remove} onClose={() => setSheetTask(null)} />}
+  </div>
+}
+
+// ── Work overview ───────────────────────────────────────────────
+export function OverviewScreen() {
+  const { t, f } = useApp()
+  const { areas, allProjects } = useData()
+  const [sheetTask, setSheetTask] = useState(null)
+
+  const projects = allProjects().filter((p) => p.status !== 'archived')
+  const totalActive = projects.filter((p) => p.status === 'active').length
+  const populatedAreas = areas.filter((a) => a.projects.length)
+
+  return <div data-screen-label="Work overview" style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 6 }}>
+      <div>
+        <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>Work</div>
+        <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 4 }}>
+          {totalActive} active project{totalActive === 1 ? '' : 's'} across {populatedAreas.length} area{populatedAreas.length === 1 ? '' : 's'}</div>
+      </div>
+      <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{todayLabel()}</span>
+    </div>
+
+    <OpenTasks projects={projects} sheetTask={sheetTask} setSheetTask={setSheetTask} />
+
+    {populatedAreas.map((a) => <div key={a.id} style={{ marginTop: 30 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+        <AreaDot areaId={a.id} s={9} />
+        <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
+        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${a.projects.length} project${a.projects.length === 1 ? '' : 's'}`}</span>
+        <div style={{ flex: 1, height: 1, background: t.line }} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+        {a.projects.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
+      </div>
+    </div>)}
+  </div>
+}
+
+// ── Single Area ─────────────────────────────────────────────────
+export function AreaScreen() {
+  const { t, f, go, route } = useApp()
+  const { areas } = useData()
+  const a = areas.find((x) => x.id === route.id) || areas[0]
+  if (!a) return null
+
+  const projs = a.projects.map((p) => ({ ...p, area: a.id, areaName: a.name }))
+  const active = projs.filter((p) => ['active', 'next-up', 'sent'].includes(p.status))
+  const hold = projs.filter((p) => p.status === 'on-hold')
+  const ideas = projs.filter((p) => p.status === 'idea')
+  const shown = active.length + hold.length + ideas.length
+
+  const group = (label, items) => items.length ? <div style={{ marginTop: 28 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+      <span style={{ fontFamily: f.title, fontSize: 15, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{items.length}</span>
+      <div style={{ flex: 1, height: 1, background: t.line }} />
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+      {items.map((p) => <ProjectCard key={p.id} p={p} />)}
+    </div>
+  </div> : null
+
+  return <div data-screen-label={'Area · ' + a.name} style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
+    <div onClick={() => go({ screen: 'overview' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontFamily: f.ui, fontSize: 12.5, color: t.t3, cursor: 'pointer', marginBottom: 14 }}
+      onMouseEnter={(e) => e.currentTarget.style.color = t.t1}
+      onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
+      <Icon n="chevron-left" s={15} />Work</div>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+      <AreaDot areaId={a.id} s={12} />
+      <span style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>{a.name}</span>
+    </div>
+    <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 5 }}>
+      {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} idea${ideas.length === 1 ? '' : 's'}` : ''}</div>
+
+    {group('Active', active)}
+    {group('On hold', hold)}
+    {group('Ideas', ideas)}
+    {shown === 0 && <div style={{ textAlign: 'center', padding: '70px 0', fontFamily: f.body, fontSize: 15,
+      color: t.t3, fontStyle: 'italic' }}>No projects in {a.name} yet.</div>}
+  </div>
+}
