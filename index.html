@@ -17,6 +17,23 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Kill any stale service worker / cache from another suite app on the
+         shared github.io origin BEFORE the module loads — a leftover SW serving a
+         cached shell is the classic cause of a blank page with no error. -->
+    <script>
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations()
+              .then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })
+              .catch(function () {});
+          }
+          if ('caches' in window) {
+            caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
