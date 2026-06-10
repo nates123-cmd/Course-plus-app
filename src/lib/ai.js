@@ -65,27 +65,36 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
   return (await claudeComplete(user, { system, max_tokens: 1200 })).trim()
 }
 
-// Synthesize a raw meeting transcript into structured fields. Reads the WHOLE
-// transcript (long meetings escalate to Sonnet for recall) and produces a fuller
-// summary so a 45-min meeting isn't crushed into two sentences.
-export async function synthesizeTranscript(transcript) {
-  const text = transcript || ''
-  const long = text.length > 18000 // ~3k+ words → escalate for whole-meeting recall
+// Synthesize a meeting into exactly three things the user wants: a bullet-point
+// topic summary (for fast orientation), action items, and smart searchable tags.
+// The user's OWN live notes are the highest-signal input — they wrote those down
+// because they mattered — so they're weighted above the transcript. Long
+// transcripts escalate to Sonnet for whole-meeting recall.
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [] } = {}) {
+  const tx = transcript || ''
+  const long = tx.length > 18000
   const model = long ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
   const system =
-    'You synthesize a full meeting transcript for a work app. Read the ENTIRE transcript ' +
-    'before answering — cover the whole meeting (beginning to end), not just the opening. ' +
-    'Capture every distinct decision, blocker, and action item across all speakers. Return strict JSON only.'
+    'You synthesize a meeting for a personal work app. The USER\'S OWN NOTES are the ' +
+    'highest-signal input — they wrote these down because they mattered. Lead with them and ' +
+    'treat the transcript as supporting detail (cover its whole length, not just the opening). ' +
+    'Return strict JSON only — no preamble.'
+  const parts = []
+  if (people.length) parts.push(`People present: ${people.join(', ')}`)
+  if (agenda.trim()) parts.push(`Pre-meeting agenda / what I wanted to cover:\n${agenda.trim()}`)
+  if (liveNotes.trim()) parts.push(`MY LIVE NOTES (highest priority — these are what I judged worth writing):\n${liveNotes.trim()}`)
+  if (tx.trim()) parts.push(`Transcript (${tx.length} chars, supporting context):\n${tx.trim()}`)
   const user =
-    `Full transcript (${text.length} chars):\n${text}\n\n` +
+    parts.join('\n\n---\n\n') + '\n\n' +
     'Return ONLY JSON: {' +
-    '"summary": string (a thorough paragraph or two — the arc of the meeting: what was decided, what is blocked, what comes next), ' +
-    '"actions": [{"text": string, "owner": string}] (ALL action items, each with its owner), ' +
-    '"people": string[], "terms": string[] (key terms/jargon), "tags": string[]}'
+    '"summary": string (concise markdown BULLET points — one "- " line per topic discussed, ' +
+    'so I can re-orient at a glance; lead with what my notes emphasize), ' +
+    '"actions": [{"text": string, "owner": string}] (every concrete action item with its owner), ' +
+    '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10)}'
   let usage = null
-  const raw = await claudeComplete(user, { system, model, max_tokens: 2400, onUsage: (u) => { usage = u } })
-  const j = extractJSON(raw) || { summary: raw, actions: [], people: [], terms: [], tags: [] }
-  return { ...j, usage }
+  const raw = await claudeComplete(user, { system, model, max_tokens: 2000, onUsage: (u) => { usage = u } })
+  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [] }
+  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], people: [], terms: [], usage }
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────

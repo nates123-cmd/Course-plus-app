@@ -10,7 +10,7 @@ import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
-import { synthesizeTranscript } from './lib/ai'
+import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
 
 // AssemblyAI async transcription, USD per hour (Best/Universal tier, speaker
@@ -41,11 +41,13 @@ export function RecorderProvider({ go, children }) {
   const [home, setHome] = useState(null)      // home project id, or null (pillar-only)
   const [pillar, setPillar] = useState(null)  // area id when no home project
   const [projects, setProjects] = useState([]) // discussed/linked project ids
-  const [notes, setNotes] = useState('')
-  // transcription tuning
+  const [people, setPeople] = useState([])     // attendees + speakers (combined)
+  const [agenda, setAgenda] = useState('')     // pre-meeting prep notes
+  const [notes, setNotes] = useState('')       // live notes (highest-signal)
+  const [source, setSource] = useState('paste') // transcript source: 'paste' | 'record'
+  // transcription tuning (record mode only)
   const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
   const [diarize, setDiarize] = useState(true)   // speaker labels on/off
-  const [multiLang, setMultiLang] = useState(false) // multilingual detection
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
   const [transcriptText, setTranscriptText] = useState('')
   const [synth, setSynth] = useState(emptySynth)
@@ -63,10 +65,12 @@ export function RecorderProvider({ go, children }) {
     if ('home' in patch) setHome(patch.home)
     if ('pillar' in patch) setPillar(patch.pillar)
     if ('projects' in patch) setProjects(patch.projects)
+    if ('people' in patch) setPeople(patch.people)
+    if ('agenda' in patch) setAgenda(patch.agenda)
     if ('notes' in patch) setNotes(patch.notes)
+    if ('source' in patch) setSource(patch.source)
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
-    if ('multiLang' in patch) setMultiLang(patch.multiLang)
   }
 
   const start = async () => {
@@ -78,15 +82,22 @@ export function RecorderProvider({ go, children }) {
   const pause = () => recorder.pause()
   const resume = () => recorder.resume()
 
-  // Parse "Speaker X: text" blocks (separated by blank lines) into lines.
+  // Parse a speaker-labeled transcript into lines. Handles AssemblyAI's
+  // "Speaker A: …" and Copilot/Teams' "Name: …" (real names), line-by-line, so a
+  // pasted transcript labels correctly. A leading "Name:" (≤40 chars, no end
+  // punctuation) starts a new turn; everything else continues the current turn.
   const parseLines = (text) => {
-    const blocks = (text || '').split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean)
+    const raw = (text || '').replace(/\r/g, '')
+    const chunks = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+    const speaker = /^([A-Za-z0-9][\w .'’-]{0,38}?)\s*:\s*(.*)$/
     const out = []
-    blocks.forEach((b) => {
-      const m = b.match(/^(Speaker\s+\S+)\s*:\s*([\s\S]*)$/)
-      if (m) out.push({ sp: m[1], text: m[2].trim() })
-      else if (out.length) out[out.length - 1].text += ' ' + b // continuation
-      else out.push({ sp: 'Speaker A', text: b })
+    chunks.forEach((line) => {
+      const m = line.match(speaker)
+      // Guard: the bit before ":" should look like a name (1–4 words), not a sentence.
+      const looksName = m && m[1].split(/\s+/).length <= 4 && !/[.!?]$/.test(m[1])
+      if (looksName) out.push({ sp: m[1], text: m[2].trim() })
+      else if (out.length) out[out.length - 1].text += ' ' + line
+      else out.push({ sp: 'Speaker A', text: line })
     })
     return out
   }
@@ -100,7 +111,7 @@ export function RecorderProvider({ go, children }) {
     setProc('transcribing')
     try {
       const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'),
-        speakersExpected: speakers, diarize, languageDetection: multiLang })
+        speakersExpected: speakers, diarize })
       const parsed = parseLines(text)
       // attach rough timestamps (we don't get word-level offsets back here)
       const withAt = parsed.map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
@@ -117,6 +128,7 @@ export function RecorderProvider({ go, children }) {
           (interrupted ? 'The tab went to the background mid-recording, ' : 'Audio capture likely paused, ') +
           'so it may be missing audio. Keep this tab in front (and the screen on) while recording.')
       } else setWarn(null)
+      setSource('record')
       setProc('ready')
     } catch (e) {
       setError(humanize(e))
@@ -124,18 +136,26 @@ export function RecorderProvider({ go, children }) {
     }
   }
 
-  // Synthesize the transcript into summary / actions / terms / people / tags.
+  // Paste path — a transcript from Copilot / Teams (real names, no AssemblyAI).
+  const setTranscriptFromPaste = (text) => {
+    const t = (text || '').trim()
+    setSource('paste'); setWarn(null)
+    if (!t) { setTranscriptText(''); setLines([]); setProc(PROC_IDLE); return }
+    setTranscriptText(t)
+    setLines(parseLines(t).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })))
+    setProc('ready')
+  }
+
+  // Synthesize → bullet summary + actions + tags, weighting the user's live notes.
   const synthesize = async () => {
-    if (!transcriptText) return
+    if (!transcriptText && !notes.trim()) return
     setError(null)
     setProc('synth')
     try {
-      const s = await synthesizeTranscript(transcriptText)
-      setSynth({
-        summary: s.summary || '', actions: s.actions || [], terms: s.terms || [],
-        people: s.people || [], tags: s.tags || [],
-      })
-      const transcribe = (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR
+      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people })
+      setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [] })
+      // Paste path is free; only in-app recording incurs AssemblyAI cost.
+      const transcribe = source === 'record' ? (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR : 0
       const claude = claudeCost(s.usage)
       setCost({ transcribe, claude, total: transcribe + claude, usage: s.usage || null, estimated: !!(s.usage && s.usage.estimated) })
       setProc('done')
@@ -150,7 +170,7 @@ export function RecorderProvider({ go, children }) {
     setProc(PROC_IDLE)
     setError(null)
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
-    setProjects([]); setNotes(''); setPillar(null); setWarn(null)
+    setProjects([]); setPeople([]); setAgenda(''); setNotes(''); setPillar(null); setWarn(null); setSource('paste')
   }
 
   // clear() — full teardown after a save (also drops title).
@@ -161,11 +181,11 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
-    title, home, pillar, projects, notes, lines, transcriptText, synth, cost,
-    speakers, diarize, multiLang,
-    setMeta, setProjects, setError, setWarn,
+    title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost,
+    speakers, diarize,
+    setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, notes, lines, transcriptText, synth, cost, speakers, diarize, multiLang])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost, speakers, diarize])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
@@ -184,7 +204,7 @@ export function FloatingRecorder() {
   const rec = useRecorderCtx()
   if (!rec) return null
   const { phase, seconds, title, home } = rec
-  if (phase === 'idle' || route.screen === 'record') return null
+  if (phase === 'idle' || route.screen === 'record' || route.screen === 'meeting') return null
 
   const live = phase === 'recording'
   const homeProj = projectById(home)

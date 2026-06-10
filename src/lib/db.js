@@ -15,6 +15,7 @@ function mapNote(r) {
     reference: typeof r.reference === 'boolean' ? r.reference : undefined,
     date: r.date, updated: r.updated, indexed: r.indexed, status: r.status,
     rawWords: r.raw_words || undefined, transcript: r.transcript || undefined, summary: r.summary || undefined,
+    agenda: r.agenda || undefined,
     terms: r.terms || [], actions: r.actions || [], body: r.body || [], related: r.related || [],
   }
 }
@@ -94,6 +95,7 @@ function noteRow(n) {
     reference: typeof n.reference === 'boolean' ? n.reference : null,
     date: n.date, updated: n.updated, indexed: n.indexed ?? true, status: n.status ?? 2,
     raw_words: n.rawWords ?? null, transcript: n.transcript ?? null, summary: n.summary ?? null, terms: n.terms || [],
+    agenda: n.agenda ?? null,
     actions: n.actions || [], body: n.body || [], related: n.related || [],
   }
 }
@@ -151,7 +153,7 @@ const PATCH_COLS = {
   title: 'title', body: 'body', summary: 'summary', tags: 'tags', actions: 'actions',
   people: 'people', terms: 'terms', status: 'status', kind: 'kind', project: 'project',
   area: 'area', indexed: 'indexed', rawWords: 'raw_words', reference: 'reference',
-  related: 'related', transcript: 'transcript', projects: 'projects',
+  related: 'related', transcript: 'transcript', projects: 'projects', agenda: 'agenda',
 }
 export async function updateNote(id, patch) {
   const row = { updated: patch.updated ?? 'now', updated_at: new Date().toISOString() }

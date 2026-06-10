@@ -162,6 +162,7 @@ export function NoteScreen() {
   const { noteById, noteByTitle, projectName, reload } = useData()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
+  const [agendaOpen, setAgendaOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
   const [refBusy, setRefBusy] = useState(false)
   const [taskDone, setTaskDone] = useState({}) // action index -> true once filed
@@ -246,8 +247,15 @@ export function NoteScreen() {
     {/* meeting synthesis: summary + actions + terms */}
     {isMeeting && !editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
       {n.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
-        <Label style={{ color: t.accent, marginBottom: 8 }}>Summary</Label>
-        <div style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{n.summary}</div>
+        <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
+        {(() => {
+          const ls = n.summary.split('\n').map((l) => l.trim()).filter(Boolean)
+          const allB = ls.length > 0 && ls.every((l) => /^[-*]\s+/.test(l))
+          return allB
+            ? <ul className="selectable" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {ls.map((l, i) => <li key={i} style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1 }}>{l.replace(/^[-*]\s+/, '')}</li>)}</ul>
+            : <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{n.summary}</div>
+        })()}
       </Card>}
       {(n.actions || []).length > 0 && <div>
         <Label style={{ marginBottom: 9 }}>Action items · {n.actions.length}</Label>
@@ -270,8 +278,16 @@ export function NoteScreen() {
           </div>)}
         </Card>
       </div>}
-      {(n.terms || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-        <Label style={{ marginRight: 4 }}>Terms</Label>{n.terms.map((tm) => <Tag key={tm}>{tm}</Tag>)}</div>}
+    </div>}
+
+    {/* agenda / prep — collapsible */}
+    {!editing && n.agenda && n.agenda.trim() && <div style={{ marginTop: 18 }}>
+      <div onClick={() => setAgendaOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
+        borderRadius: 10, cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
+        <Icon n={agendaOpen ? 'chevron-down' : 'chevron-right'} s={14} />
+        <Icon n="clipboard-list" s={14} c={t.t3} />Agenda · prep</div>
+      {agendaOpen && <div className="selectable" style={{ padding: '14px 16px', fontFamily: f.body, fontSize: 14, lineHeight: 1.65, color: t.t2,
+        background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px', whiteSpace: 'pre-wrap' }}>{n.agenda}</div>}
     </div>}
 
     {/* body */}

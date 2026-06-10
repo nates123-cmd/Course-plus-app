@@ -367,7 +367,7 @@ function QuickCapture({ onClose, initial }) {
   const [busy, setBusy] = useState(false)
   const todayStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
-  const record = () => { onClose(); go({ screen: 'record', project: home, title: text.trim() }) }
+  const record = () => { onClose(); go({ screen: 'meeting', project: home, title: text.trim() }) }
   const file = async () => {
     if (busy) return
     if (kind === 'meeting') { record(); return }
@@ -423,8 +423,8 @@ function QuickCapture({ onClose, initial }) {
         onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent} onMouseLeave={(e) => e.currentTarget.style.borderColor = t.accentLine}>
         <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="microphone" s={16} c={t.accent} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Record live</div>
-          <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.t3 }}>Capture audio and transcribe with speaker labels</div></div>
+          <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Open meeting page</div>
+          <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.t3 }}>Prep, notes, people — then paste a transcript or record</div></div>
         <Icon n="arrow-right" s={16} c={t.accent} /></div>}
       <div style={{ flex: expanded ? 1 : 'none', display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: expanded ? 'auto' : 'visible', padding: expanded ? '6px 34px 8px' : 0 }}>
         {expanded && kind !== 'auto' && <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
@@ -483,7 +483,8 @@ function Screen() {
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />
-    case 'record':   return <RecordScreen key={route.project || 'rec'} />
+    case 'meeting':
+    case 'record':   return <RecordScreen key={route.project || 'mtg'} />
     default:         return <OverviewScreen />
   }
 }

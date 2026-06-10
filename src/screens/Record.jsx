@@ -1,10 +1,10 @@
-// Record.jsx — Scribe live recording surface. Recreates Direction B's
-// RecordScreen (title + scope, projects-discussed multi-select, recorder card
-// with mic/stop + big timer + animated level meter, notes scratchpad, detected
-// speakers, speaker-labeled transcript, synthesize bar, and the synthesized
-// result: summary, editable action items, suggested links, terms, save/discard).
-// All recording state/actions come from RecorderContext; the session lives above
-// the router so it survives navigation (see RecorderContext.jsx + FloatingRecorder).
+// Record.jsx — the Meeting composer (Direction B). A meeting is a first-class
+// page you build up: title + metadata (pillar, multiple projects, people), a
+// pre-meeting agenda, your live notes (the highest-signal input), and a
+// transcript that comes EITHER from in-app recording OR from a pasted transcript
+// (Copilot/Teams — better speakers, no cost). Synthesis → bullet summary +
+// action items + smart tags, weighting your notes above the transcript.
+// Session state lives in RecorderContext (above the router) so it survives nav.
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
@@ -18,17 +18,16 @@ import { useRecorderCtx } from '../RecorderContext'
 // Stable speaker hue from a fixed palette, keyed by speaker label.
 const SPEAKER_KEYS = ['accent', 'area_arrow', 'area_brain', 'area_sds', 'good']
 function speakerColor(t, sp) {
-  let h = 0
-  const s = String(sp || '')
+  let h = 0; const s = String(sp || '')
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
   return t[SPEAKER_KEYS[h % SPEAKER_KEYS.length]] || t.t2
 }
 
 // keyword scan → guess which projects a meeting touches (supports multiple)
 const PROJECT_KEYWORDS = {
-  csp:       /\b(csp|citrix|novation|telemetry|arrowsphere|emea|pricing tier|amendment)\b/gi,
-  sgs:       /\b(sgs|tracker|l[eé]na[iï]g|ed lewis|nathalie|mattia|diane)\b/gi,
-  maggetti:  /\b(maggetti|proposal|listing|retainer|mitch|cover email)\b/gi,
+  csp: /\b(csp|citrix|novation|telemetry|arrowsphere|emea|pricing tier|amendment)\b/gi,
+  sgs: /\b(sgs|tracker|l[eé]na[iï]g|ed lewis|nathalie|mattia|diane)\b/gi,
+  maggetti: /\b(maggetti|proposal|listing|retainer|mitch|cover email)\b/gi,
   accenture: /\b(accenture|haritha|revised scope)\b/gi,
 }
 function guessProjects(text, has) {
@@ -41,9 +40,20 @@ function guessProjects(text, has) {
   return scored.sort((a, b) => b.score - a.score)
 }
 
-// Today as "Mon D, YYYY"
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function todayLabel() { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` }
+
+// Render a bullet-markdown summary ("- topic" per line) as a list.
+function BulletSummary({ text }) {
+  const { t, f } = useApp()
+  const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean)
+  const items = lines.map((l) => l.replace(/^[-*]\s+/, ''))
+  const allBullets = lines.every((l) => /^[-*]\s+/.test(l))
+  if (!allBullets) return <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{text}</div>
+  return <ul className="selectable" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    {items.map((it, i) => <li key={i} style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1 }}>{it}</li>)}
+  </ul>
+}
 
 // Animated input-level meter — bars only animate while live
 function Levels({ live, color, faint, bars = 36, h = 44 }) {
@@ -93,44 +103,41 @@ export function RecordScreen() {
   const [actions, setActions] = useState([])
   const [sheetId, setSheetId] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [personDraft, setPersonDraft] = useState('')
   const notesRef = useRef(null)
 
-  // Toolbar: prefix the selected line(s) of the notes scratchpad with a list
-  // marker ('ul' = "- ", 'ol' = "1. ", 'todo' = "- [ ] "). textToBlocks turns
-  // these into real bullet / numbered blocks on save.
+  const { phase, seconds, title, home, pillar, people, agenda, notes, source, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize } = rec
+  const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
+  const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
+  const homeProj = projectById(home)
+  const destAreaId = home ? areaOfProject(home)?.id : pillar
+  const destArea = destAreaId ? areaById(destAreaId) : null
+  const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
+
+  // list toolbar for the live-notes scratchpad
   const prefixLines = (kind) => {
     const el = notesRef.current; if (!el) return
     const val = rec.notes || ''
     const a = el.selectionStart, b = el.selectionEnd
     const lineStart = val.lastIndexOf('\n', a - 1) + 1
     let lineEnd = val.indexOf('\n', b); if (lineEnd < 0) lineEnd = val.length
-    const lines = val.slice(lineStart, lineEnd).split('\n')
+    const ls = val.slice(lineStart, lineEnd).split('\n')
     let n = 1
-    const out = lines.map((L) => {
-      const m = L.match(/^(\s*)(.*)$/)
-      const indent = m[1]
-      const body = m[2].replace(/^([-*]\s+|\d+[.)]\s+|-\s\[\s?\]\s+)/, '')
-      if (!body.trim()) return L
-      if (kind === 'ul') return indent + '- ' + body
-      if (kind === 'ol') return indent + (n++) + '. ' + body
-      if (kind === 'todo') return indent + '- [ ] ' + body
-      return indent + body
+    const out = ls.map((L) => {
+      const m = L.match(/^(\s*)(.*)$/); const indent = m[1]
+      const bod = m[2].replace(/^([-*]\s+|\d+[.)]\s+|-\s\[\s?\]\s+)/, '')
+      if (!bod.trim()) return L
+      if (kind === 'ul') return indent + '- ' + bod
+      if (kind === 'ol') return indent + (n++) + '. ' + bod
+      if (kind === 'todo') return indent + '- [ ] ' + bod
+      return indent + bod
     }).join('\n')
     const next = val.slice(0, lineStart) + out + val.slice(lineEnd)
     rec.setMeta({ notes: next })
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
   }
 
-  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, multiLang } = rec
-  const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused' // can't change after transcribe
-  const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
-  const homeProj = projectById(home)
-  // where the meeting lands: a project's area, or the chosen pillar, or nothing (Library)
-  const destAreaId = home ? areaOfProject(home)?.id : pillar
-  const destArea = destAreaId ? areaById(destAreaId) : null
-  const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
-
-  // seed title/home from the route only when starting fresh (don't clobber a live session)
+  // seed title/home from the route when starting fresh
   useEffect(() => {
     if (phase !== 'idle') return
     const patch = {}
@@ -142,11 +149,8 @@ export function RecordScreen() {
 
   // seed editable draft action items once synthesis completes
   useEffect(() => {
-    if (phase === 'done') {
-      setActions((synth.actions || []).map((a, i) => ({ id: 'ra' + i, label: a.text, owner: a.owner || 'you', done: false })))
-    } else if (phase === 'idle') {
-      setActions([])
-    }
+    if (phase === 'done') setActions((synth.actions || []).map((a, i) => ({ id: 'ra' + i, label: a.text, owner: a.owner || 'you', done: false })))
+    else if (phase === 'idle') setActions([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
@@ -157,18 +161,20 @@ export function RecordScreen() {
   const linked = rec.projects || []
   const addProj = (id) => rec.setProjects(linked.includes(id) ? linked : [...linked, id])
   const removeProj = (id) => rec.setProjects(linked.filter((x) => x !== id))
+  const addPerson = () => { const nm = personDraft.trim(); setPersonDraft(''); if (nm && !people.includes(nm)) rec.setMeta({ people: [...people, nm] }) }
+  const removePerson = (nm) => rec.setMeta({ people: people.filter((x) => x !== nm) })
   const guesses = phase === 'done'
     ? guessProjects(lines.map((l) => l.text).join(' ') + ' ' + (notes || ''), (id) => !!projectById(id)).filter((g) => !linked.includes(g.id))
     : []
   const sheetAction = actions.find((x) => x.id === sheetId)
+  const canSynth = !!(transcriptText || (notes || '').trim())
+  const showSynthBar = phase === 'ready' || phase === 'synth' || (phase === 'idle' && (notes || '').trim() && !transcribed)
+  const isRecordMode = source === 'record'
 
   const statusText = phase === 'recording' ? 'Recording — audio captured'
-    : phase === 'paused' ? 'Paused'
-    : phase === 'transcribing' ? 'Transcribing…'
-    : phase === 'ready' ? 'Transcribed — ready to synthesize'
-    : phase === 'synth' ? 'Synthesizing…'
-    : phase === 'done' ? 'Synthesized'
-    : 'Ready to record'
+    : phase === 'paused' ? 'Paused' : phase === 'transcribing' ? 'Transcribing…'
+    : phase === 'ready' ? 'Transcribed — ready to synthesize' : phase === 'synth' ? 'Synthesizing…'
+    : phase === 'done' ? 'Synthesized' : 'Ready to record'
 
   const save = async () => {
     if (saving) return
@@ -178,119 +184,94 @@ export function RecordScreen() {
       const note = {
         kind: 'meeting', title: (title || '').trim() || 'Untitled meeting',
         project: home || null, area: destAreaId || null,
-        projects: allLinked, people: synth.people || [], tags: synth.tags || [],
-        terms: synth.terms || [], summary: synth.summary || '', transcript: transcriptText,
+        projects: allLinked, people: people || [], tags: synth.tags || [],
+        terms: [], summary: synth.summary || '', transcript: transcriptText || null,
+        agenda: (agenda || '').trim() || null,
         date: todayLabel(), updated: 'now', status: 2,
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
       if ((notes || '').trim()) note.body = textToBlocks(notes)
       const noteId = await createNote(note)
-      // checked action items become real tasks — only if there's a home project
-      if (home) for (const a of actions) {
-        if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false })
-      }
-      rec.clear()
-      await reload()
+      if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
+      rec.clear(); await reload()
       go(home ? { screen: 'project', id: home } : { screen: 'note', id: noteId })
-    } catch (e) {
-      rec.setError(String(e?.message || e))
-      setSaving(false)
-    }
+    } catch (e) { rec.setError(String(e?.message || e)); setSaving(false) }
   }
 
   const pad = isMobile ? '26px 18px 90px' : '30px 36px 90px'
+  const editorBox = { background: t.card, border: '1px solid ' + t.line, borderRadius: 14, overflow: 'hidden' }
 
-  return <div data-screen-label="Record meeting" style={{ maxWidth: 880, margin: '0 auto', padding: pad }}>
-    {/* breadcrumb / exit — leaving keeps the session running in the floating window */}
+  return <div data-screen-label="Meeting" style={{ maxWidth: 880, margin: '0 auto', padding: pad }}>
     <div onClick={() => go({ screen: 'overview' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
       fontFamily: f.ui, fontSize: 12.5, color: t.t3, cursor: 'pointer', marginBottom: 18 }}
-      onMouseEnter={(e) => e.currentTarget.style.color = t.t1}
-      onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
+      onMouseEnter={(e) => e.currentTarget.style.color = t.t1} onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
       <Icon n="chevron-left" s={15} />Work</div>
 
-    {phase !== 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14, fontFamily: f.ui,
-      fontSize: 11.5, color: t.t3 }}><Icon n="pin" s={13} c={t.t3} />Leave this page and recording keeps going in a floating window.</div>}
+    {phase === 'recording' || phase === 'paused' ? <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
+      <Icon n="pin" s={13} c={t.t3} />Leave this page and recording keeps going in a floating window.</div> : null}
 
-    {error && <Card style={{ marginBottom: 14, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 9,
-      borderColor: t.riskLine, background: t.riskBg }}>
+    {error && <Card style={{ marginBottom: 14, padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 9, borderColor: t.riskLine, background: t.riskBg }}>
       <Icon n="alert-triangle" s={16} c={t.risk} />
       <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>{error}</span>
-      <span onClick={() => rec.setError(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span>
-    </Card>}
+      <span onClick={() => rec.setError(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span></Card>}
 
-    {warn && <Card style={{ marginBottom: 14, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 9,
-      borderColor: t.riskLine, background: t.riskBg }}>
+    {warn && <Card style={{ marginBottom: 14, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 9, borderColor: t.riskLine, background: t.riskBg }}>
       <Icon n="alert-triangle" s={16} c={t.risk} style={{ marginTop: 1 }} />
       <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, lineHeight: 1.5, color: t.t1 }}>{warn}</span>
-      <span onClick={() => rec.setWarn(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span>
-    </Card>}
+      <span onClick={() => rec.setWarn(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span></Card>}
 
-    {(phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14,
-      fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}><Icon n="eye" s={13} c={t.t3} />Keep this tab in front and the screen on — backgrounding can pause audio capture.</div>}
+    {(phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
+      <Icon n="eye" s={13} c={t.t3} />Keep this tab in front and the screen on — backgrounding can pause audio capture.</div>}
 
-    {/* title + scope */}
+    {/* header + title */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
-      <Icon n="microphone" s={18} c={t.accent} />
-      <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing,
-        textTransform: 'uppercase', color: t.accent }}>Record · Scribe</span>
+      <Icon n="users" s={18} c={t.accent} />
+      <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Meeting</span>
     </div>
-    <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…"
-      className="selectable"
-      style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title,
-        fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
+    <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
+      style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
 
+    {/* save-to: project + pillar */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Save to</span>
-      {/* project (optional) */}
       <span style={{ position: 'relative' }}>
-        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
-          fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: t.sel, borderRadius: 8,
-          padding: '5px 11px', cursor: 'pointer' }}>
+        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
           <Icon n="folder" s={13} c={t.t3} />{homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
         {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
           <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
-          {projects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName}
-            on={home === p.id} onClick={() => { rec.setMeta({ home: p.id, pillar: null }); setHomeOpen(false) }} />)}
+          {projects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={home === p.id} onClick={() => { rec.setMeta({ home: p.id, pillar: null }); setHomeOpen(false) }} />)}
         </Popover>}
       </span>
-      {/* pillar — selectable when no project, else shows the project's pillar */}
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>in</span>
       <span style={{ position: 'relative' }}>
         <span onClick={() => { if (!home) setPillarOpen((o) => !o) }} title={home ? 'From the project' : 'Choose pillar'}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-            color: destArea ? t.t1 : t.t3, background: home ? 'transparent' : t.sel, border: home ? '1px solid ' + t.line : 'none',
-            borderRadius: 8, padding: '5px 11px', cursor: home ? 'default' : 'pointer' }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: destArea ? t.t1 : t.t3, background: home ? 'transparent' : t.sel, border: home ? '1px solid ' + t.line : 'none', borderRadius: 8, padding: '5px 11px', cursor: home ? 'default' : 'pointer' }}>
           {destArea ? destArea.name : 'Library (no pillar)'}{!home && <Icon n="chevron-down" s={12} c={t.t3} />}</span>
         {pillarOpen && !home && <Popover onClose={() => setPillarOpen(false)} width={210} maxHeight={300}>
           <PopRow icon="stack-2" label="Library only (no pillar)" on={!pillar} onClick={() => { rec.setMeta({ pillar: null }); setPillarOpen(false) }} />
-          {areas.map((a) => <PopRow key={a.id} icon="folder" label={a.name} hint={(a.projects.length || 0) + ''}
-            on={pillar === a.id} onClick={() => { rec.setMeta({ pillar: a.id }); setPillarOpen(false) }} />)}
+          {areas.map((a) => <PopRow key={a.id} icon="folder" label={a.name} hint={(a.projects.length || 0) + ''} on={pillar === a.id} onClick={() => { rec.setMeta({ pillar: a.id }); setPillarOpen(false) }} />)}
         </Popover>}
       </span>
     </div>
 
-    {/* transcription tuning — fixes over/under speaker counting; off = clean single stream */}
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Transcribe</span>
-      <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
-          color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px',
-          cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
-        <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
-      {diarize && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
-        <input type="number" min={1} max={10} disabled={tuneLocked} value={speakerCount ?? ''} placeholder="auto"
-          onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
-          style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card,
-            fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
-        <span>expected speakers</span></span>}
-      <span onClick={() => !tuneLocked && rec.setMeta({ multiLang: !multiLang })} title="Mixed languages (e.g. English + Spanish)"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
-          color: multiLang ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px',
-          cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
-        <Icon n="language" s={13} c={multiLang ? t.accent : t.t3} />Multilingual {multiLang ? 'on' : 'off'}</span>
+    {/* people (attendees + speakers) */}
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+        <Label style={{ margin: 0 }}>People</Label>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>who's here / who spoke — also labels a pasted transcript</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+        {people.map((nm) => <span key={nm} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 20, padding: '4px 7px 4px 11px' }}>
+          <Icon n="user" s={12} c={t.t2} />{nm}
+          <span onClick={() => removePerson(nm)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={12} /></span></span>)}
+        <input value={personDraft} onChange={(e) => setPersonDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson() } }} onBlur={addPerson}
+          placeholder="Add a name…" className="selectable"
+          style={{ width: 130, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px' }} />
+      </div>
     </div>
 
-    {/* projects discussed — multiple */}
+    {/* projects discussed */}
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
         <Label style={{ margin: 0 }}>Projects discussed</Label>
@@ -298,154 +279,164 @@ export function RecordScreen() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         {linked.map((id) => { const p = projectById(id); if (!p) return null
-          return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5,
-            fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+          return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
             <AreaDot areaId={p.area} s={7} />{p.name}
-            <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span>
-          </span> })}
+            <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span> })}
         <span style={{ position: 'relative' }}>
-          <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-            fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg,
-            border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+          <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
             <Icon n="plus" s={13} />Add project</span>
           {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
-            {projects.filter((p) => !linked.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)}
-              label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
-            {projects.filter((p) => !linked.includes(p.id)).length === 0 &&
-              <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>All projects added.</div>}
+            {projects.filter((p) => !linked.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
+            {projects.filter((p) => !linked.includes(p.id)).length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>All projects added.</div>}
           </Popover>}
         </span>
       </div>
     </div>
 
-    {/* recorder */}
-    <Card style={{ marginTop: 22, padding: '22px 24px', background: t.panel }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-        {phase === 'recording' || phase === 'paused' ? (
-          <button onClick={() => rec.stopAndTranscribe()} title="Stop recording" style={{ width: 60, height: 60, borderRadius: 30, flex: 'none',
-            cursor: 'pointer', border: '1px solid ' + t.riskLine, background: t.riskBg, display: 'flex',
-            alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            {live && <span className="rec-pulse" style={{ position: 'absolute', inset: -1, borderRadius: 31 }} />}
-            <span style={{ width: 18, height: 18, borderRadius: 4, background: t.risk }} /></button>
-        ) : phase === 'transcribing' ? (
-          <div style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', border: '1px solid ' + t.line2,
-            background: t.card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon n="loader-2" s={24} c={t.t3} /></div>
-        ) : (
-          <button onClick={() => rec.start()} title={phase === 'idle' ? 'Start recording' : 'Record again'}
-            style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', cursor: 'pointer',
-            border: '1px solid ' + t.accentLine, background: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon n="microphone" s={26} c={t.accent} /></button>
-        )}
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: f.meta, fontSize: 30, fontWeight: 600, color: phase === 'idle' ? t.t3 : t.t1,
-              fontVariantNumeric: 'tabular-nums', letterSpacing: '0.01em' }}>{fmtClock(seconds)}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5,
-              fontWeight: 500, color: live ? t.risk : t.t2 }}>
-              {live && <span style={{ width: 7, height: 7, borderRadius: 4, background: t.risk }} />}{statusText}</span>
-          </div>
-          <div style={{ marginTop: 6 }}><Levels live={live} color={t.accent} faint={t.line2} /></div>
-        </div>
-
-        {(phase === 'recording' || phase === 'paused') && <div style={{ flex: 'none' }}>
-          {phase === 'recording'
-            ? <Btn kind="outline" size="sm" icon="player-pause" onClick={() => rec.pause()}>Pause</Btn>
-            : <Btn kind="outline" size="sm" icon="player-play" onClick={() => rec.resume()}>Resume</Btn>}
-        </div>}
-      </div>
-    </Card>
-
-    {/* notes scratchpad — with basic list formatting */}
+    {/* agenda / prep */}
     <div style={{ marginTop: 22 }}>
-      <Label style={{ marginBottom: 10 }}>Notes</Label>
-      <div style={{ background: t.card, border: '1px solid ' + t.line, borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+        <Label style={{ margin: 0 }}>Agenda · prep</Label>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you want to cover / say</span>
+      </div>
+      <div style={editorBox}>
+        <textarea value={agenda} onChange={(e) => rec.setMeta({ agenda: e.target.value })} className="selectable"
+          placeholder="Points to raise, questions, goals for this meeting…"
+          style={{ width: '100%', minHeight: 70, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14, lineHeight: 1.6, color: t.t1, padding: '12px 16px' }} />
+      </div>
+    </div>
+
+    {/* live notes — highest signal */}
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Label style={{ margin: 0 }}>My notes</Label>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you write down — weighted above the transcript</span>
+      </div>
+      <div style={editorBox}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderBottom: '1px solid ' + t.line }}>
-          {[['list', 'ul', 'Bullets'], ['list-numbers', 'ol', 'Numbered'], ['checkbox', 'todo', 'Checklist']].map(([icon, kind, title]) =>
-            <button key={kind} title={title} onClick={() => prefixLines(kind)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-              fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: 'transparent', border: 0, borderRadius: 7,
-              padding: '5px 8px', cursor: 'pointer' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-              <Icon n={icon} s={15} />{title}</button>)}
+          {[['list', 'ul', 'Bullets'], ['list-numbers', 'ol', 'Numbered'], ['checkbox', 'todo', 'Checklist']].map(([icon, kind, label]) =>
+            <button key={kind} title={label} onClick={() => prefixLines(kind)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: 'transparent', border: 0, borderRadius: 7, padding: '5px 8px', cursor: 'pointer' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              <Icon n={icon} s={15} />{label}</button>)}
           <div style={{ flex: 1 }} />
           <span style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, paddingRight: 6 }}>“- ” bullet · “1. ” numbered</span>
         </div>
         <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} className="selectable"
-          placeholder="Jot notes as you go — these stay with the meeting and feed the synthesis…"
-          style={{ width: '100%', minHeight: 110, border: 0, outline: 0, resize: 'vertical', background: 'transparent',
-            fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
+          placeholder="Jot what matters as you go — these are treated as the most important signal…"
+          style={{ width: '100%', minHeight: 120, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
       </div>
     </div>
 
-    {/* speakers detected */}
+    {/* transcript — record OR paste */}
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <Label style={{ margin: 0 }}>Transcript</Label>
+        <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+          {[['paste', 'Paste', 'clipboard'], ['record', 'Record', 'microphone']].map(([id, label, icon]) => {
+            const on = source === id
+            return <span key={id} onClick={() => { if (!tuneLocked || phase === 'idle') rec.setMeta({ source: id }) }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+              <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
+          })}
+        </div>
+        {source === 'paste' && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>paste from Copilot / Teams — better speakers, no cost</span>}
+      </div>
+
+      {source === 'paste'
+        ? <div style={editorBox}>
+            <textarea value={transcriptText} onChange={(e) => rec.setTranscriptFromPaste(e.target.value)} className="selectable"
+              placeholder={'Paste a transcript here…\n\nName: what they said\nOther name: their reply'}
+              style={{ width: '100%', minHeight: 150, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
+          </div>
+        : <>
+            {/* recorder card */}
+            <Card style={{ padding: '22px 24px', background: t.panel }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                {phase === 'recording' || phase === 'paused' ? (
+                  <button onClick={() => rec.stopAndTranscribe()} title="Stop recording" style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', cursor: 'pointer', border: '1px solid ' + t.riskLine, background: t.riskBg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    {live && <span className="rec-pulse" style={{ position: 'absolute', inset: -1, borderRadius: 31 }} />}
+                    <span style={{ width: 18, height: 18, borderRadius: 4, background: t.risk }} /></button>
+                ) : phase === 'transcribing' ? (
+                  <div style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', border: '1px solid ' + t.line2, background: t.card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="loader-2" s={24} c={t.t3} /></div>
+                ) : (
+                  <button onClick={() => rec.start()} title={phase === 'idle' ? 'Start recording' : 'Record again'} style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', cursor: 'pointer', border: '1px solid ' + t.accentLine, background: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="microphone" s={26} c={t.accent} /></button>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ fontFamily: f.meta, fontSize: 30, fontWeight: 600, color: phase === 'idle' ? t.t3 : t.t1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.01em' }}>{fmtClock(seconds)}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 500, color: live ? t.risk : t.t2 }}>
+                      {live && <span style={{ width: 7, height: 7, borderRadius: 4, background: t.risk }} />}{statusText}</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}><Levels live={live} color={t.accent} faint={t.line2} /></div>
+                </div>
+                {(phase === 'recording' || phase === 'paused') && <div style={{ flex: 'none' }}>
+                  {phase === 'recording' ? <Btn kind="outline" size="sm" icon="player-pause" onClick={() => rec.pause()}>Pause</Btn>
+                    : <Btn kind="outline" size="sm" icon="player-play" onClick={() => rec.resume()}>Resume</Btn>}
+                </div>}
+              </div>
+            </Card>
+            {/* tuning */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+                <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
+              {diarize && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
+                <input type="number" min={1} max={10} disabled={tuneLocked} value={speakerCount ?? ''} placeholder="auto"
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
+                  style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
+                <span>expected speakers</span></span>}
+            </div>
+          </>}
+    </div>
+
+    {/* speakers detected (record or pasted transcript) */}
     {speakers.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
       <Label>{speakers.length} speaker{speakers.length === 1 ? '' : 's'}</Label>
-      {speakers.map((sp) => <span key={sp} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui,
-        fontSize: 11.5, fontWeight: 600, color: t.t1, background: t.card, border: '1px solid ' + t.line, borderRadius: 20, padding: '3px 11px 3px 4px' }}>
+      {speakers.map((sp) => <span key={sp} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t1, background: t.card, border: '1px solid ' + t.line, borderRadius: 20, padding: '3px 11px 3px 4px' }}>
         <Avatar name={sp} s={18} />{sp}</span>)}
     </div>}
 
-    {/* transcript */}
-    <div style={{ marginTop: 22 }}>
-      <Label style={{ marginBottom: 10 }}>Transcript</Label>
-      <div style={{ background: t.card, border: '1px solid ' + t.line, borderRadius: 14,
-        padding: transcribed ? '6px 0' : 0, maxHeight: 360, overflowY: 'auto' }}>
+    {/* recorded transcript preview (record mode) */}
+    {isRecordMode && (phase === 'transcribing' || (transcribed && lines.length > 0)) && <div style={{ marginTop: 18 }}>
+      <div style={{ ...editorBox, padding: '6px 0', maxHeight: 320, overflowY: 'auto' }}>
         {phase === 'transcribing'
           ? <div style={{ padding: '40px 24px', textAlign: 'center' }}>
               <Icon n="loader-2" s={24} c={t.accent} />
-              <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, marginTop: 10 }}>Transcribing audio…</div>
-              <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 3 }}>Separating speakers and cleaning up the text.</div>
-            </div>
-          : !transcribed
-            ? <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-                <Icon n="wave-sine" s={26} c={t.t3} />
-                <div style={{ fontFamily: f.body, fontSize: 14, color: t.t2, marginTop: 10 }}>
-                  {live || phase === 'paused' ? 'Recording — transcript ready when you stop.' : 'Press record to start.'}</div>
-                <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 3 }}>
-                  {live || phase === 'paused' ? 'Audio is captured now and transcribed once you stop.' : 'Audio is transcribed after you stop, with speaker labels.'}</div>
-              </div>
-            : lines.map((l, i) => <div key={i} style={{ display: 'flex', gap: 12, padding: '11px 18px',
-                borderTop: i ? '1px solid ' + t.line : 'none', animation: 'lineIn .3s ease-out' }}>
-                <Avatar name={l.sp} s={26} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontFamily: f.ui, fontSize: 12.5, fontWeight: 700, color: speakerColor(t, l.sp) }}>{l.sp}</span>
-                    {l.at && <span style={{ fontFamily: f.meta, fontSize: 10.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{l.at}</span>}
-                  </div>
-                  <div className="selectable" style={{ fontFamily: f.body, fontSize: 14, lineHeight: 1.55, color: t.t1, marginTop: 3, textWrap: 'pretty' }}>{l.text}</div>
+              <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, marginTop: 10 }}>Transcribing audio…</div></div>
+          : lines.map((l, i) => <div key={i} style={{ display: 'flex', gap: 12, padding: '11px 18px', borderTop: i ? '1px solid ' + t.line : 'none', animation: 'lineIn .3s ease-out' }}>
+              <Avatar name={l.sp} s={26} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontFamily: f.ui, fontSize: 12.5, fontWeight: 700, color: speakerColor(t, l.sp) }}>{l.sp}</span>
+                  {l.at && <span style={{ fontFamily: f.meta, fontSize: 10.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{l.at}</span>}
                 </div>
-              </div>)}
+                <div className="selectable" style={{ fontFamily: f.body, fontSize: 14, lineHeight: 1.55, color: t.t1, marginTop: 3, textWrap: 'pretty' }}>{l.text}</div>
+              </div></div>)}
       </div>
-    </div>
+    </div>}
 
     {/* synthesize bar */}
-    {(phase === 'ready' || phase === 'synth') && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex',
-      alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg }}>
-      <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
+    {showSynthBar && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg }}>
+      <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Synthesize this recording</div>
-        <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>{lines.length} turns · {speakers.length} speakers · {fmtClock(seconds)} → summary, action items & terms</div>
+        <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Synthesize</div>
+        <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>{transcriptText ? `${lines.length} turns${speakers.length ? ' · ' + speakers.length + ' speakers' : ''} · ` : ''}your notes → bullet summary, action items & tags</div>
       </div>
-      <Btn kind="primary" size="sm" icon={synthBusy ? 'loader-2' : 'wand'} onClick={() => !synthBusy && rec.synthesize()}>{synthBusy ? 'Synthesizing…' : 'Synthesize'}</Btn>
+      <Btn kind="primary" size="sm" icon={synthBusy ? 'loader-2' : 'wand'} onClick={() => !synthBusy && canSynth && rec.synthesize()}>{synthBusy ? 'Synthesizing…' : 'Synthesize'}</Btn>
     </Card>}
 
     {/* synthesized result */}
     {phase === 'done' && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {cost && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: f.ui, fontSize: 11.5, color: t.t3,
-        background: t.card, border: '1px solid ' + t.line, borderRadius: 10, padding: '8px 13px' }}>
+      {cost && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: f.ui, fontSize: 11.5, color: t.t3, background: t.card, border: '1px solid ' + t.line, borderRadius: 10, padding: '8px 13px' }}>
         <Icon n="coin" s={14} c={t.t3} />
         <span style={{ fontWeight: 600, color: t.t2 }}>Cost {usd(cost.total)}</span>
-        <span>· transcribe {usd(cost.transcribe)} ({fmtClock(seconds)})</span>
+        {cost.transcribe > 0 && <span>· transcribe {usd(cost.transcribe)} ({fmtClock(seconds)})</span>}
         <span>· synthesis {usd(cost.claude)}{cost.usage ? ` (${cost.usage.input_tokens}+${cost.usage.output_tokens} tok)` : ''}</span>
         {cost.estimated && <span style={{ fontStyle: 'italic' }}>· est.</span>}
       </div>}
       {synth.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
-        <Label style={{ color: t.accent, marginBottom: 8 }}>Summary</Label>
-        <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{synth.summary}</div>
-      </Card>}
+        <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
+        <BulletSummary text={synth.summary} /></Card>}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
           <Label style={{ margin: 0 }}>Action items · {actions.length}</Label>
@@ -461,24 +452,22 @@ export function RecordScreen() {
         <Label style={{ marginBottom: 9 }}>Suggested projects to link · {guesses.length}</Label>
         <Card style={{ padding: '4px 0' }}>
           {guesses.map((g, i) => { const p = projectById(g.id); if (!p) return null
-            return <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 16px',
-              borderTop: i ? '1px solid ' + t.line : 'none' }}>
+            return <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 16px', borderTop: i ? '1px solid ' + t.line : 'none' }}>
               <AreaDot areaId={p.area} s={8} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1 }}>{p.name}</div>
-                <div style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 2 }}>{p.areaName} · {g.score} mention{g.score === 1 ? '' : 's'} in transcript</div>
+                <div style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 2 }}>{p.areaName} · {g.score} mention{g.score === 1 ? '' : 's'}</div>
               </div>
               <Btn kind="outline" size="sm" icon="link" onClick={() => addProj(g.id)}>Link</Btn>
             </div> })}
         </Card>
       </div>}
-      {(synth.terms || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-        <Label style={{ marginRight: 4 }}>Terms</Label>{synth.terms.map((tm) => <Tag key={tm}>{tm}</Tag>)}</div>}
+      {(synth.tags || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
+        <Label style={{ marginRight: 4 }}>Tags</Label>{synth.tags.map((tg) => <Tag key={tg}>{tg}</Tag>)}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, flexWrap: 'wrap' }}>
         <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save}>{saving ? 'Saving…' : `Save to ${destLabel}`}</Btn>
-        <Btn kind="ghost" onClick={() => rec.reset()}>Discard & re-record</Btn>
-        {(notes || '').trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui,
-          fontSize: 11.5, color: t.t3, marginLeft: 'auto' }}><Icon n="note" s={13} />Your notes are included</span>}
+        <Btn kind="ghost" onClick={() => rec.reset()}>Discard</Btn>
+        {(notes || '').trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginLeft: 'auto' }}><Icon n="note" s={13} />Your notes are weighted highest</span>}
       </div>
       {sheetAction && <TaskSheet task={sheetAction} projectId={sheetAction.project || home}
         onPatch={(p) => setActions((xs) => xs.map((x) => x.id === sheetId ? { ...x, ...p } : x))}
