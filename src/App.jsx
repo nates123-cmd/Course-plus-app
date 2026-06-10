@@ -119,8 +119,10 @@ function SidebarContent({ onClose }) {
           placeholder="New area name…" style={addInputStyle} /></div>}
       {areas.map((a) => {
         const areaActive = route.screen === 'area' && route.id === a.id
-        // live = active / on-hold / next-up / sent (anything not idea or archived)
+        // live = anything not idea or archived; sort active first, on-hold last
+        const liveRank = { active: 0, sent: 1, 'on-hold': 2 }
         const live = a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
+          .map((p, i) => [p, i]).sort((x, y) => ((liveRank[x[0].status] ?? 3) - (liveRank[y[0].status] ?? 3)) || (x[1] - y[1])).map((x) => x[0])
         const ideas = a.projects.filter((p) => p.status === 'idea')
         const ideasKey = a.id + '::ideas'
         return <div key={a.id}>
