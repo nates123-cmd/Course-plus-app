@@ -65,16 +65,25 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
   return (await claudeComplete(user, { system, max_tokens: 1200 })).trim()
 }
 
-// Synthesize a raw meeting transcript into structured fields.
+// Synthesize a raw meeting transcript into structured fields. Reads the WHOLE
+// transcript (long meetings escalate to Sonnet for recall) and produces a fuller
+// summary so a 45-min meeting isn't crushed into two sentences.
 export async function synthesizeTranscript(transcript) {
-  const system = 'You extract structure from a raw meeting transcript for a notes app. Return strict JSON only.'
+  const text = transcript || ''
+  const long = text.length > 18000 // ~3k+ words → escalate for whole-meeting recall
+  const model = long ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const system =
+    'You synthesize a full meeting transcript for a work app. Read the ENTIRE transcript ' +
+    'before answering — cover the whole meeting (beginning to end), not just the opening. ' +
+    'Capture every distinct decision, blocker, and action item across all speakers. Return strict JSON only.'
   const user =
-    `Transcript:\n${transcript}\n\n` +
-    'Return ONLY JSON: {"summary": string (2-3 sentences), ' +
-    '"actions": [{"text": string, "owner": string}], "people": string[], ' +
-    '"terms": string[], "tags": string[]}'
+    `Full transcript (${text.length} chars):\n${text}\n\n` +
+    'Return ONLY JSON: {' +
+    '"summary": string (a thorough paragraph or two — the arc of the meeting: what was decided, what is blocked, what comes next), ' +
+    '"actions": [{"text": string, "owner": string}] (ALL action items, each with its owner), ' +
+    '"people": string[], "terms": string[] (key terms/jargon), "tags": string[]}'
   let usage = null
-  const raw = await claudeComplete(user, { system, max_tokens: 1000, onUsage: (u) => { usage = u } })
+  const raw = await claudeComplete(user, { system, model, max_tokens: 2400, onUsage: (u) => { usage = u } })
   const j = extractJSON(raw) || { summary: raw, actions: [], people: [], terms: [], tags: [] }
   return { ...j, usage }
 }

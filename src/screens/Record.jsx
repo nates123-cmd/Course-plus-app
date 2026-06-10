@@ -5,11 +5,12 @@
 // result: summary, editable action items, suggested links, terms, save/discard).
 // All recording state/actions come from RecorderContext; the session lives above
 // the router so it survives navigation (see RecorderContext.jsx + FloatingRecorder).
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow } from '../kit'
 import { fmtClock } from '../lib/recorder'
+import { textToBlocks } from '../lib/blocks'
 import { createNote, createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
@@ -92,6 +93,33 @@ export function RecordScreen() {
   const [actions, setActions] = useState([])
   const [sheetId, setSheetId] = useState(null)
   const [saving, setSaving] = useState(false)
+  const notesRef = useRef(null)
+
+  // Toolbar: prefix the selected line(s) of the notes scratchpad with a list
+  // marker ('ul' = "- ", 'ol' = "1. ", 'todo' = "- [ ] "). textToBlocks turns
+  // these into real bullet / numbered blocks on save.
+  const prefixLines = (kind) => {
+    const el = notesRef.current; if (!el) return
+    const val = rec.notes || ''
+    const a = el.selectionStart, b = el.selectionEnd
+    const lineStart = val.lastIndexOf('\n', a - 1) + 1
+    let lineEnd = val.indexOf('\n', b); if (lineEnd < 0) lineEnd = val.length
+    const lines = val.slice(lineStart, lineEnd).split('\n')
+    let n = 1
+    const out = lines.map((L) => {
+      const m = L.match(/^(\s*)(.*)$/)
+      const indent = m[1]
+      const body = m[2].replace(/^([-*]\s+|\d+[.)]\s+|-\s\[\s?\]\s+)/, '')
+      if (!body.trim()) return L
+      if (kind === 'ul') return indent + '- ' + body
+      if (kind === 'ol') return indent + (n++) + '. ' + body
+      if (kind === 'todo') return indent + '- [ ] ' + body
+      return indent + body
+    }).join('\n')
+    const next = val.slice(0, lineStart) + out + val.slice(lineEnd)
+    rec.setMeta({ notes: next })
+    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
+  }
 
   const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost } = rec
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
@@ -154,7 +182,7 @@ export function RecordScreen() {
         date: todayLabel(), updated: 'now', status: 2,
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
-      if ((notes || '').trim()) note.body = [{ p: notes }]
+      if ((notes || '').trim()) note.body = textToBlocks(notes)
       const noteId = await createNote(note)
       // checked action items become real tasks — only if there's a home project
       if (home) for (const a of actions) {
@@ -299,11 +327,22 @@ export function RecordScreen() {
       </div>
     </Card>
 
-    {/* notes scratchpad */}
+    {/* notes scratchpad — with basic list formatting */}
     <div style={{ marginTop: 22 }}>
       <Label style={{ marginBottom: 10 }}>Notes</Label>
-      <div style={{ background: t.card, border: '1px solid ' + t.line, borderRadius: 14 }}>
-        <textarea value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} className="selectable"
+      <div style={{ background: t.card, border: '1px solid ' + t.line, borderRadius: 14, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderBottom: '1px solid ' + t.line }}>
+          {[['list', 'ul', 'Bullets'], ['list-numbers', 'ol', 'Numbered'], ['checkbox', 'todo', 'Checklist']].map(([icon, kind, title]) =>
+            <button key={kind} title={title} onClick={() => prefixLines(kind)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: 'transparent', border: 0, borderRadius: 7,
+              padding: '5px 8px', cursor: 'pointer' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              <Icon n={icon} s={15} />{title}</button>)}
+          <div style={{ flex: 1 }} />
+          <span style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, paddingRight: 6 }}>“- ” bullet · “1. ” numbered</span>
+        </div>
+        <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} className="selectable"
           placeholder="Jot notes as you go — these stay with the meeting and feed the synthesis…"
           style={{ width: '100%', minHeight: 110, border: 0, outline: 0, resize: 'vertical', background: 'transparent',
             fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
