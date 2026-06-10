@@ -48,13 +48,34 @@ export function useRecorder() {
   const [status, setStatus] = useState('idle') // idle | recording | paused
   const [seconds, setSeconds] = useState(0)
   const [error, setError] = useState(null)
-  const mr = useRef(null), stream = useRef(null), chunks = useRef([]), timer = useRef(null)
+  // interrupted = the tab went background while recording → browser may have
+  // suspended audio capture, so the transcript can be incomplete. Surfaced to UI.
+  const [interrupted, setInterrupted] = useState(false)
+  const mr = useRef(null), stream = useRef(null), chunks = useRef([]), timer = useRef(null), wakeLock = useRef(null)
 
   const tick = () => { timer.current = setInterval(() => setSeconds((s) => {
     if (s + 1 >= MAX_SECONDS) { try { mr.current?.stop() } catch {} }
     return s + 1
   }), 1000) }
   const stopTick = () => { clearInterval(timer.current); timer.current = null }
+
+  // Keep the screen awake while recording — on mobile a sleeping screen
+  // suspends MediaRecorder, which is the usual cause of a truncated transcript.
+  const acquireWake = async () => {
+    try { if ('wakeLock' in navigator) wakeLock.current = await navigator.wakeLock.request('screen') } catch {}
+  }
+  const releaseWake = () => { try { wakeLock.current?.release?.() } catch {} wakeLock.current = null }
+
+  // Flag background-while-recording; re-acquire the wake lock when visible again.
+  useEffect(() => {
+    const onVis = () => {
+      const live = mr.current && mr.current.state === 'recording'
+      if (document.visibilityState === 'hidden') { if (live) setInterrupted(true) }
+      else if (live) acquireWake()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
 
   const start = async () => {
     setError(null)
@@ -68,16 +89,16 @@ export function useRecorder() {
       rec.ondataavailable = (e) => { if (e.data && e.data.size) { chunks.current.push(e.data); idbAppend(e.data).catch(() => {}) } }
       mr.current = rec
       rec.start(5000) // flush a chunk every 5s
-      setSeconds(0); setStatus('recording'); tick()
+      setSeconds(0); setInterrupted(false); setStatus('recording'); tick(); acquireWake()
     } catch (e) { setError(e); setStatus('idle') }
   }
 
-  const pause = () => { if (mr.current?.state === 'recording') { mr.current.pause(); stopTick(); setStatus('paused') } }
-  const resume = () => { if (mr.current?.state === 'paused') { mr.current.resume(); tick(); setStatus('recording') } }
+  const pause = () => { if (mr.current?.state === 'recording') { mr.current.pause(); stopTick(); releaseWake(); setStatus('paused') } }
+  const resume = () => { if (mr.current?.state === 'paused') { mr.current.resume(); tick(); acquireWake(); setStatus('recording') } }
 
   const stop = () => new Promise((resolve) => {
     const rec = mr.current
-    stopTick()
+    stopTick(); releaseWake()
     if (!rec || rec.state === 'inactive') { setStatus('idle'); return resolve(null) }
     rec.onstop = () => {
       const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' })
@@ -88,9 +109,9 @@ export function useRecorder() {
   })
 
   // Stop tracks if the component unmounts mid-recording.
-  useEffect(() => () => { stopTick(); stream.current?.getTracks().forEach((t) => t.stop()) }, [])
+  useEffect(() => () => { stopTick(); releaseWake(); stream.current?.getTracks().forEach((t) => t.stop()) }, [])
 
-  return { status, seconds, error, start, pause, resume, stop }
+  return { status, seconds, error, interrupted, start, pause, resume, stop }
 }
 
 export const fmtClock = (s) => {

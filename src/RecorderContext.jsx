@@ -29,11 +29,12 @@ const emptySynth = { summary: '', actions: [], terms: [], people: [], tags: [] }
 
 export function RecorderProvider({ go, children }) {
   const recorder = useRecorder()
-  const { status, seconds } = recorder
+  const { status, seconds, interrupted } = recorder
 
   // post-recording processing phase (idle when not in a processing stage)
   const [proc, setProc] = useState(PROC_IDLE) // idle | transcribing | ready | synth | done
   const [error, setError] = useState(null)
+  const [warn, setWarn] = useState(null) // soft warning (e.g. likely-truncated transcript)
 
   // session meta
   const [title, setTitle] = useState('')
@@ -62,7 +63,7 @@ export function RecorderProvider({ go, children }) {
   }
 
   const start = async () => {
-    setError(null)
+    setError(null); setWarn(null)
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
     setProc(PROC_IDLE)
     await recorder.start()
@@ -97,6 +98,17 @@ export function RecorderProvider({ go, children }) {
       const withAt = parsed.map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
       setLines(withAt)
       setTranscriptText(text)
+      // Completeness check: ~120 wpm is normal speech. If the transcript is far
+      // short of what the elapsed time implies (or the tab went background), the
+      // audio capture likely paused — warn so the user doesn't trust a partial.
+      const words = (text || '').split(/\s+/).filter(Boolean).length
+      const expected = (seconds / 60) * 120
+      if (seconds > 120 && (interrupted || words < expected * 0.4)) {
+        const mins = Math.round(seconds / 60)
+        setWarn(`This transcript looks short — ~${words.toLocaleString()} words for a ${mins}-min recording. ` +
+          (interrupted ? 'The tab went to the background mid-recording, ' : 'Audio capture likely paused, ') +
+          'so it may be missing audio. Keep this tab in front (and the screen on) while recording.')
+      } else setWarn(null)
       setProc('ready')
     } catch (e) {
       setError(humanize(e))
@@ -130,7 +142,7 @@ export function RecorderProvider({ go, children }) {
     setProc(PROC_IDLE)
     setError(null)
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
-    setProjects([]); setNotes(''); setPillar(null)
+    setProjects([]); setNotes(''); setPillar(null); setWarn(null)
   }
 
   // clear() — full teardown after a save (also drops title).
@@ -140,11 +152,11 @@ export function RecorderProvider({ go, children }) {
   }
 
   const value = useMemo(() => ({
-    phase, seconds, error,
+    phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, notes, lines, transcriptText, synth, cost,
-    setMeta, setProjects, setError,
+    setMeta, setProjects, setError, setWarn,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, title, home, pillar, projects, notes, lines, transcriptText, synth, cost])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, notes, lines, transcriptText, synth, cost])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

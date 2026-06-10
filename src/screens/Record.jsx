@@ -121,7 +121,7 @@ export function RecordScreen() {
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
   }
 
-  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost } = rec
+  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn } = rec
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
   // where the meeting lands: a project's area, or the chosen pillar, or nothing (Library)
@@ -216,6 +216,16 @@ export function RecordScreen() {
       <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>{error}</span>
       <span onClick={() => rec.setError(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span>
     </Card>}
+
+    {warn && <Card style={{ marginBottom: 14, padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 9,
+      borderColor: t.riskLine, background: t.riskBg }}>
+      <Icon n="alert-triangle" s={16} c={t.risk} style={{ marginTop: 1 }} />
+      <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, lineHeight: 1.5, color: t.t1 }}>{warn}</span>
+      <span onClick={() => rec.setWarn(null)} style={{ cursor: 'pointer', display: 'inline-flex', color: t.t3 }}><Icon n="x" s={15} /></span>
+    </Card>}
+
+    {(phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14,
+      fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}><Icon n="eye" s={13} c={t.t3} />Keep this tab in front and the screen on — backgrounding can pause audio capture.</div>}
 
     {/* title + scope */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
