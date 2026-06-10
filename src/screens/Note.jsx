@@ -12,8 +12,13 @@ import { updateNote, createTask } from '../lib/db'
 import { blocksToText, textToBlocks } from '../lib/blocks'
 import { summarizeNote, extractActions, suggestTags, rewriteNote } from '../lib/ai'
 
-// Word count from rawWords (already a display string) or computed from the body.
+// Word count — for meetings, count the raw transcript (the body is just the
+// scratch notes). Else legacy rawWords display string, else the body.
 function wordCount(n) {
+  if (n.transcript) {
+    const w = n.transcript.split(/\s+/).filter(Boolean).length
+    return w ? w.toLocaleString() : null
+  }
   if (n.rawWords) return n.rawWords
   const text = blocksToText(n.body || [])
   const w = text.split(/\s+/).filter(Boolean).length
