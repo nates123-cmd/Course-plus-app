@@ -97,7 +97,6 @@ export function IconBtn({ n, s = 18, onClick, title, badge, active }) {
 // ── Status system (project status) ──────────────────────────────
 export const STATUS = {
   active:    { label: 'Active',  hint: 'Working on it' },
-  'next-up': { label: 'Next up', hint: 'Queued, not started' },
   'on-hold': { label: 'On hold', hint: 'Paused / blocked' },
   idea:      { label: 'Idea',    hint: 'Not started, not blocked' },
   sent:      { label: 'Sent',    hint: 'Out, awaiting reply' },

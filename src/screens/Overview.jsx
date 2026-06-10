@@ -241,7 +241,7 @@ export function AreaScreen() {
   if (!a) return null
 
   const projs = a.projects.map((p) => ({ ...p, area: a.id, areaName: a.name }))
-  const active = projs.filter((p) => ['active', 'next-up', 'sent'].includes(p.status))
+  const active = projs.filter((p) => ['active', 'sent'].includes(p.status))
   const hold = projs.filter((p) => p.status === 'on-hold')
   const ideas = projs.filter((p) => p.status === 'idea')
   const shown = active.length + hold.length + ideas.length

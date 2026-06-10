@@ -410,7 +410,7 @@ function QuickCapture({ onClose, initial }) {
           <span style={{ position: 'relative' }}>
             <StatusPill id={projStatus} open={statusOpen} onClick={() => setStatusOpen((o) => !o)} />
             {statusOpen && <Popover onClose={() => setStatusOpen(false)} width={200} bottom="calc(100% + 6px)">
-              {['idea', 'next-up', 'active', 'on-hold'].map((k) => <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint} on={projStatus === k} onClick={() => { setProjStatus(k); setStatusOpen(false) }} />)}</Popover>}
+              {['idea', 'active', 'on-hold'].map((k) => <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint} on={projStatus === k} onClick={() => { setProjStatus(k); setStatusOpen(false) }} />)}</Popover>}
           </span>
           <div style={{ flex: 1 }} />
           <Btn kind="primary" size="sm" icon="folder-plus" onClick={file}>{busy ? 'Creating…' : 'Create project'}</Btn>
