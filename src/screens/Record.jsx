@@ -121,7 +121,7 @@ export function RecordScreen() {
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
   }
 
-  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn, speakers, diarize, multiLang } = rec
+  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, multiLang } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused' // can't change after transcribe
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
@@ -278,7 +278,7 @@ export function RecordScreen() {
           cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
         <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
       {diarize && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
-        <input type="number" min={1} max={10} disabled={tuneLocked} value={speakers ?? ''} placeholder="auto"
+        <input type="number" min={1} max={10} disabled={tuneLocked} value={speakerCount ?? ''} placeholder="auto"
           onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
           style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card,
             fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
