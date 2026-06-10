@@ -82,19 +82,24 @@ function RecActionRow({ a, first, onToggle, onOpen }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile } = useApp()
-  const { allProjects, projectById, areaOfProject, reload } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
 
   const [homeOpen, setHomeOpen] = useState(false)
+  const [pillarOpen, setPillarOpen] = useState(false)
   const [projOpen, setProjOpen] = useState(false)
   const [actions, setActions] = useState([])
   const [sheetId, setSheetId] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  const { phase, seconds, title, home, notes, lines, transcriptText, synth, error, cost } = rec
+  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost } = rec
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
-  const homeProj = projectById(home) || projects[0]
+  const homeProj = projectById(home)
+  // where the meeting lands: a project's area, or the chosen pillar, or nothing (Library)
+  const destAreaId = home ? areaOfProject(home)?.id : pillar
+  const destArea = destAreaId ? areaById(destAreaId) : null
+  const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
 
   // seed title/home from the route only when starting fresh (don't clobber a live session)
   useEffect(() => {
@@ -140,10 +145,10 @@ export function RecordScreen() {
     if (saving) return
     setSaving(true)
     try {
-      const allLinked = [...new Set([home, ...linked])]
+      const allLinked = [...new Set([home, ...linked].filter(Boolean))]
       const note = {
         kind: 'meeting', title: (title || '').trim() || 'Untitled meeting',
-        project: home, area: areaOfProject(home)?.id || null,
+        project: home || null, area: destAreaId || null,
         projects: allLinked, people: synth.people || [], tags: synth.tags || [],
         terms: synth.terms || [], summary: synth.summary || '', transcript: transcriptText,
         date: todayLabel(), updated: 'now', status: 2,
@@ -151,13 +156,13 @@ export function RecordScreen() {
       }
       if ((notes || '').trim()) note.body = [{ p: notes }]
       const noteId = await createNote(note)
-      // checked action items become real tasks on the home project
-      for (const a of actions) {
+      // checked action items become real tasks — only if there's a home project
+      if (home) for (const a of actions) {
         if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false })
       }
       rec.clear()
       await reload()
-      go({ screen: 'project', id: home })
+      go(home ? { screen: 'project', id: home } : { screen: 'note', id: noteId })
     } catch (e) {
       rec.setError(String(e?.message || e))
       setSaving(false)
@@ -195,16 +200,32 @@ export function RecordScreen() {
       style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title,
         fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
 
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Save to</span>
+      {/* project (optional) */}
       <span style={{ position: 'relative' }}>
         <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
-          fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8,
+          fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: t.sel, borderRadius: 8,
           padding: '5px 11px', cursor: 'pointer' }}>
-          {homeProj && <AreaDot areaId={homeProj.area} s={7} />}{homeProj ? homeProj.name : 'Pick a project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
-        {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={220} maxHeight={300}>
+          <Icon n="folder" s={13} c={t.t3} />{homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
+        {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
+          <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
           {projects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName}
-            on={home === p.id} onClick={() => { rec.setMeta({ home: p.id }); setHomeOpen(false) }} />)}
+            on={home === p.id} onClick={() => { rec.setMeta({ home: p.id, pillar: null }); setHomeOpen(false) }} />)}
+        </Popover>}
+      </span>
+      {/* pillar — selectable when no project, else shows the project's pillar */}
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>in</span>
+      <span style={{ position: 'relative' }}>
+        <span onClick={() => { if (!home) setPillarOpen((o) => !o) }} title={home ? 'From the project' : 'Choose pillar'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
+            color: destArea ? t.t1 : t.t3, background: home ? 'transparent' : t.sel, border: home ? '1px solid ' + t.line : 'none',
+            borderRadius: 8, padding: '5px 11px', cursor: home ? 'default' : 'pointer' }}>
+          {destArea ? destArea.name : 'Library (no pillar)'}{!home && <Icon n="chevron-down" s={12} c={t.t3} />}</span>
+        {pillarOpen && !home && <Popover onClose={() => setPillarOpen(false)} width={210} maxHeight={300}>
+          <PopRow icon="stack-2" label="Library only (no pillar)" on={!pillar} onClick={() => { rec.setMeta({ pillar: null }); setPillarOpen(false) }} />
+          {areas.map((a) => <PopRow key={a.id} icon="folder" label={a.name} hint={(a.projects.length || 0) + ''}
+            on={pillar === a.id} onClick={() => { rec.setMeta({ pillar: a.id }); setPillarOpen(false) }} />)}
         </Popover>}
       </span>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
@@ -385,7 +406,7 @@ export function RecordScreen() {
       {(synth.terms || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
         <Label style={{ marginRight: 4 }}>Terms</Label>{synth.terms.map((tm) => <Tag key={tm}>{tm}</Tag>)}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, flexWrap: 'wrap' }}>
-        <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save}>{saving ? 'Saving…' : `Save to ${homeProj ? homeProj.name : 'project'}`}</Btn>
+        <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save}>{saving ? 'Saving…' : `Save to ${destLabel}`}</Btn>
         <Btn kind="ghost" onClick={() => rec.reset()}>Discard & re-record</Btn>
         {(notes || '').trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui,
           fontSize: 11.5, color: t.t3, marginLeft: 'auto' }}><Icon n="note" s={13} />Your notes are included</span>}

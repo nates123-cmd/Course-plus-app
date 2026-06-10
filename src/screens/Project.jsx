@@ -56,6 +56,14 @@ function ProjectHeader({ project, reload }) {
   const [open, setOpen] = useState(false)
   const [areaOpen, setAreaOpen] = useState(false)
   const [newPillar, setNewPillar] = useState(null) // null = closed, '' = typing
+  const [editTitle, setEditTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const beginTitle = () => { setDraftTitle(project.name); setEditTitle(true) }
+  const saveTitle = async () => {
+    const v = draftTitle.trim(); setEditTitle(false)
+    if (!v || v === project.name) return
+    await updateProject(project.id, { name: v }); await reload()
+  }
   const setStatus = async (k) => { setOpen(false); if (k !== project.status) { await updateProject(project.id, { status: k }); await reload() } }
   const setDue = async (d) => { await updateProject(project.id, { due: d || null }); await reload() }
   const reassignArea = async (areaId) => {
@@ -96,8 +104,14 @@ function ProjectHeader({ project, reload }) {
       </Popover>}
     </div>
 
-    <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
-      color: t.t1, lineHeight: 1.1, textWrap: 'pretty' }}>{project.name}</div>
+    {editTitle
+      ? <input autoFocus value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} onBlur={saveTitle}
+          onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditTitle(false) }}
+          className="selectable" style={{ width: '100%', border: 0, borderBottom: '2px solid ' + t.accentLine, outline: 0,
+            background: 'transparent', fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
+            color: t.t1, lineHeight: 1.1, padding: '0 0 2px' }} />
+      : <div onClick={beginTitle} title="Click to rename" style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW,
+          letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.1, textWrap: 'pretty', cursor: 'text', borderRadius: 6 }}>{project.name}</div>}
 
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
       <span style={{ position: 'relative' }}>

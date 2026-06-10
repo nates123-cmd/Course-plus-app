@@ -37,7 +37,8 @@ export function RecorderProvider({ go, children }) {
 
   // session meta
   const [title, setTitle] = useState('')
-  const [home, setHome] = useState('csp')
+  const [home, setHome] = useState(null)      // home project id, or null (pillar-only)
+  const [pillar, setPillar] = useState(null)  // area id when no home project
   const [projects, setProjects] = useState([]) // discussed/linked project ids
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
@@ -55,6 +56,7 @@ export function RecorderProvider({ go, children }) {
     if (!patch) return
     if ('title' in patch) setTitle(patch.title)
     if ('home' in patch) setHome(patch.home)
+    if ('pillar' in patch) setPillar(patch.pillar)
     if ('projects' in patch) setProjects(patch.projects)
     if ('notes' in patch) setNotes(patch.notes)
   }
@@ -128,7 +130,7 @@ export function RecorderProvider({ go, children }) {
     setProc(PROC_IDLE)
     setError(null)
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
-    setProjects([]); setNotes('')
+    setProjects([]); setNotes(''); setPillar(null)
   }
 
   // clear() — full teardown after a save (also drops title).
@@ -139,10 +141,10 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error,
-    title, home, projects, notes, lines, transcriptText, synth, cost,
+    title, home, pillar, projects, notes, lines, transcriptText, synth, cost,
     setMeta, setProjects, setError,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, title, home, projects, notes, lines, transcriptText, synth, cost])
+  }), [phase, seconds, error, title, home, pillar, projects, notes, lines, transcriptText, synth, cost])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
