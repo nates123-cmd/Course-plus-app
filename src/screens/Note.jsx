@@ -195,6 +195,11 @@ export function NoteScreen() {
     catch (e) { window.alert('Could not create task: ' + (e?.message || e)) }
     finally { setTaskBusy(null) }
   }
+  const dismissAction = async (i) => {
+    if (taskBusy != null) return
+    try { await updateNote(n.id, { actions: (n.actions || []).filter((_, idx) => idx !== i) }); await reload() }
+    catch (e) { window.alert('Could not remove: ' + (e?.message || e)) }
+  }
 
   const startEdit = () => { setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null); setEditing(true) }
   const saveEdit = async () => {
@@ -268,13 +273,19 @@ export function NoteScreen() {
               <div style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 3 }}>
                 {a.owner}{a.src ? ' · from ' + a.src : ''}</div>
             </div>
-            {n.project && (taskDone[i]
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600,
-                  color: t.good, whiteSpace: 'nowrap', marginTop: 1 }}><Icon n="check" s={13} />Filed</span>
-              : <span onClick={() => fileTask(a, i)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600,
-                    color: t.t2, whiteSpace: 'nowrap', marginTop: 1, cursor: taskBusy != null ? 'default' : 'pointer', opacity: taskBusy != null && taskBusy !== i ? 0.5 : 1 }}>
-                  <Icon n={taskBusy === i ? 'loader-2' : 'plus'} s={12} />To task</span>)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none', marginTop: 1 }}>
+              {n.project && (taskDone[i]
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.good, whiteSpace: 'nowrap' }}><Icon n="check" s={13} />Filed</span>
+                : <span onClick={() => fileTask(a, i)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600,
+                      color: t.t2, whiteSpace: 'nowrap', cursor: taskBusy != null ? 'default' : 'pointer', opacity: taskBusy != null && taskBusy !== i ? 0.5 : 1 }}>
+                    <Icon n={taskBusy === i ? 'loader-2' : 'plus'} s={12} />To task</span>)}
+              <span onClick={() => dismissAction(i)} title="Remove this action item"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, cursor: 'pointer', color: t.t3 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.firstChild.style.color = t.risk }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.firstChild.style.color = t.t3 }}>
+                <Icon n="x" s={14} c={t.t3} /></span>
+            </div>
           </div>)}
         </Card>
       </div>}

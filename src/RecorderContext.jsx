@@ -83,21 +83,28 @@ export function RecorderProvider({ go, children }) {
   const resume = () => recorder.resume()
 
   // Parse a speaker-labeled transcript into lines. Handles AssemblyAI's
-  // "Speaker A: …" and Copilot/Teams' "Name: …" (real names), line-by-line, so a
-  // pasted transcript labels correctly. A leading "Name:" (≤40 chars, no end
-  // punctuation) starts a new turn; everything else continues the current turn.
-  const parseLines = (text) => {
+  // "Speaker A: …" and Copilot/Teams' "Name: …". When the meeting's participant
+  // names are known, ONLY those (or "Speaker X") start a new turn — this is the
+  // reliable path and stops timestamps ("10:23:") from being read as speakers.
+  // Without known names, a heuristic requires a letter and rejects time patterns.
+  const isTimestamp = (s) => /^\[?\(?\d{1,2}:\d{2}(:\d{2})?\.?\d*\s*(?:[ap]\.?m\.?)?\)?\]?$/i.test(s.trim())
+  const parseLines = (text, names = []) => {
+    const known = new Set((names || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean))
     const raw = (text || '').replace(/\r/g, '')
     const chunks = raw.split('\n').map((l) => l.trim()).filter(Boolean)
-    const speaker = /^([A-Za-z0-9][\w .'’-]{0,38}?)\s*:\s*(.*)$/
+    const speaker = /^([^:]{1,40}?)\s*:\s*(.*)$/
     const out = []
     chunks.forEach((line) => {
       const m = line.match(speaker)
-      // Guard: the bit before ":" should look like a name (1–4 words), not a sentence.
-      const looksName = m && m[1].split(/\s+/).length <= 4 && !/[.!?]$/.test(m[1])
-      if (looksName) out.push({ sp: m[1], text: m[2].trim() })
+      let starts = false
+      if (m) {
+        const name = m[1].trim(); const low = name.toLowerCase()
+        if (known.size) starts = known.has(low) || /^speaker\s+\S+$/i.test(name)
+        else starts = /[A-Za-z]/.test(name) && name.split(/\s+/).length <= 4 && !/[.!?]$/.test(name) && !isTimestamp(name)
+      }
+      if (starts) out.push({ sp: m[1].trim(), text: m[2].trim() })
       else if (out.length) out[out.length - 1].text += ' ' + line
-      else out.push({ sp: 'Speaker A', text: line })
+      else out.push({ sp: known.size ? 'Speaker' : 'Speaker A', text: line })
     })
     return out
   }
@@ -112,7 +119,7 @@ export function RecorderProvider({ go, children }) {
     try {
       const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'),
         speakersExpected: speakers, diarize })
-      const parsed = parseLines(text)
+      const parsed = parseLines(text, people)
       // attach rough timestamps (we don't get word-level offsets back here)
       const withAt = parsed.map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
       setLines(withAt)
@@ -142,7 +149,7 @@ export function RecorderProvider({ go, children }) {
     setSource('paste'); setWarn(null)
     if (!t) { setTranscriptText(''); setLines([]); setProc(PROC_IDLE); return }
     setTranscriptText(t)
-    setLines(parseLines(t).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })))
+    setLines(parseLines(t, people).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })))
     setProc('ready')
   }
 

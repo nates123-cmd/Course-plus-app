@@ -101,6 +101,9 @@ export function RecordScreen() {
   const { allProjects, projectById, areaOfProject, areas, areaById, reload } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
+  // Pickers prioritize active → on-hold → ideas (archived last).
+  const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
+  const pickerProjects = [...projects].sort((a, b) => (STATUS_RANK[a.status] ?? 5) - (STATUS_RANK[b.status] ?? 5))
 
   const [homeOpen, setHomeOpen] = useState(false)
   const [pillarOpen, setPillarOpen] = useState(false)
@@ -158,6 +161,13 @@ export function RecordScreen() {
     else if (phase === 'idle') setActions([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
+
+  // Re-label a pasted transcript when participant names change (names make
+  // "Name:" detection reliable and keep timestamps from looking like speakers).
+  useEffect(() => {
+    if (source === 'paste' && transcriptText && (phase === 'ready' || phase === 'idle')) rec.setTranscriptFromPaste(transcriptText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people])
 
   const synthBusy = phase === 'synth'
   const transcribed = phase === 'ready' || phase === 'synth' || phase === 'done'
@@ -244,7 +254,8 @@ export function RecordScreen() {
           <Icon n="folder" s={13} c={t.t3} />{homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
         {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
           <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
-          {projects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={home === p.id} onClick={() => { rec.setMeta({ home: p.id, pillar: null }); setHomeOpen(false) }} />)}
+          {pickerProjects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={home === p.id}
+            onClick={() => { rec.setMeta({ home: p.id, pillar: null }); rec.setProjects([...new Set([p.id, ...linked])]); setHomeOpen(false) }} />)}
         </Popover>}
       </span>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>in</span>
@@ -291,8 +302,8 @@ export function RecordScreen() {
           <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
             <Icon n="plus" s={13} />Add project</span>
           {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
-            {projects.filter((p) => !linked.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
-            {projects.filter((p) => !linked.includes(p.id)).length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>All projects added.</div>}
+            {pickerProjects.filter((p) => !linked.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
+            {pickerProjects.filter((p) => !linked.includes(p.id)).length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>All projects added.</div>}
           </Popover>}
         </span>
       </div>
