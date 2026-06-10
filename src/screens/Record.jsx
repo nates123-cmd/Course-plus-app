@@ -155,18 +155,41 @@ export function RecordScreen() {
     let lineEnd = val.indexOf('\n', b); if (lineEnd < 0) lineEnd = val.length
     const ls = val.slice(lineStart, lineEnd).split('\n')
     let n = 1
+    const mark = (indent, bod) => kind === 'ul' ? indent + '- ' + bod : kind === 'ol' ? indent + (n++) + '. ' + bod : kind === 'todo' ? indent + '- [ ] ' + bod : indent + bod
     const out = ls.map((L) => {
       const m = L.match(/^(\s*)(.*)$/); const indent = m[1]
-      const bod = m[2].replace(/^([-*]\s+|\d+[.)]\s+|-\s\[\s?\]\s+)/, '')
-      if (!bod.trim()) return L
-      if (kind === 'ul') return indent + '- ' + bod
-      if (kind === 'ol') return indent + (n++) + '. ' + bod
-      if (kind === 'todo') return indent + '- [ ] ' + bod
-      return indent + bod
+      const bod = m[2].replace(/^([-*•]\s+(\[\s?\]\s+)?|\d+[.)]\s+)/, '')
+      return mark(indent, bod) // also prefixes empty lines so clicking on a blank line starts a list
     }).join('\n')
     const next = val.slice(0, lineStart) + out + val.slice(lineEnd)
     rec.setMeta({ notes: next })
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
+  }
+
+  // Enter continues a list (- / 1. / - [ ]); Enter on an empty item exits it.
+  const onNotesKey = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    const el = e.target; const val = el.value; const pos = el.selectionStart
+    if (pos !== el.selectionEnd) return
+    const lineStart = val.lastIndexOf('\n', pos - 1) + 1
+    const line = val.slice(lineStart, pos)
+    const ul = line.match(/^(\s*)([-*•])\s+(\[\s?\]\s+)?(.*)$/)
+    const ol = line.match(/^(\s*)(\d+)[.)]\s+(.*)$/)
+    const setAt = (nextVal, caret) => { rec.setMeta({ notes: nextVal }); requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = caret }) }
+    if (ul) {
+      const [, indent, m2, chk, content] = ul
+      e.preventDefault()
+      if (!content.trim()) return setAt(val.slice(0, lineStart) + val.slice(pos), lineStart) // empty item → exit
+      const ins = '\n' + indent + m2 + ' ' + (chk ? '[ ] ' : '')
+      return setAt(val.slice(0, pos) + ins + val.slice(pos), pos + ins.length)
+    }
+    if (ol) {
+      const [, indent, num, content] = ol
+      e.preventDefault()
+      if (!content.trim()) return setAt(val.slice(0, lineStart) + val.slice(pos), lineStart)
+      const ins = '\n' + indent + (parseInt(num, 10) + 1) + '. '
+      return setAt(val.slice(0, pos) + ins + val.slice(pos), pos + ins.length)
+    }
   }
 
   // seed title/home from the route when starting fresh
@@ -383,7 +406,7 @@ export function RecordScreen() {
           <div style={{ flex: 1 }} />
           <span style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, paddingRight: 6 }}>“- ” bullet · “1. ” numbered</span>
         </div>
-        <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} className="selectable"
+        <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} onKeyDown={onNotesKey} className="selectable"
           placeholder="Jot what matters as you go — these are treated as the most important signal…"
           style={{ width: '100%', minHeight: 120, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
       </div>
