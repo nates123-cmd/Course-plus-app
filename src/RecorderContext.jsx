@@ -189,6 +189,18 @@ export function RecorderProvider({ go, children }) {
   }
   const dismissRecovered = () => { setRecoveredBlob(null); clearRecovered().catch(() => {}) }
 
+  // Rename a diarized speaker (e.g. "Speaker A" → "Nate") everywhere: the line
+  // labels AND the raw transcript, so synthesis + the saved note use real names.
+  const renameSpeaker = (from, to) => {
+    const nm = String(to || '').trim()
+    if (!nm || nm === from) return
+    setLines((ls) => {
+      const next = ls.map((l) => (l.sp === from ? { ...l, sp: nm } : l))
+      setTranscriptText(next.map((l) => `${l.sp}: ${l.text}`).join('\n\n'))
+      return next
+    })
+  }
+
   // Resume a saved (incomplete) meeting note back into the composer.
   const loadDraftFromNote = (n) => {
     if (!n) return
@@ -326,7 +338,7 @@ export function RecorderProvider({ go, children }) {
     speakers, diarize, recoveredBlob,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-    finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote,
+    finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
   }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>

@@ -55,6 +55,35 @@ function BulletSummary({ text }) {
   </ul>
 }
 
+// One relabelable speaker row. key=sp so it remounts (resets) after a rename.
+function SpeakerRow({ sp, people, onRename }) {
+  const { t, f } = useApp()
+  const [val, setVal] = useState(sp)
+  const commit = () => { const v = val.trim(); if (v && v !== sp) onRename(sp, v) }
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+    <Avatar name={val || sp} s={26} />
+    <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }} className="selectable"
+      style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1, padding: '5px 10px' }} />
+    {people.filter((p) => p && p !== val).slice(0, 5).map((p) => <span key={p} onClick={() => { setVal(p); onRename(sp, p) }} title={'Label as ' + p}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 7, padding: '4px 9px', cursor: 'pointer' }}>
+      <Icon n="user" s={11} c={t.t3} />{p}</span>)}
+  </div>
+}
+
+function SpeakerLabeler({ speakers, people, onRename }) {
+  const { t, f } = useApp()
+  return <div style={{ marginTop: 16 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+      <Label style={{ margin: 0 }}>Speakers · {speakers.length}</Label>
+      <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>name each — applies to the transcript &amp; action-item owners{people.length ? ' · tap a person to assign' : ''}</span>
+    </div>
+    <Card style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {speakers.map((sp) => <SpeakerRow key={sp} sp={sp} people={people} onRename={onRename} />)}
+    </Card>
+  </div>
+}
+
 // Animated input-level meter — bars only animate while live
 function Levels({ live, color, faint, bars = 36, h = 44 }) {
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: h }}>
@@ -417,12 +446,8 @@ export function RecordScreen() {
           </>}
     </div>
 
-    {/* speakers detected (record or pasted transcript) */}
-    {speakers.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-      <Label>{speakers.length} speaker{speakers.length === 1 ? '' : 's'}</Label>
-      {speakers.map((sp) => <span key={sp} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t1, background: t.card, border: '1px solid ' + t.line, borderRadius: 20, padding: '3px 11px 3px 4px' }}>
-        <Avatar name={sp} s={18} />{sp}</span>)}
-    </div>}
+    {/* speakers — relabel "Speaker A/B" to real names (applies to transcript + owners) */}
+    {speakers.length > 0 && <SpeakerLabeler speakers={speakers} people={people} onRename={(from, to) => rec.renameSpeaker(from, to)} />}
 
     {/* recorded transcript preview (record mode) */}
     {isRecordMode && (phase === 'transcribing' || (transcribed && lines.length > 0)) && <div style={{ marginTop: 18 }}>
