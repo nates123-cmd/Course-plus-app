@@ -67,10 +67,11 @@ function Levels({ live, color, faint, bars = 36, h = 44 }) {
 }
 
 // A synthesized action-item row — tap toggles checked, hold opens the Task Sheet.
-function RecActionRow({ a, first, onToggle, onOpen }) {
+function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
   const { t, f } = useApp()
   const { projectById } = useData()
   const { pressing, handlers } = useLongPress(() => onOpen(a.id), () => onToggle(a.id), 450)
+  const [hov, setHov] = useState(false)
   const proj = a.project ? projectById(a.project) : null
   const due = a.dueDate || a.due
   return <div {...handlers} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 16px',
@@ -87,7 +88,11 @@ function RecActionRow({ a, first, onToggle, onOpen }) {
         {due && <span style={{ color: t.risk, fontWeight: 600 }}>· {typeof due === 'string' ? due : (due.m != null ? `${MONTHS[due.m]} ${due.d}` : '')}</span>}
       </div>
     </div>
-    <Icon n="dots" s={15} c={t.t3} />
+    <span onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onDismiss(a.id) }}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title="Dismiss — remove this action"
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, flex: 'none',
+        cursor: 'pointer', background: hov ? t.riskBg : 'transparent', transition: 'background .14s' }}>
+      <Icon n="x" s={15} c={hov ? t.risk : t.t3} /></span>
   </div>
 }
 
@@ -439,14 +444,15 @@ export function RecordScreen() {
         <BulletSummary text={synth.summary} /></Card>}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
-          <Label style={{ margin: 0 }}>Action items · {actions.length}</Label>
-          <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>tap to check · hold to edit, schedule or assign</span>
+          <Label style={{ margin: 0 }}>My action items · {actions.length}</Label>
+          <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>check to push to tasks · hold to edit · × to dismiss</span>
         </div>
         {actions.length > 0 ? <Card style={{ padding: '4px 0' }}>
           {actions.map((a, i) => <RecActionRow key={a.id} a={a} first={i === 0}
             onToggle={(id) => setActions((xs) => xs.map((x) => x.id === id ? { ...x, done: !x.done } : x))}
-            onOpen={(id) => setSheetId(id)} />)}
-        </Card> : <Card style={{ padding: '14px 16px', fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>No action items detected.</Card>}
+            onOpen={(id) => setSheetId(id)}
+            onDismiss={(id) => setActions((xs) => xs.filter((x) => x.id !== id))} />)}
+        </Card> : <Card style={{ padding: '14px 16px', fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>No action items for you.</Card>}
       </div>
       {guesses.length > 0 && <div>
         <Label style={{ marginBottom: 9 }}>Suggested projects to link · {guesses.length}</Label>

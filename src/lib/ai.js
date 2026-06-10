@@ -89,8 +89,11 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     'Return ONLY JSON: {' +
     '"summary": string (concise markdown BULLET points — one "- " line per topic discussed, ' +
     'so I can re-orient at a glance; lead with what my notes emphasize), ' +
-    '"actions": [{"text": string, "owner": string}] (every concrete action item with its owner), ' +
-    '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10)}'
+    '"actions": [{"text": string, "owner": string}], ' +
+    '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10)}\n\n' +
+    'IMPORTANT: "actions" must contain ONLY action items that are MINE to do — the note-taker / ' +
+    'first person ("I will…", "my job is…", things assigned to me). OMIT other people\'s to-dos. ' +
+    'Set each owner to "me". If none are mine, return [].'
   let usage = null
   const raw = await claudeComplete(user, { system, model, max_tokens: 2000, onUsage: (u) => { usage = u } })
   const j = extractJSON(raw) || { summary: raw, actions: [], tags: [] }
