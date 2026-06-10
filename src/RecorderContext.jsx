@@ -223,31 +223,62 @@ export function RecorderProvider({ go, children }) {
   const pause = () => recorder.pause()
   const resume = () => recorder.resume()
 
-  // Parse a speaker-labeled transcript into lines. Handles AssemblyAI's
-  // "Speaker A: …" and Copilot/Teams' "Name: …". When the meeting's participant
-  // names are known, ONLY those (or "Speaker X") start a new turn — this is the
-  // reliable path and stops timestamps ("10:23:") from being read as speakers.
-  // Without known names, a heuristic requires a letter and rejects time patterns.
-  const isTimestamp = (s) => /^\[?\(?\d{1,2}:\d{2}(:\d{2})?\.?\d*\s*(?:[ap]\.?m\.?)?\)?\]?$/i.test(s.trim())
+  // Parse a speaker-labeled transcript into turns. Strongly NAME-DRIVEN: when
+  // participant names are known, only a line whose leading label matches a known
+  // person (exact, first-name, or "First Last") starts a turn — so timestamps
+  // ("0:23", "00:14:05", "12:05 PM") are never read as speakers. Handles both
+  // "Name: text", "Name 0:23 / text on next line", and a bare "Name" line. Pure
+  // timestamp lines are dropped. Falls back to a strict heuristic with no names.
+  const stripTime = (s) => String(s).replace(/\b\d{1,2}:\d{2}(:\d{2})?(\s*[ap]\.?m\.?)?\b/gi, '').replace(/[[\]()]/g, '').replace(/\s{2,}/g, ' ').trim()
+  const isTimeOnly = (s) => /^[[(]?\s*\d{1,2}:\d{2}(:\d{2})?(\.\d+)?\s*(?:[ap]\.?m\.?)?\s*[)\]]?$/i.test(String(s).trim())
   const parseLines = (text, names = []) => {
-    const known = new Set((names || []).map((n) => String(n).trim().toLowerCase()).filter(Boolean))
-    const raw = (text || '').replace(/\r/g, '')
-    const chunks = raw.split('\n').map((l) => l.trim()).filter(Boolean)
-    const speaker = /^([^:]{1,40}?)\s*:\s*(.*)$/
-    const out = []
-    chunks.forEach((line) => {
-      const m = line.match(speaker)
-      let starts = false
-      if (m) {
-        const name = m[1].trim(); const low = name.toLowerCase()
-        if (known.size) starts = known.has(low) || /^speaker\s+\S+$/i.test(name)
-        else starts = /[A-Za-z]/.test(name) && name.split(/\s+/).length <= 4 && !/[.!?]$/.test(name) && !isTimestamp(name)
+    const people = (names || []).map((n) => String(n).trim()).filter(Boolean)
+    const lows = people.map((n) => n.toLowerCase())
+    const matchName = (label) => {
+      const l = stripTime(label).toLowerCase().replace(/[:,]+$/, '').trim()
+      if (!l) return null
+      for (let i = 0; i < lows.length; i++) {
+        const nl = lows[i]
+        if (l === nl || l.startsWith(nl + ' ') || l.startsWith(nl + ',')) return people[i]
+        // first-name match either direction (People "Mattia" vs label "Mattia Rossi")
+        const lf = l.split(/\s+/)[0], nf = nl.split(/\s+/)[0]
+        if (lf && lf === nf) return people[i]
       }
-      if (starts) out.push({ sp: m[1].trim(), text: m[2].trim() })
-      else if (out.length) out[out.length - 1].text += ' ' + line
-      else out.push({ sp: known.size ? 'Speaker' : 'Speaker A', text: line })
-    })
-    return out
+      // generic "Speaker A/1" labels still count as turns
+      if (/^speaker\s+\S+$/i.test(l)) return label.replace(/[:,]+$/, '').trim()
+      return null
+    }
+    const raw = (text || '').replace(/\r/g, '')
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+    const out = []
+    for (const line of lines) {
+      if (isTimeOnly(line)) continue // drop pure timestamp lines
+      let who = null, rest = ''
+      const ci = line.indexOf(':')
+      if (ci > 0 && ci <= 48) {
+        const w = people.length ? matchName(line.slice(0, ci)) : null
+        if (w) { who = w; rest = line.slice(ci + 1).trim() }
+        else if (!people.length) {
+          const nm = stripTime(line.slice(0, ci))
+          if (/[A-Za-z]/.test(nm) && nm.split(/\s+/).length <= 4 && !/[.!?]$/.test(nm)) { who = nm; rest = line.slice(ci + 1).trim() }
+        }
+      }
+      if (!who && people.length) {
+        // no colon — a bare "Name" or "Name 0:23" line (text follows on next lines)
+        const w = matchName(line)
+        if (w && stripTime(line).split(/\s+/).length <= 4) { who = w; rest = stripTime(line.replace(new RegExp('^' + w, 'i'), '')).trim() }
+      }
+      if (who) out.push({ sp: who, text: rest })
+      else if (out.length) out[out.length - 1].text += (out[out.length - 1].text ? ' ' : '') + line
+      else out.push({ sp: people.length ? 'Speaker' : 'Speaker A', text: line })
+    }
+    // merge consecutive turns by the same speaker, drop empty turns
+    const merged = []
+    for (const t of out) {
+      if (merged.length && merged[merged.length - 1].sp === t.sp) merged[merged.length - 1].text += (t.text ? ' ' + t.text : '')
+      else merged.push({ ...t })
+    }
+    return merged.filter((x) => (x.text || '').trim())
   }
 
   // Stop the recorder → blob, then transcribe (speaker-labeled) and parse.
