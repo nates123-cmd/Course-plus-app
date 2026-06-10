@@ -15,7 +15,7 @@ import { briefingFor, composeDeliverable } from '../lib/ai'
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
-  createMilestone, updateMilestone, createUpdate, createArtifact, updateProject,
+  createMilestone, updateMilestone, createUpdate, createArtifact, updateProject, createArea,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 
@@ -52,15 +52,49 @@ function SectionHead({ label, action, onAction, onAdd }) {
 // ── Header ───────────────────────────────────────────────────────
 function ProjectHeader({ project, reload }) {
   const { t, f, go } = useApp()
+  const { areas } = useData()
   const [open, setOpen] = useState(false)
+  const [areaOpen, setAreaOpen] = useState(false)
+  const [newPillar, setNewPillar] = useState(null) // null = closed, '' = typing
   const setStatus = async (k) => { setOpen(false); if (k !== project.status) { await updateProject(project.id, { status: k }); await reload() } }
   const setDue = async (d) => { await updateProject(project.id, { due: d || null }); await reload() }
+  const reassignArea = async (areaId) => {
+    setAreaOpen(false); setNewPillar(null)
+    if (areaId === project.area) return
+    await updateProject(project.id, { areaId }); await reload()
+  }
+  const createPillar = async () => {
+    const nm = (newPillar || '').trim(); setNewPillar(null)
+    if (!nm) return
+    const id = await createArea(nm, areas.length)
+    await updateProject(project.id, { areaId: id }); await reload()
+  }
   return <div>
-    <div onClick={() => go({ screen: 'area', id: project.area })} style={{ display: 'inline-flex', alignItems: 'center',
-      gap: 6, fontFamily: f.ui, fontSize: 12, color: t.t3, cursor: 'pointer', marginBottom: 10 }}
-      onMouseEnter={(e) => e.currentTarget.style.color = areaColor(t, project.area)}
-      onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
-      <AreaDot areaId={project.area} s={7} /><span>{project.areaName}</span></div>
+    <div style={{ position: 'relative', display: 'inline-flex', marginBottom: 10 }}>
+      <div onClick={() => setAreaOpen((o) => !o)} title="Change pillar" style={{ display: 'inline-flex', alignItems: 'center',
+        gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: areaOpen ? t.t1 : t.t3, cursor: 'pointer',
+        background: areaOpen ? t.sel : 'transparent', borderRadius: 7, padding: '4px 8px' }}
+        onMouseEnter={(e) => { if (!areaOpen) e.currentTarget.style.color = t.t2 }}
+        onMouseLeave={(e) => { if (!areaOpen) e.currentTarget.style.color = t.t3 }}>
+        <Icon n="folder" s={13} /><span>{project.areaName || 'Unfiled'}</span><Icon n="chevron-down" s={12} /></div>
+      {areaOpen && <Popover onClose={() => { setAreaOpen(false); setNewPillar(null) }} width={232} maxHeight={320}>
+        <div style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing,
+          textTransform: 'uppercase', color: t.t3, padding: '4px 10px 6px' }}>Move to pillar</div>
+        {areas.map((a) => <PopRow key={a.id} icon={a.id === project.area ? 'check' : 'folder'} label={a.name}
+          hint={(a.projects.length || 0) + ''} on={a.id === project.area} onClick={() => reassignArea(a.id)} />)}
+        <div style={{ height: 1, background: t.line, margin: '6px 4px' }} />
+        {newPillar == null
+          ? <PopRow icon="plus" label="New pillar…" onClick={() => setNewPillar('')} />
+          : <div style={{ padding: '4px 8px 6px' }}>
+              <input autoFocus value={newPillar} onChange={(e) => setNewPillar(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') createPillar(); if (e.key === 'Escape') setNewPillar(null) }}
+                onBlur={createPillar} placeholder="New pillar name…"
+                style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card,
+                  fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }} /></div>}
+        <div style={{ height: 1, background: t.line, margin: '6px 4px' }} />
+        <PopRow icon="arrow-up-right" label={'Open ' + (project.areaName || 'pillar')} onClick={() => { setAreaOpen(false); go({ screen: 'area', id: project.area }) }} />
+      </Popover>}
+    </div>
 
     <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
       color: t.t1, lineHeight: 1.1, textWrap: 'pretty' }}>{project.name}</div>
@@ -176,28 +210,32 @@ function Updates({ project, reload }) {
 
 // ── A single task row — tap toggles done, hold opens TaskSheet, ──
 //    grip handle is the only draggable affordance.
-function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, dragging }) {
+function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, dragging, noDrag }) {
   const { t, f } = useApp()
   const { pressing, handlers } = useLongPress(() => onOpen(x.id), () => onToggle(x.id), 450)
   const [grip, setGrip] = useState(false)
   const due = x.dueDate ? fmtDate(x.dueDate) : x.due
-  return <div {...handlers}
-    draggable={grip}
-    onDragStart={(e) => onDragStart(e, x.id)}
-    onDragOver={(e) => onDragOver(e, x.id)}
-    onDrop={(e) => onDrop(e, x.id)}
-    onDragEnd={onDragEnd}
+  const dragProps = noDrag ? {} : {
+    draggable: grip,
+    onDragStart: (e) => onDragStart(e, x.id),
+    onDragOver: (e) => onDragOver(e, x.id),
+    onDrop: (e) => onDrop(e, x.id),
+    onDragEnd,
+  }
+  return <div {...handlers} {...dragProps}
     className="task-row" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px 11px 8px',
       borderRadius: 10, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'manipulation',
-      position: 'relative', overflow: 'hidden', background: t.card, opacity: dragging ? 0.4 : 1,
+      position: 'relative', overflow: 'hidden', background: t.card, opacity: dragging ? 0.4 : noDrag ? 0.72 : 1,
       border: '1px solid ' + (pressing ? t.line2 : t.line),
       transform: pressing ? 'scale(0.99)' : 'scale(1)', transition: 'border-color .2s, transform .2s, opacity .15s' }}>
     {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
       background: t.accentBg, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
-    <span className="task-grip" onClick={(e) => e.stopPropagation()} title="Drag to reorder"
-      onMouseEnter={() => setGrip(true)} onMouseLeave={() => setGrip(false)}
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, flex: 'none', zIndex: 1, cursor: 'grab' }}>
-      <Icon n="grip-vertical" s={15} c={t.t3} /></span>
+    {noDrag
+      ? <span style={{ width: 16, flex: 'none' }} />
+      : <span className="task-grip" onClick={(e) => e.stopPropagation()} title="Drag to reorder"
+          onMouseEnter={() => setGrip(true)} onMouseLeave={() => setGrip(false)}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, flex: 'none', zIndex: 1, cursor: 'grab' }}>
+          <Icon n="grip-vertical" s={15} c={t.t3} /></span>}
     <span style={{ width: 17, height: 17, borderRadius: 5, flex: 'none', position: 'relative', zIndex: 1,
       border: '1.5px solid ' + (x.done ? t.accent : t.t3), background: x.done ? t.accent : 'transparent' }}>
       {x.done && <Icon n="check" s={12} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
@@ -224,6 +262,7 @@ function Tasks({ project, reload }) {
   const [text, setText] = useState('')
   const [sheetTask, setSheetTask] = useState(null)
   const [dragId, setDragId] = useState(null)
+  const [showDone, setShowDone] = useState(false)
 
   const toggle = async (id) => {
     const x = order.find((o) => o.id === id); if (!x) return
@@ -263,11 +302,13 @@ function Tasks({ project, reload }) {
     if (ids.join(',') !== orig.join(',')) { await reorderTasks(ids); await reload() }
   }
 
-  const openCount = order.filter((x) => !x.done).length
+  const openTasks = order.filter((x) => !x.done)
+  const doneTasks = order.filter((x) => x.done)
+  const findTask = (id) => order.find((o) => o.id === id) || null
   return <div>
-    <SectionHead label={`Tasks · ${openCount} open`} action="Drag to reorder · hold for details" />
+    <SectionHead label={`Tasks · ${openTasks.length} open`} action="Drag to reorder · hold for details" />
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {order.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(order.find((o) => o.id === id) || null)}
+      {openTasks.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
         onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dragging={dragId === x.id} />)}
     </div>
     <div style={{ marginTop: 6 }}>
@@ -285,6 +326,20 @@ function Tasks({ project, reload }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={11} /></span>
         <span style={{ whiteSpace: 'nowrap' }}>New task</span></div>}
     </div>
+    {doneTasks.length > 0 && <div style={{ marginTop: 10 }}>
+      <div onClick={() => setShowDone((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
+        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+        onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+        <Icon n={showDone ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+        <Icon n="circle-check" s={14} c={t.t3} />
+        <span style={{ flex: 1 }}>Complete</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{doneTasks.length}</span>
+      </div>
+      {showDone && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+        {doneTasks.map((x) => <TaskRow key={x.id} x={x} noDrag onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))} />)}
+      </div>}
+    </div>}
     {sheetTask && <TaskSheet task={sheetTask} projectId={project.id}
       onPatch={(p) => patch(sheetTask.id, p)} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} />}
   </div>

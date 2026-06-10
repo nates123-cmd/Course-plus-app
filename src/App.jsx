@@ -134,7 +134,6 @@ function SidebarContent({ onClose }) {
             onMouseLeave={(e) => { if (!areaActive) e.currentTarget.style.background = 'transparent' }}>
             <span onClick={(e) => { e.stopPropagation(); toggle(a.id) }} title="Expand projects" style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
               <Icon n={isOpen(a) ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} /></span>
-            <AreaDot areaId={a.id} s={7} />
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
             <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{live.length || ''}</span>
           </div>

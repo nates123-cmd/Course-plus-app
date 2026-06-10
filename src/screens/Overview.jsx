@@ -221,7 +221,6 @@ export function OverviewScreen() {
 
     {populatedAreas.map((a) => <div key={a.id} style={{ marginTop: 30 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-        <AreaDot areaId={a.id} s={9} />
         <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${a.projects.length} project${a.projects.length === 1 ? '' : 's'}`}</span>
         <div style={{ flex: 1, height: 1, background: t.line }} />
@@ -265,7 +264,6 @@ export function AreaScreen() {
       <Icon n="chevron-left" s={15} />Work</div>
 
     <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-      <AreaDot areaId={a.id} s={12} />
       <span style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>{a.name}</span>
     </div>
     <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 5 }}>
