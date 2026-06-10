@@ -216,6 +216,12 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
+  // Whenever a home project is set, make sure it's in "Projects discussed".
+  useEffect(() => {
+    if (home && !(rec.projects || []).includes(home)) rec.setProjects([...new Set([home, ...(rec.projects || [])])])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [home])
+
   // Re-label a pasted transcript when participant names change (names make
   // "Name:" detection reliable and keep timestamps from looking like speakers).
   useEffect(() => {
