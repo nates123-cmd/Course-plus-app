@@ -332,8 +332,13 @@ export function RecorderProvider({ go, children }) {
     setError(null)
     setProc('synth')
     try {
-      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people })
+      const speakerLabels = [...new Set(lines.map((l) => l.sp))]
+      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels })
       setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [], nextSteps: s.nextSteps || '' })
+      // Apply Claude's speaker-name guesses (leads with the People list; else inferred).
+      if (s.speakers && typeof s.speakers === 'object') {
+        for (const [label, name] of Object.entries(s.speakers)) { if (name && String(name).trim() && label !== name) renameSpeaker(label, name) }
+      }
       // Paste path is free; only in-app recording incurs AssemblyAI cost.
       const transcribe = source === 'record' ? (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR : 0
       const claude = claudeCost(s.usage)

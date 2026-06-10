@@ -495,8 +495,8 @@ export function RecordScreen() {
           </>}
     </div>
 
-    {/* speakers — relabel "Speaker A/B" to real names (applies to transcript + owners) */}
-    {speakers.length > 0 && <SpeakerLabeler speakers={speakers} people={people} onRename={(from, to) => rec.renameSpeaker(from, to)} />}
+    {/* speakers — only after synthesize; AI has guessed names (People-led, else inferred) */}
+    {phase === 'done' && speakers.length > 0 && <SpeakerLabeler speakers={speakers} people={people} onRename={(from, to) => rec.renameSpeaker(from, to)} />}
 
     {/* recorded transcript preview (record mode) */}
     {isRecordMode && (phase === 'transcribing' || (transcribed && lines.length > 0)) && <div style={{ marginTop: 18 }}>

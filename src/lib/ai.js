@@ -70,20 +70,25 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
 // The user's OWN live notes are the highest-signal input — they wrote those down
 // because they mattered — so they're weighted above the transcript. Long
 // transcripts escalate to Sonnet for whole-meeting recall.
-export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [] } = {}) {
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [] } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
   const model = long ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
   const system =
-    'You synthesize a meeting for a personal work app. The USER\'S OWN NOTES are the ' +
-    'highest-signal input — they wrote these down because they mattered. Lead with them and ' +
-    'treat the transcript as supporting detail (cover its whole length, not just the opening). ' +
-    'Return strict JSON only — no preamble.'
+    'You synthesize a meeting for a personal work app used by Nate (me / the note-taker — ' +
+    'always one of the participants). The USER\'S OWN NOTES are the highest-signal input — they ' +
+    'wrote these down because they mattered. Lead with them and treat the transcript as supporting ' +
+    'detail (cover its whole length, not just the opening). Return strict JSON only — no preamble.'
   const parts = []
-  if (people.length) parts.push(`People present: ${people.join(', ')}`)
+  if (people.length) parts.push(`People present (use these names): ${people.join(', ')}`)
+  else parts.push('No participant list was given — infer speaker names from the conversation (who they address, self-introductions, sign-offs). One speaker is always Nate.')
   if (agenda.trim()) parts.push(`Pre-meeting agenda / what I wanted to cover:\n${agenda.trim()}`)
   if (liveNotes.trim()) parts.push(`MY LIVE NOTES (highest priority — these are what I judged worth writing):\n${liveNotes.trim()}`)
   if (tx.trim()) parts.push(`Transcript (${tx.length} chars, supporting context):\n${tx.trim()}`)
+  const labelList = (speakerLabels || []).filter(Boolean)
+  const speakerAsk = labelList.length
+    ? `\n\nThe transcript labels speakers as: ${labelList.join(', ')}. In "speakers", map EACH of those labels to the most likely real first name (lead with the people list above; otherwise infer; the first-person speaker is Nate). Only include confident guesses.`
+    : ''
   const user =
     parts.join('\n\n---\n\n') + '\n\n' +
     'Return ONLY JSON: {' +
@@ -92,14 +97,15 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     '"actions": [{"text": string, "owner": string}], ' +
     '"next_steps": string (markdown BULLET points — your suggested next steps / follow-ups / ' +
     'recommendations for how I should move this forward; be specific and useful), ' +
-    '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10)}\n\n' +
+    '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10), ' +
+    '"speakers": object (map each transcript speaker label to a real first name)}\n\n' +
     'IMPORTANT: "actions" must contain ONLY action items that are MINE to do — the note-taker / ' +
-    'first person ("I will…", "my job is…", things assigned to me). OMIT other people\'s to-dos. ' +
-    'Set each owner to "me". If none are mine, return [].'
+    'first person ("I will…", "my job is…", things assigned to me — I am Nate). OMIT other people\'s ' +
+    'to-dos. Set each owner to "me". If none are mine, return [].' + speakerAsk
   let usage = null
   const raw = await claudeComplete(user, { system, model, max_tokens: 2200, onUsage: (u) => { usage = u } })
-  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [], next_steps: '' }
-  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], nextSteps: j.next_steps || '', people: [], terms: [], usage }
+  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [], next_steps: '', speakers: {} }
+  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], nextSteps: j.next_steps || '', speakers: j.speakers || {}, people: [], terms: [], usage }
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────
