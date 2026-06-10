@@ -15,7 +15,7 @@ import { briefingFor, composeDeliverable } from '../lib/ai'
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
-  createMilestone, updateMilestone, createUpdate, createArtifact, deleteArtifact, updateProject, createArea,
+  createMilestone, updateMilestone, createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 
@@ -391,22 +391,32 @@ function ActionRow({ a, first, onPromote, onDismiss }) {
 
 // ── Open action items rolled up from this project's meetings ────
 function ActionItems({ project, reload }) {
-  const { actionsForProject } = useData()
-  const items = actionsForProject(project.id)
-  const [dismissed, setDismissed] = useState([]) // local-only
-  const open = items.filter((a) => !dismissed.includes(a.text))
+  const { actionsForProject, noteById } = useData()
+  const [busy, setBusy] = useState(false)
+  const open = actionsForProject(project.id)
   if (!open.length) return null
 
-  const promote = async (a) => {
-    setDismissed((xs) => [...xs, a.text])
-    await createTask(project.id, { label: a.text, srcMeeting: a.mid, sort: (project.tasks || []).length }); await reload()
+  // Persist by removing the action from its SOURCE meeting note (else it
+  // reappears on reload, since it's rolled up from the meeting's actions[]).
+  const removeFromSource = async (a) => {
+    const note = noteById(a.mid); if (!note) return
+    const next = (note.actions || []).filter((x) => !(x.text === a.text && (x.owner || '') === (a.owner || '')))
+    await updateNote(a.mid, { actions: next })
   }
-  const dismiss = (a) => setDismissed((xs) => [...xs, a.text])
+  const promote = async (a) => {
+    if (busy) return; setBusy(true)
+    try { await createTask(project.id, { label: a.text, srcMeeting: a.mid, sort: (project.tasks || []).length }); await removeFromSource(a); await reload() }
+    catch (e) { window.alert('Could not promote: ' + (e?.message || e)) } finally { setBusy(false) }
+  }
+  const dismiss = async (a) => {
+    if (busy) return; setBusy(true)
+    try { await removeFromSource(a); await reload() } catch (e) { window.alert('Could not dismiss: ' + (e?.message || e)) } finally { setBusy(false) }
+  }
 
   return <div>
     <SectionHead label={`Open action items · ${open.length}`} />
     <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-      {open.map((a, i) => <ActionRow key={a.text} a={a} first={i === 0} onPromote={() => promote(a)} onDismiss={() => dismiss(a)} />)}
+      {open.map((a, i) => <ActionRow key={a.mid + '|' + a.text} a={a} first={i === 0} onPromote={() => promote(a)} onDismiss={() => dismiss(a)} />)}
     </Card>
   </div>
 }
