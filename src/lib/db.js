@@ -250,6 +250,10 @@ export async function createArtifact(projectId, art = {}) {
   if (error) throw error
   return id
 }
+export async function deleteArtifact(id) {
+  const { error } = await supabase.from('cp_artifacts').delete().eq('id', id)
+  if (error) throw error
+}
 
 // ── projects ───────────────────────────────────────────────────────
 export async function createProject(areaId, name, opts = {}) {

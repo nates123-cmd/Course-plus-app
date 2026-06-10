@@ -15,7 +15,7 @@ import { briefingFor, composeDeliverable } from '../lib/ai'
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
-  createMilestone, updateMilestone, createUpdate, createArtifact, updateProject, createArea,
+  createMilestone, updateMilestone, createUpdate, createArtifact, deleteArtifact, updateProject, createArea,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 
@@ -454,11 +454,27 @@ function Artifacts({ project, notes, reload }) {
   const { t, f, go } = useApp()
   const rows = project.artifacts || []
   const [composing, setComposing] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [mTitle, setMTitle] = useState('')
+  const [mBody, setMBody] = useState('')
+  const [expandedId, setExpandedId] = useState(null)
   const [typeId, setTypeId] = useState(COMPOSE_TYPES[0].id)
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
   const [newId, setNewId] = useState(null)
+
+  const addManual = async () => {
+    const ttl = mTitle.trim() || 'Untitled'; const bod = mBody
+    setAdding(false); setMTitle(''); setMBody('')
+    try { const id = await createArtifact(project.id, { title: ttl, artType: 'file', body: bod, provenance: 'Added' }); await reload(); setNewId(id); setExpandedId(id); setTimeout(() => setNewId(null), 5000) }
+    catch (e) { setToast('Couldn’t add — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4000) }
+  }
+  const removeArtifact = async (id, title) => {
+    if (!window.confirm(`Delete “${title || 'this artifact'}”?`)) return
+    try { await deleteArtifact(id); await reload() } catch (e) { window.alert('Could not delete: ' + (e?.message || e)) }
+  }
+  const copyArtifact = (body) => { try { navigator.clipboard.writeText(body || '') } catch {} }
 
   const run = async () => {
     setComposing(false); setBusy(true)
@@ -481,8 +497,25 @@ function Artifacts({ project, notes, reload }) {
   }
 
   return <div style={{ position: 'relative' }}>
-    <SectionHead label={rows.length ? 'Artifacts · ' + rows.length : 'Artifacts'}
-      action={composing || busy ? null : '✦ Generate with Claude'} onAction={() => setComposing(true)} />
+    <SectionHead label={rows.length ? 'Artifacts · ' + rows.length : 'Artifacts'} />
+    {!composing && !adding && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
+      <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false) }}>Add file</Btn>
+      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false) }}>Generate with Claude</Btn>
+    </div>}
+
+    {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+      <input autoFocus value={mTitle} onChange={(e) => setMTitle(e.target.value)} placeholder="Title (e.g. Pricing CSV, Cover email)…"
+        style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 17, fontWeight: f.titleW, color: t.t1, marginBottom: 8 }} />
+      <textarea value={mBody} onChange={(e) => setMBody(e.target.value)} className="selectable"
+        onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false) }}
+        placeholder="Paste raw content — CSV, copy-paste, anything. Stored verbatim."
+        style={{ width: '100%', minHeight: 120, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
+          background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, padding: '9px 11px', whiteSpace: 'pre' }} />
+      <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
+        <Btn kind="primary" size="sm" icon="check" onClick={addManual}>Add artifact</Btn>
+        <Btn kind="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Btn>
+      </div>
+    </div>}
 
     {composing && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
@@ -522,31 +555,40 @@ function Artifacts({ project, notes, reload }) {
     {rows.length ? <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
       {rows.map((a, i) => {
         const isNew = a.id === newId
+        const open = expandedId === a.id
         const type = COMPOSE_TYPES.find((c) => c.id === a.artType)
-        return <div key={a.id} onClick={() => go({ screen: 'note', id: a.id })}
-          className={isNew ? 'just-landed' : undefined}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer',
-            borderTop: i ? '1px solid ' + t.line : 'none' }}
-          onMouseEnter={(e) => { if (!isNew) e.currentTarget.style.background = t.sel }}
-          onMouseLeave={(e) => { if (!isNew) e.currentTarget.style.background = 'transparent' }}>
-          <Icon n={type?.icon || 'file-export'} s={16} c={t.accent} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
-              <span>{a.provenance || 'Composed'}</span>{a.at && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{timeAgo(a.at)}</span></Fragment>}
+        return <div key={a.id} className={isNew ? 'just-landed' : undefined} style={{ borderTop: i ? '1px solid ' + t.line : 'none' }}>
+          <div onClick={() => setExpandedId(open ? null : a.id)}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+            onMouseEnter={(e) => { if (!isNew) e.currentTarget.style.background = t.sel }}
+            onMouseLeave={(e) => { if (!isNew) e.currentTarget.style.background = 'transparent' }}>
+            <Icon n={type?.icon || 'file-export'} s={16} c={t.accent} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
+                <span>{a.provenance || 'Composed'}</span>{a.at && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{timeAgo(a.at)}</span></Fragment>}
+              </div>
             </div>
+            {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.onAccent, background: t.accent, borderRadius: 6, padding: '2px 7px' }}>New</span>}
+            <Icon n={open ? 'chevron-down' : 'chevron-right'} s={15} c={t.t3} />
           </div>
-          {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
-            color: t.onAccent, background: t.accent, borderRadius: 6, padding: '2px 7px' }}>New</span>}
-          <Icon n="chevron-right" s={15} c={t.t3} />
+          {open && <div style={{ padding: '0 16px 14px' }}>
+            <div style={{ display: 'flex', gap: 7, marginBottom: 8 }}>
+              <Btn kind="ghost" size="sm" icon="copy" onClick={() => copyArtifact(a.body)}>Copy</Btn>
+              <div style={{ flex: 1 }} />
+              <Btn kind="ghost" size="sm" icon="trash" onClick={() => removeArtifact(a.id, a.title)} style={{ color: t.risk }}>Delete</Btn>
+            </div>
+            <pre className="selectable" style={{ margin: 0, maxHeight: 360, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line,
+              borderRadius: 9, padding: '11px 13px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
+          </div>}
         </div>
       })}
-    </Card> : !busy && <div onClick={() => setComposing(true)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+    </Card> : !busy && <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
       borderRadius: 11, cursor: 'pointer', border: '1px dashed ' + t.line2, fontFamily: f.ui, fontSize: 13, color: t.t3 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
       <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none', display: 'flex',
-        alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>No artifacts yet — generate one with Claude</div>}
+        alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>No artifacts yet — add a file or generate one</div>}
 
     {toast && <div style={{ position: 'fixed', left: '50%', bottom: 26, transform: 'translateX(-50%)', zIndex: 470, animation: 'toast-in .2s ease-out',
       display: 'flex', alignItems: 'center', gap: 10, background: t.card, border: '1px solid ' + t.accentLine,
