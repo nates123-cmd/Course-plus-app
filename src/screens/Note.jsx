@@ -165,6 +165,7 @@ export function NoteScreen() {
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
   const [agendaOpen, setAgendaOpen] = useState(false)
+  const [nextOpen, setNextOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
   const [refBusy, setRefBusy] = useState(false)
   const [taskDone, setTaskDone] = useState({}) // action index -> true once filed
@@ -294,6 +295,16 @@ export function NoteScreen() {
           </div>)}
         </Card>
       </div>}
+    </div>}
+
+    {/* suggested next steps — collapsible */}
+    {!editing && n.nextSteps && n.nextSteps.trim() && <div style={{ marginTop: 18 }}>
+      <div onClick={() => setNextOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
+        borderRadius: nextOpen ? '10px 10px 0 0' : 10, cursor: 'pointer', background: t.card, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1 }}>
+        <Icon n={nextOpen ? 'chevron-down' : 'chevron-right'} s={14} c={t.t3} />
+        <Icon n="bulb" s={14} c={t.accent} />Suggested next steps</div>
+      {nextOpen && <div style={{ padding: '14px 16px', background: t.card, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px' }}>
+        <Markish text={n.nextSteps} /></div>}
     </div>}
 
     {/* agenda / prep — collapsible */}

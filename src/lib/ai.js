@@ -90,14 +90,16 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     '"summary": string (concise markdown BULLET points — one "- " line per topic discussed, ' +
     'so I can re-orient at a glance; lead with what my notes emphasize), ' +
     '"actions": [{"text": string, "owner": string}], ' +
+    '"next_steps": string (markdown BULLET points — your suggested next steps / follow-ups / ' +
+    'recommendations for how I should move this forward; be specific and useful), ' +
     '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10)}\n\n' +
     'IMPORTANT: "actions" must contain ONLY action items that are MINE to do — the note-taker / ' +
     'first person ("I will…", "my job is…", things assigned to me). OMIT other people\'s to-dos. ' +
     'Set each owner to "me". If none are mine, return [].'
   let usage = null
-  const raw = await claudeComplete(user, { system, model, max_tokens: 2000, onUsage: (u) => { usage = u } })
-  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [] }
-  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], people: [], terms: [], usage }
+  const raw = await claudeComplete(user, { system, model, max_tokens: 2200, onUsage: (u) => { usage = u } })
+  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [], next_steps: '' }
+  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], nextSteps: j.next_steps || '', people: [], terms: [], usage }
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────

@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish } from '../kit'
+import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
 import { fmtClock } from '../lib/recorder'
 import { textToBlocks } from '../lib/blocks'
 import { createTask } from '../lib/db'
@@ -130,15 +130,21 @@ export function RecordScreen() {
   const [sheetId, setSheetId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [personDraft, setPersonDraft] = useState('')
+  const [actionDraft, setActionDraft] = useState('')
+  const [showNext, setShowNext] = useState(false)
   const notesRef = useRef(null)
+  const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
   const { phase, seconds, title, home, pillar, people, agenda, notes, source, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
-  const destAreaId = home ? areaOfProject(home)?.id : pillar
+  // pillar drives the project list; default Arrow. A chosen project's area wins.
+  const effectivePillar = home ? (areaOfProject(home)?.id || null) : (pillar || (areaById('arrow') ? 'arrow' : (areas[0]?.id || null)))
+  const destAreaId = effectivePillar
   const destArea = destAreaId ? areaById(destAreaId) : null
   const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
+  const pillarProjects = pickerProjects.filter((p) => p.area === effectivePillar)
 
   // list toolbar for the live-notes scratchpad
   const prefixLines = (kind) => {
@@ -169,13 +175,20 @@ export function RecordScreen() {
     const patch = {}
     if (route.project) patch.home = route.project
     if (route.title != null && !title) patch.title = route.title
+    if (!route.project && !home && !pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
     if (Object.keys(patch).length) rec.setMeta(patch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // seed editable draft action items once synthesis completes
   useEffect(() => {
-    if (phase === 'done') setActions((synth.actions || []).map((a, i) => ({ id: 'ra' + i, label: a.text, owner: a.owner || 'you', done: false })))
+    if (phase === 'done') setActions((prev) => {
+      const manual = prev.filter((a) => a.manual)
+      const have = new Set(manual.map((a) => (a.label || '').trim().toLowerCase()))
+      const ai = (synth.actions || []).map((a, i) => ({ id: 'ra' + i, label: a.text, owner: a.owner || 'me', done: false }))
+        .filter((a) => !have.has((a.label || '').trim().toLowerCase()))
+      return [...manual, ...ai]
+    })
     else if (phase === 'idle') setActions([])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
@@ -219,7 +232,7 @@ export function RecordScreen() {
         project: home || null, area: destAreaId || null,
         projects: allLinked, people: people || [], tags: synth.tags || [],
         terms: [], summary: synth.summary || '', transcript: transcriptText || null,
-        agenda: (agenda || '').trim() || null,
+        agenda: (agenda || '').trim() || null, nextSteps: synth.nextSteps || null,
         date: todayLabel(), updated: 'now', status: 2,
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
@@ -276,26 +289,29 @@ export function RecordScreen() {
     <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
       style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
 
-    {/* save-to: project + pillar */}
+    {/* save-to: pillar (drives the project list) · project */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Save to</span>
+      {/* pillar — defaults to Arrow */}
       <span style={{ position: 'relative' }}>
-        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
-          <Icon n="folder" s={13} c={t.t3} />{homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
-        {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
-          <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
-          {pickerProjects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={home === p.id}
-            onClick={() => { rec.setMeta({ home: p.id, pillar: null }); rec.setProjects([...new Set([p.id, ...linked])]); setHomeOpen(false) }} />)}
+        <span onClick={() => setPillarOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: destArea ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+          <Icon n="folder" s={13} c={t.t3} />{destArea ? destArea.name : 'Library'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
+        {pillarOpen && <Popover onClose={() => setPillarOpen(false)} width={220} maxHeight={300}>
+          <PopRow icon="stack-2" label="Library only (no pillar)" on={!destArea} onClick={() => { rec.setMeta({ pillar: null, home: null }); setPillarOpen(false) }} />
+          {areas.map((a) => <PopRow key={a.id} dot={areaColor(t, a.id)} label={a.name} hint={(a.projects.length || 0) + ''} on={effectivePillar === a.id}
+            onClick={() => { const keep = home && areaOfProject(home)?.id === a.id; rec.setMeta({ pillar: a.id, home: keep ? home : null }); setPillarOpen(false) }} />)}
         </Popover>}
       </span>
-      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>in</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>·</span>
+      {/* project — only this pillar's projects */}
       <span style={{ position: 'relative' }}>
-        <span onClick={() => { if (!home) setPillarOpen((o) => !o) }} title={home ? 'From the project' : 'Choose pillar'}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: destArea ? t.t1 : t.t3, background: home ? 'transparent' : t.sel, border: home ? '1px solid ' + t.line : 'none', borderRadius: 8, padding: '5px 11px', cursor: home ? 'default' : 'pointer' }}>
-          {destArea ? destArea.name : 'Library (no pillar)'}{!home && <Icon n="chevron-down" s={12} c={t.t3} />}</span>
-        {pillarOpen && !home && <Popover onClose={() => setPillarOpen(false)} width={210} maxHeight={300}>
-          <PopRow icon="stack-2" label="Library only (no pillar)" on={!pillar} onClick={() => { rec.setMeta({ pillar: null }); setPillarOpen(false) }} />
-          {areas.map((a) => <PopRow key={a.id} icon="folder" label={a.name} hint={(a.projects.length || 0) + ''} on={pillar === a.id} onClick={() => { rec.setMeta({ pillar: a.id }); setPillarOpen(false) }} />)}
+        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: homeProj ? t.sel : 'transparent', border: homeProj ? 'none' : '1px solid ' + t.line, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+          {homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
+        {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
+          <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
+          {pillarProjects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={STATUS[p.status] ? STATUS[p.status].label : ''} on={home === p.id}
+            onClick={() => { rec.setMeta({ home: p.id }); rec.setProjects([...new Set([p.id, ...linked])]); setHomeOpen(false) }} />)}
+          {pillarProjects.length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No projects in {destArea ? destArea.name : 'this pillar'}.</div>}
         </Popover>}
       </span>
     </div>
@@ -370,6 +386,27 @@ export function RecordScreen() {
         <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} className="selectable"
           placeholder="Jot what matters as you go — these are treated as the most important signal…"
           style={{ width: '100%', minHeight: 120, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
+      </div>
+    </div>
+
+    {/* action items — yours; Claude appends your action items on synthesize */}
+    <div style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
+        <Label style={{ margin: 0 }}>My action items{actions.length ? ' · ' + actions.length : ''}</Label>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>add your own · check to push to tasks · × to dismiss · synthesize adds more</span>
+      </div>
+      {actions.length > 0 && <Card style={{ padding: '4px 0', marginBottom: 8 }}>
+        {actions.map((a, i) => <RecActionRow key={a.id} a={a} first={i === 0}
+          onToggle={(id) => setActions((xs) => xs.map((x) => x.id === id ? { ...x, done: !x.done } : x))}
+          onOpen={(id) => setSheetId(id)}
+          onDismiss={(id) => setActions((xs) => xs.filter((x) => x.id !== id))} />)}
+      </Card>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: '1px solid ' + t.line2, background: t.card }}>
+        <Icon n="plus" s={15} c={t.t3} />
+        <input value={actionDraft} onChange={(e) => setActionDraft(e.target.value)} onBlur={addAction}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAction() } }}
+          placeholder="Add an action item for yourself…" className="selectable"
+          style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.body, fontSize: 14, color: t.t1 }} />
       </div>
     </div>
 
@@ -479,18 +516,15 @@ export function RecordScreen() {
       {synth.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
         <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
         <Markish text={synth.summary} /></Card>}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
-          <Label style={{ margin: 0 }}>My action items · {actions.length}</Label>
-          <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>check to push to tasks · hold to edit · × to dismiss</span>
-        </div>
-        {actions.length > 0 ? <Card style={{ padding: '4px 0' }}>
-          {actions.map((a, i) => <RecActionRow key={a.id} a={a} first={i === 0}
-            onToggle={(id) => setActions((xs) => xs.map((x) => x.id === id ? { ...x, done: !x.done } : x))}
-            onOpen={(id) => setSheetId(id)}
-            onDismiss={(id) => setActions((xs) => xs.filter((x) => x.id !== id))} />)}
-        </Card> : <Card style={{ padding: '14px 16px', fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>No action items for you.</Card>}
-      </div>
+      {synth.nextSteps && synth.nextSteps.trim() && <div>
+        <div onClick={() => setShowNext((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
+          borderRadius: showNext ? '11px 11px 0 0' : 11, cursor: 'pointer', background: t.card, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>
+          <Icon n={showNext ? 'chevron-down' : 'chevron-right'} s={14} c={t.t3} />
+          <Icon n="bulb" s={15} c={t.accent} />Suggested next steps
+          <span style={{ flex: 1 }} /><span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 500, color: t.t3 }}>Claude’s take</span></div>
+        {showNext && <div style={{ padding: '14px 16px', background: t.card, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 11px 11px' }}>
+          <Markish text={synth.nextSteps} /></div>}
+      </div>}
       {guesses.length > 0 && <div>
         <Label style={{ marginBottom: 9 }}>Suggested projects to link · {guesses.length}</Label>
         <Card style={{ padding: '4px 0' }}>

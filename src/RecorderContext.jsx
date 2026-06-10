@@ -29,7 +29,7 @@ export function useRecorderCtx() { return useContext(RecorderCtx) }
 // post-stop processing stages, tracked here in `proc`.
 const PROC_IDLE = 'idle'
 
-const emptySynth = { summary: '', actions: [], terms: [], people: [], tags: [] }
+const emptySynth = { summary: '', actions: [], terms: [], people: [], tags: [], nextSteps: '' }
 
 export function RecorderProvider({ go, children }) {
   const recorder = useRecorder()
@@ -333,7 +333,7 @@ export function RecorderProvider({ go, children }) {
     setProc('synth')
     try {
       const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people })
-      setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [] })
+      setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [], nextSteps: s.nextSteps || '' })
       // Paste path is free; only in-app recording incurs AssemblyAI cost.
       const transcribe = source === 'record' ? (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR : 0
       const claude = claudeCost(s.usage)
