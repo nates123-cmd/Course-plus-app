@@ -223,14 +223,18 @@ export function RecorderProvider({ go, children }) {
   const pause = () => recorder.pause()
   const resume = () => recorder.resume()
 
-  // Parse a speaker-labeled transcript into turns. Strongly NAME-DRIVEN: when
-  // participant names are known, only a line whose leading label matches a known
-  // person (exact, first-name, or "First Last") starts a turn — so timestamps
-  // ("0:23", "00:14:05", "12:05 PM") are never read as speakers. Handles both
-  // "Name: text", "Name 0:23 / text on next line", and a bare "Name" line. Pure
-  // timestamp lines are dropped. Falls back to a strict heuristic with no names.
-  const stripTime = (s) => String(s).replace(/\b\d{1,2}:\d{2}(:\d{2})?(\s*[ap]\.?m\.?)?\b/gi, '').replace(/[[\]()]/g, '').replace(/\s{2,}/g, ' ').trim()
-  const isTimeOnly = (s) => /^[[(]?\s*\d{1,2}:\d{2}(:\d{2})?(\.\d+)?\s*(?:[ap]\.?m\.?)?\s*[)\]]?$/i.test(String(s).trim())
+  // Parse a speaker-labeled transcript into turns. The hard part is real
+  // Teams/Copilot output: "Kim Gehdes  10:23" — the timestamp must be stripped
+  // off the speaker LABEL so every "Kim Gehdes <time>" collapses to ONE speaker
+  // (not 59). We strip a leading or trailing timestamp from the label only (never
+  // from the spoken text), reject a colon that's actually part of a time, and
+  // match against the People list when given. Identical names = same speaker.
+  const TIME_SRC = '\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:\\s*[ap]\\.?m\\.?)?'
+  const LEAD_TIME = new RegExp('^[\\[(]?\\s*(?:' + TIME_SRC + ')\\s*[\\])]?[\\s\\-–—]*', 'i')
+  const TRAIL_TIME = new RegExp('[\\s\\-–—]*[\\[(]?\\s*(?:' + TIME_SRC + ')\\s*[\\])]?\\s*$', 'i')
+  const TIME_ANYWHERE = new RegExp(TIME_SRC, 'i')
+  const isTimeOnly = (s) => new RegExp('^[\\[(]?\\s*(?:' + TIME_SRC + ')\\s*[\\])]?$', 'i').test(String(s).trim())
+  const stripTime = (s) => String(s).replace(LEAD_TIME, '').replace(TRAIL_TIME, '').replace(/[[\]()]/g, '').replace(/\s{2,}/g, ' ').trim()
   const parseLines = (text, names = []) => {
     const people = (names || []).map((n) => String(n).trim()).filter(Boolean)
     const lows = people.map((n) => n.toLowerCase())
@@ -240,33 +244,42 @@ export function RecorderProvider({ go, children }) {
       for (let i = 0; i < lows.length; i++) {
         const nl = lows[i]
         if (l === nl || l.startsWith(nl + ' ') || l.startsWith(nl + ',')) return people[i]
-        // first-name match either direction (People "Mattia" vs label "Mattia Rossi")
         const lf = l.split(/\s+/)[0], nf = nl.split(/\s+/)[0]
         if (lf && lf === nf) return people[i]
       }
-      // generic "Speaker A/1" labels still count as turns
       if (/^speaker\s+\S+$/i.test(l)) return label.replace(/[:,]+$/, '').trim()
       return null
     }
+    // heuristic name (no People list): Title-Case-ish, ≤4 words, not a sentence
+    const heuristicName = (label) => {
+      const nm = stripTime(label).replace(/[:,]+$/, '').trim()
+      if (!nm || !/^[A-Za-z]/.test(nm) || nm.split(/\s+/).length > 4 || /[.!?]$/.test(nm) || isTimeOnly(nm)) return null
+      if (!/^[A-Z]/.test(nm)) return null // names start capitalized; rejects "we meet at"
+      return nm
+    }
+    const nameFromLabel = (label) => people.length ? matchName(label) : heuristicName(label)
+
     const raw = (text || '').replace(/\r/g, '')
     const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
     const out = []
-    for (const line of lines) {
-      if (isTimeOnly(line)) continue // drop pure timestamp lines
+    for (const rawLine of lines) {
+      const line = rawLine.replace(LEAD_TIME, '').trim() // drop a leading timestamp
+      if (!line || isTimeOnly(rawLine)) continue
       let who = null, rest = ''
+      // a) "Name: text" — but only if the colon isn't part of a timestamp
       const ci = line.indexOf(':')
-      if (ci > 0 && ci <= 48) {
-        const w = people.length ? matchName(line.slice(0, ci)) : null
+      if (ci > 0 && ci <= 48 && !TIME_ANYWHERE.test(line.slice(Math.max(0, ci - 2), ci + 4))) {
+        const w = nameFromLabel(line.slice(0, ci))
         if (w) { who = w; rest = line.slice(ci + 1).trim() }
-        else if (!people.length) {
-          const nm = stripTime(line.slice(0, ci))
-          if (/[A-Za-z]/.test(nm) && nm.split(/\s+/).length <= 4 && !/[.!?]$/.test(nm)) { who = nm; rest = line.slice(ci + 1).trim() }
-        }
       }
-      if (!who && people.length) {
-        // no colon — a bare "Name" or "Name 0:23" line (text follows on next lines)
-        const w = matchName(line)
-        if (w && stripTime(line).split(/\s+/).length <= 4) { who = w; rest = stripTime(line.replace(new RegExp('^' + w, 'i'), '')).trim() }
+      // b) "Name  10:23" or bare "Name" — strip a trailing timestamp, see if a name
+      if (!who) {
+        const noTrail = line.replace(TRAIL_TIME, '').trim()
+        const hadTrailTime = noTrail !== line
+        if (hadTrailTime || people.length) {
+          const w = nameFromLabel(noTrail)
+          if (w && stripTime(noTrail).split(/\s+/).length <= 4) { who = w; rest = '' }
+        }
       }
       if (who) out.push({ sp: who, text: rest })
       else if (out.length) out[out.length - 1].text += (out[out.length - 1].text ? ' ' : '') + line
