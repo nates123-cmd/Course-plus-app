@@ -202,10 +202,16 @@ export function OverviewScreen() {
   const { t, f } = useApp()
   const { areas, allProjects } = useData()
   const [sheetTask, setSheetTask] = useState(null)
+  const [ideasOpen, setIdeasOpen] = useState({})
+
+  const liveRank = { active: 0, sent: 1, 'on-hold': 2 }
+  const liveOf = (a) => a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
+    .slice().sort((x, y) => (liveRank[x.status] ?? 3) - (liveRank[y.status] ?? 3))
+  const ideasOf = (a) => a.projects.filter((p) => p.status === 'idea')
 
   const projects = allProjects().filter((p) => p.status !== 'archived')
   const totalActive = projects.filter((p) => p.status === 'active').length
-  const populatedAreas = areas.filter((a) => a.projects.length)
+  const populatedAreas = areas.filter((a) => liveOf(a).length || ideasOf(a).length)
 
   return <div data-screen-label="Work overview" style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 6 }}>
@@ -219,16 +225,35 @@ export function OverviewScreen() {
 
     <OpenTasks projects={projects} sheetTask={sheetTask} setSheetTask={setSheetTask} />
 
-    {populatedAreas.map((a) => <div key={a.id} style={{ marginTop: 30 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-        <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
-        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${a.projects.length} project${a.projects.length === 1 ? '' : 's'}`}</span>
-        <div style={{ flex: 1, height: 1, background: t.line }} />
+    {populatedAreas.map((a) => {
+      const live = liveOf(a)
+      const ideas = ideasOf(a)
+      const ideasShown = !!ideasOpen[a.id]
+      return <div key={a.id} style={{ marginTop: 30 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+          <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
+          <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${live.length} project${live.length === 1 ? '' : 's'}`}</span>
+          <div style={{ flex: 1, height: 1, background: t.line }} />
+        </div>
+        {live.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+          {live.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
+        </div>}
+        {ideas.length > 0 && <div style={{ marginTop: live.length ? 12 : 0 }}>
+          <div onClick={() => setIdeasOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
+            fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 8 }}
+            onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+            <Icon n={ideasShown ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+            <Icon n={ideasShown ? 'folder-open' : 'folder'} s={14} c={t.t3} />
+            <span>Ideas</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', color: t.t3 }}>{ideas.length}</span>
+          </div>
+          {ideasShown && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 10 }}>
+            {ideas.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
+          </div>}
+        </div>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-        {a.projects.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
-      </div>
-    </div>)}
+    })}
   </div>
 }
 
