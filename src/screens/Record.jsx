@@ -92,7 +92,8 @@ export function RecordScreen() {
   const [sheetId, setSheetId] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  const { phase, seconds, title, home, notes, lines, transcriptText, synth, error } = rec
+  const { phase, seconds, title, home, notes, lines, transcriptText, synth, error, cost } = rec
+  const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home) || projects[0]
 
   // seed title/home from the route only when starting fresh (don't clobber a live session)
@@ -343,6 +344,14 @@ export function RecordScreen() {
 
     {/* synthesized result */}
     {phase === 'done' && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {cost && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: f.ui, fontSize: 11.5, color: t.t3,
+        background: t.card, border: '1px solid ' + t.line, borderRadius: 10, padding: '8px 13px' }}>
+        <Icon n="coin" s={14} c={t.t3} />
+        <span style={{ fontWeight: 600, color: t.t2 }}>Cost {usd(cost.total)}</span>
+        <span>· transcribe {usd(cost.transcribe)} ({fmtClock(seconds)})</span>
+        <span>· synthesis {usd(cost.claude)}{cost.usage ? ` (${cost.usage.input_tokens}+${cost.usage.output_tokens} tok)` : ''}</span>
+        {cost.estimated && <span style={{ fontStyle: 'italic' }}>· est.</span>}
+      </div>}
       {synth.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
         <Label style={{ color: t.accent, marginBottom: 8 }}>Summary</Label>
         <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{synth.summary}</div>

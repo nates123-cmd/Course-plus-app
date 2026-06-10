@@ -73,8 +73,10 @@ export async function synthesizeTranscript(transcript) {
     'Return ONLY JSON: {"summary": string (2-3 sentences), ' +
     '"actions": [{"text": string, "owner": string}], "people": string[], ' +
     '"terms": string[], "tags": string[]}'
-  const raw = await claudeComplete(user, { system, max_tokens: 1000 })
-  return extractJSON(raw) || { summary: raw, actions: [], people: [], terms: [], tags: [] }
+  let usage = null
+  const raw = await claudeComplete(user, { system, max_tokens: 1000, onUsage: (u) => { usage = u } })
+  const j = extractJSON(raw) || { summary: raw, actions: [], people: [], terms: [], tags: [] }
+  return { ...j, usage }
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────

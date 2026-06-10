@@ -11,6 +11,11 @@ import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
 import { synthesizeTranscript } from './lib/ai'
+import { claudeCost } from './lib/claude'
+
+// AssemblyAI async transcription, USD per hour (Best/Universal tier, speaker
+// diarization on). Nano tier (no good diarization) is ~$0.12/hr.
+const TRANSCRIBE_USD_PER_HOUR = 0.27
 
 const RecorderCtx = createContext(null)
 export function useRecorderCtx() { return useContext(RecorderCtx) }
@@ -38,6 +43,7 @@ export function RecorderProvider({ go, children }) {
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
   const [transcriptText, setTranscriptText] = useState('')
   const [synth, setSynth] = useState(emptySynth)
+  const [cost, setCost] = useState(null) // { transcribe, claude, total, usage, estimated }
 
   // The effective phase: recorder status wins while live/paused, otherwise the
   // processing stage. When the recorder is idle and we haven't started any
@@ -55,7 +61,7 @@ export function RecorderProvider({ go, children }) {
 
   const start = async () => {
     setError(null)
-    setLines([]); setTranscriptText(''); setSynth(emptySynth)
+    setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
     setProc(PROC_IDLE)
     await recorder.start()
   }
@@ -107,6 +113,9 @@ export function RecorderProvider({ go, children }) {
         summary: s.summary || '', actions: s.actions || [], terms: s.terms || [],
         people: s.people || [], tags: s.tags || [],
       })
+      const transcribe = (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR
+      const claude = claudeCost(s.usage)
+      setCost({ transcribe, claude, total: transcribe + claude, usage: s.usage || null, estimated: !!(s.usage && s.usage.estimated) })
       setProc('done')
     } catch (e) {
       setError(humanize(e))
@@ -118,7 +127,7 @@ export function RecorderProvider({ go, children }) {
   const reset = () => {
     setProc(PROC_IDLE)
     setError(null)
-    setLines([]); setTranscriptText(''); setSynth(emptySynth)
+    setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
     setProjects([]); setNotes('')
   }
 
@@ -130,10 +139,10 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error,
-    title, home, projects, notes, lines, transcriptText, synth,
+    title, home, projects, notes, lines, transcriptText, synth, cost,
     setMeta, setProjects, setError,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, title, home, projects, notes, lines, transcriptText, synth])
+  }), [phase, seconds, error, title, home, projects, notes, lines, transcriptText, synth, cost])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
