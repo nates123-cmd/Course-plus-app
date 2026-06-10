@@ -50,7 +50,7 @@ export function RecorderProvider({ go, children }) {
   const [agenda, setAgenda] = useState('')     // pre-meeting prep notes
   const [notes, setNotes] = useState('')       // live notes (highest-signal)
   const [source, setSource] = useState('paste') // transcript source: 'paste' | 'record'
-  const [detail, setDetail] = useState('medium') // synthesis depth: low | medium | high
+  const [detail, setDetail] = useState('low') // synthesis depth: low | medium | high (Brief is the default)
   // transcription tuning (record mode only)
   const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
   const [diarize, setDiarize] = useState(true)   // speaker labels on/off

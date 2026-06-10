@@ -81,7 +81,7 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
 // The user's OWN live notes are the highest-signal input — they wrote those down
 // because they mattered — so they're weighted above the transcript. Long
 // transcripts escalate to Sonnet for whole-meeting recall.
-export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'medium' } = {}) {
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low' } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
   const model = (detail === 'high' || long) ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
