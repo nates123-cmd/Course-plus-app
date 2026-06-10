@@ -45,6 +45,37 @@ function SidebarContent({ onClose }) {
     background: t.card, fontFamily: F.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }
   const inboxCount = inbox.length
 
+  // a single project row (shared by live / ideas / archive); indent varies by nesting
+  const projRow = (p, indent = 28) => {
+    const active = route.screen === 'project' && route.id === p.id
+    return <div key={p.id} onClick={() => { go({ screen: 'project', id: p.id }); onClose && onClose() }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5,
+        fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
+        padding: `6px 10px 6px ${indent}px`, borderRadius: 7, margin: '1px 0',
+        background: active ? t.sel : 'transparent', borderLeft: '2px solid ' + (active ? t.accent : 'transparent') }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, flex: 'none',
+        background: p.status === 'active' ? t.accent : t.t3, opacity: p.status === 'on-hold' ? 0.5 : 1 }} />
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+    </div>
+  }
+
+  // a collapsible folder header (Ideas per-area, or the global Archive)
+  const folderRow = (key, label, count, indent = 28) => {
+    const openF = !!open[key]
+    return <div onClick={() => toggle(key)} style={{ display: 'flex', alignItems: 'center', gap: 7,
+      fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer',
+      padding: `5px 10px 5px ${indent}px`, borderRadius: 7, margin: '1px 0' }}
+      onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+      <Icon n={openF ? 'chevron-down' : 'chevron-right'} s={12} c={t.t3} />
+      <Icon n={openF ? 'folder-open' : 'folder'} s={13} c={t.t3} />
+      <span style={{ flex: 1 }}>{label}</span>
+      <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{count || ''}</span>
+    </div>
+  }
+
   const nav = (icon, label, screen, badge) => {
     const active = route.screen === screen
     return <div onClick={() => { go({ screen }); onClose && onClose() }}
@@ -86,7 +117,12 @@ function SidebarContent({ onClose }) {
           onKeyDown={(e) => { if (e.key === 'Enter') commitArea(); if (e.key === 'Escape') { setNewName(''); setAdding(null) } }}
           onBlur={() => { if (newName.trim()) commitArea(); else setAdding(null) }}
           placeholder="New area name…" style={addInputStyle} /></div>}
-      {areas.map((a) => { const areaActive = route.screen === 'area' && route.id === a.id
+      {areas.map((a) => {
+        const areaActive = route.screen === 'area' && route.id === a.id
+        // live = active / on-hold / next-up / sent (anything not idea or archived)
+        const live = a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
+        const ideas = a.projects.filter((p) => p.status === 'idea')
+        const ideasKey = a.id + '::ideas'
         return <div key={a.id}>
           <div onClick={() => { go({ screen: 'area', id: a.id }); onClose && onClose() }}
             style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600,
@@ -98,32 +134,39 @@ function SidebarContent({ onClose }) {
               <Icon n={isOpen(a) ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} /></span>
             <AreaDot areaId={a.id} s={7} />
             <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-            <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{a.projects.length || ''}</span>
+            <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{live.length || ''}</span>
           </div>
-          {isOpen(a) && a.projects.map((p) => { const active = route.screen === 'project' && route.id === p.id
-            return <div key={p.id} onClick={() => { go({ screen: 'project', id: p.id }); onClose && onClose() }}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5,
-                fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
-                padding: '6px 10px 6px 28px', borderRadius: 7, margin: '1px 0',
-                background: active ? t.sel : 'transparent', borderLeft: '2px solid ' + (active ? t.accent : 'transparent') }}
-              onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
-              onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
-              <span style={{ width: 6, height: 6, borderRadius: 3, flex: 'none', background: p.status === 'active' ? t.accent : t.t3, opacity: p.status === 'on-hold' ? 0.5 : 1 }} />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-            </div> })}
-          {isOpen(a) && (adding === a.id
-            ? <div style={{ padding: '2px 10px 4px 28px' }}>
-                <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') commitProject(a.id); if (e.key === 'Escape') { setNewName(''); setAdding(null) } }}
-                  onBlur={() => { if (newName.trim()) commitProject(a.id); else setAdding(null) }}
-                  placeholder="New project…" style={addInputStyle} /></div>
-            : <div onClick={() => { setAdding(a.id); setNewName('') }}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: F.ui, fontSize: 12, color: t.t3,
-                  cursor: 'pointer', padding: '5px 10px 5px 28px', borderRadius: 7, margin: '1px 0' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
-                <Icon n="plus" s={12} />Add project</div>)}
+          {isOpen(a) && <>
+            {live.map((p) => projRow(p))}
+            {ideas.length > 0 && <>
+              {folderRow(ideasKey, 'Ideas', ideas.length, 28)}
+              {open[ideasKey] && ideas.map((p) => projRow(p, 40))}
+            </>}
+            {adding === a.id
+              ? <div style={{ padding: '2px 10px 4px 28px' }}>
+                  <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitProject(a.id); if (e.key === 'Escape') { setNewName(''); setAdding(null) } }}
+                    onBlur={() => { if (newName.trim()) commitProject(a.id); else setAdding(null) }}
+                    placeholder="New project…" style={addInputStyle} /></div>
+              : <div onClick={() => { setAdding(a.id); setNewName('') }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: F.ui, fontSize: 12, color: t.t3,
+                    cursor: 'pointer', padding: '5px 10px 5px 28px', borderRadius: 7, margin: '1px 0' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+                  <Icon n="plus" s={12} />Add project</div>}
+          </>}
         </div> })}
+
+      {/* global Archive — all archived/completed projects across every pillar */}
+      {(() => {
+        const archived = areas.flatMap((a) => a.projects.filter((p) => p.status === 'archived'))
+          .sort((x, y) => x.name.localeCompare(y.name))
+        if (!archived.length) return null
+        return <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid ' + t.line }}>
+          {folderRow('::archive', 'Archive', archived.length, 10)}
+          {open['::archive'] && archived.map((p) => projRow(p, 28))}
+        </div>
+      })()}
     </div>
 
     <div style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
