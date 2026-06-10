@@ -14,17 +14,21 @@ export function DataProvider({ children }) {
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
-  const load = async () => {
+  // silent=true refreshes data in the background without flipping the app back to
+  // the full-screen "Loading…" spinner — used by every post-mutation reload() so
+  // a dismiss / status change doesn't feel like a page reload.
+  const load = async (silent = false) => {
     try {
-      setStatus('loading')
+      if (!silent) setStatus('loading')
       await seedIfEmpty()
       const data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox)
       setStatus('ready')
     } catch (e) {
-      setError(e); setStatus('error')
+      if (!silent) { setError(e); setStatus('error') }
     }
   }
+  const reload = () => load(true)
   useEffect(() => { load() }, [])
 
   const value = useMemo(() => {
@@ -82,7 +86,7 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, status, error, reload: load,
+      areas, notes, inbox, status, error, reload,
       allProjects, projectById, areaById, noteById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch,
     }
