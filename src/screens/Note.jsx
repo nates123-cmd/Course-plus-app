@@ -8,7 +8,7 @@ import { useData } from '../DataContext'
 import {
   Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, Markish, inlineMd,
 } from '../kit'
-import { updateNote, createTask } from '../lib/db'
+import { updateNote, createTask, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks } from '../lib/blocks'
 import { summarizeNote, extractActions, suggestTags, rewriteNote } from '../lib/ai'
 import { useRecorderCtx } from '../RecorderContext'
@@ -205,6 +205,11 @@ export function NoteScreen() {
   }
 
   const startEdit = () => { setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null); setEditing(true) }
+  const deleteThis = async () => {
+    if (!window.confirm(`Delete “${n.title || 'this item'}”? This can’t be undone.`)) return
+    try { await deleteNote(n.id); await reload(); go(n.project ? { screen: 'project', id: n.project } : { screen: 'library' }) }
+    catch (e) { window.alert('Could not delete: ' + (e?.message || e)) }
+  }
   const saveEdit = async () => {
     setSaving(true); setErr(null)
     try { await updateNote(n.id, { title: eTitle.trim() || 'Untitled', body: textToBlocks(eBody) }); await reload(); setEditing(false) }
@@ -231,6 +236,7 @@ export function NoteScreen() {
             <Btn kind="primary" size="sm" icon={saving ? 'loader-2' : 'circle-check'} onClick={saveEdit}>{saving ? 'Saving…' : 'Save'}</Btn>
           </span>
         : <span style={{ display: 'flex', gap: 8 }}>
+            <IconBtn n="trash" s={17} title="Delete" onClick={deleteThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
             <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>Claude</Btn>
           </span>}
