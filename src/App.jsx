@@ -17,6 +17,7 @@ import { AskScreen } from './screens/Ask'
 import { InboxScreen } from './screens/Inbox'
 import { LibraryScreen } from './screens/Library'
 import { RecordScreen } from './screens/Record'
+import { ArtifactScreen } from './screens/Artifact'
 import { RecorderProvider, FloatingRecorder } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
@@ -480,6 +481,7 @@ function Screen() {
     case 'area':     return <AreaScreen key={route.id} />
     case 'project':  return <ProjectScreen key={route.id} />
     case 'note':     return <NoteScreen key={route.id} />
+    case 'artifact': return <ArtifactScreen key={route.id} />
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />

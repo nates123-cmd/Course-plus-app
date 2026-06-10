@@ -461,7 +461,7 @@ function DocSection({ label, notes, kind, project }) {
 
 // ── Artifacts — project deliverables + Claude composer ──────────
 function Artifacts({ project, notes, meetings = [], reload }) {
-  const { t, f } = useApp()
+  const { t, f, go } = useApp()
   const rows = project.artifacts || []
   const [composing, setComposing] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -495,7 +495,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       const { guide } = await updateGuide({ documentTitle: dTitle, document: dBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
       const title = `Update guide — ${dTitle}`
       const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ Claude · update guide · from ${mtg.title}` })
-      await reload(); setNewId(id); setExpandedId(id); setToast(title); setUInstr('')
+      await reload(); setUInstr(''); go({ screen: 'artifact', id })
       setTimeout(() => setToast(null), 4500); setTimeout(() => setNewId(null), 6000)
     } catch (e) { setToast('Couldn’t build guide — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
     finally { setBusy(false) }
@@ -504,7 +504,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
   const addManual = async () => {
     const ttl = mTitle.trim() || 'Untitled'; const bod = mBody
     setAdding(false); setMTitle(''); setMBody('')
-    try { const id = await createArtifact(project.id, { title: ttl, artType: 'file', body: bod, provenance: 'Added' }); await reload(); setNewId(id); setExpandedId(id); setTimeout(() => setNewId(null), 5000) }
+    try { const id = await createArtifact(project.id, { title: ttl, artType: 'file', body: bod, provenance: 'Added' }); await reload(); go({ screen: 'artifact', id }) }
     catch (e) { setToast('Couldn’t add — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4000) }
   }
   const removeArtifact = async (id, title) => {
@@ -634,34 +634,22 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     {rows.length ? <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
       {rows.map((a, i) => {
         const isNew = a.id === newId
-        const open = expandedId === a.id
         const type = COMPOSE_TYPES.find((c) => c.id === a.artType)
-        return <div key={a.id} className={isNew ? 'just-landed' : undefined} style={{ borderTop: i ? '1px solid ' + t.line : 'none' }}>
-          <div onClick={() => setExpandedId(open ? null : a.id)}
-            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
-            onMouseEnter={(e) => { if (!isNew) e.currentTarget.style.background = t.sel }}
-            onMouseLeave={(e) => { if (!isNew) e.currentTarget.style.background = 'transparent' }}>
-            <Icon n={type?.icon || 'file-export'} s={16} c={t.accent} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
-                <span>{a.provenance || 'Composed'}</span>{a.at && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{timeAgo(a.at)}</span></Fragment>}
-              </div>
+        const icon = a.artType === 'update-guide' ? 'file-diff' : a.artType === 'file' ? 'file-text' : (type?.icon || 'file-export')
+        return <div key={a.id} onClick={() => go({ screen: 'artifact', id: a.id })}
+          className={isNew ? 'just-landed' : undefined}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', borderTop: i ? '1px solid ' + t.line : 'none' }}
+          onMouseEnter={(e) => { if (!isNew) e.currentTarget.style.background = t.sel }}
+          onMouseLeave={(e) => { if (!isNew) e.currentTarget.style.background = 'transparent' }}>
+          <Icon n={icon} s={16} c={t.accent} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
+              <span>{a.provenance || 'Composed'}</span>{a.at && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{timeAgo(a.at)}</span></Fragment>}
             </div>
-            {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.onAccent, background: t.accent, borderRadius: 6, padding: '2px 7px' }}>New</span>}
-            <Icon n={open ? 'chevron-down' : 'chevron-right'} s={15} c={t.t3} />
           </div>
-          {open && <div style={{ padding: '0 16px 14px' }}>
-            <div style={{ display: 'flex', gap: 7, marginBottom: 8 }}>
-              <Btn kind="ghost" size="sm" icon="copy" onClick={() => copyArtifact(a.body)}>Copy</Btn>
-              <div style={{ flex: 1 }} />
-              <Btn kind="ghost" size="sm" icon="trash" onClick={() => removeArtifact(a.id, a.title)} style={{ color: t.risk }}>Delete</Btn>
-            </div>
-            {a.artType === 'file'
-              ? <pre className="selectable" style={{ margin: 0, maxHeight: 360, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line,
-                  borderRadius: 9, padding: '11px 13px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
-              : <div style={{ maxHeight: 460, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line, borderRadius: 9, padding: '12px 14px' }}><Markish text={a.body || ''} /></div>}
-          </div>}
+          {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.onAccent, background: t.accent, borderRadius: 6, padding: '2px 7px' }}>New</span>}
+          <Icon n="chevron-right" s={15} c={t.t3} />
         </div>
       })}
     </Card> : !busy && <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',

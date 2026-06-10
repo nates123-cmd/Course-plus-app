@@ -36,6 +36,10 @@ export function DataProvider({ children }) {
     const projectById = (id) => allProjects().find((p) => p.id === id) || null
     const areaById = (id) => areas.find((a) => a.id === id) || null
     const noteById = (id) => notes.find((n) => n.id === id)
+    const artifactById = (id) => {
+      for (const a of areas) for (const p of a.projects) { const f = (p.artifacts || []).find((x) => x.id === id); if (f) return { ...f, project: f.project || p.id } }
+      return null
+    }
     const noteByTitle = (title) => notes.find((n) => n.title === title)
     const projectName = (id) => { const p = projectById(id); return p ? p.name : null }
     const areaName = (id) => { const a = areas.find((x) => x.id === id); return a ? a.name : null }
@@ -87,7 +91,7 @@ export function DataProvider({ children }) {
 
     return {
       areas, notes, inbox, status, error, reload,
-      allProjects, projectById, areaById, noteById, noteByTitle, projectName, areaName, areaOfProject,
+      allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch,
     }
   }, [areas, notes, inbox, status, error])
