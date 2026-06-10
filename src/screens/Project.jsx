@@ -365,10 +365,10 @@ function ActionRow({ a, first, onPromote, onDismiss }) {
   const [hov, setHov] = useState(false)
   return <div style={{ position: 'relative', borderTop: first ? 'none' : '1px solid ' + t.line }}>
     <div style={{ background: t.card, display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 16px' }}>
-      <span onClick={onDismiss} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title="Dismiss"
-        style={{ width: 18, height: 18, borderRadius: 9, flex: 'none', marginTop: 1, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', background: hov ? t.riskBg : 'transparent', transition: 'background .14s' }}>
-        {hov ? <Icon n="x" s={13} c={t.risk} /> : <span style={{ width: 6, height: 6, borderRadius: 3, background: t.accent }} />}</span>
+      <span onClick={onDismiss} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title="Dismiss this action item"
+        style={{ width: 22, height: 22, borderRadius: 7, flex: 'none', marginTop: 0, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', background: hov ? t.riskBg : t.sel, transition: 'background .14s' }}>
+        <Icon n="x" s={14} c={hov ? t.risk : t.t3} /></span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, lineHeight: 1.4 }}>{a.text}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontFamily: f.ui, fontSize: 11.5, color: t.t3, flexWrap: 'wrap' }}>
