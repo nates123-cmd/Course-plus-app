@@ -12,6 +12,10 @@ import {
   Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish,
 } from '../kit'
 import { briefingFor, composeDeliverable, updateGuide } from '../lib/ai'
+import { claudeCost } from '../lib/claude'
+
+// "~$0.04" style rough cost from a usage record (null/0 → '')
+const usdRough = (usage) => { const c = claudeCost(usage); return c ? `~$${c < 0.01 ? c.toFixed(3) : c.toFixed(2)}` : '' }
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
@@ -492,9 +496,10 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     try {
       const tx = mtg.transcript || [mtg.summary, (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.join('; ') : (b.ol ? b.ol.join('; ') : ''))).join(' ')].filter(Boolean).join('\n')
       const noteText = (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n')
-      const { guide } = await updateGuide({ documentTitle: dTitle, document: dBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
+      const { guide, usage } = await updateGuide({ documentTitle: dTitle, document: dBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
       const title = `Update guide — ${dTitle}`
-      const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ Claude · update guide · from ${mtg.title}` })
+      const cost = usdRough(usage)
+      const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ Claude · update guide · from ${mtg.title}${cost ? ' · ' + cost : ''}` })
       await reload(); setUInstr(''); go({ screen: 'artifact', id })
       setTimeout(() => setToast(null), 4500); setTimeout(() => setNewId(null), 6000)
     } catch (e) { setToast('Couldn’t build guide — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
@@ -517,16 +522,15 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     setComposing(false); setBusy(true)
     try {
       const type = COMPOSE_TYPES.find((c) => c.id === typeId) || COMPOSE_TYPES[0]
-      const body = await composeDeliverable(typeId, prompt.trim(), project.name, notes)
+      let usage = null
+      const body = await composeDeliverable(typeId, prompt.trim(), project.name, notes, (u) => { usage = u })
       const n = notes.length
       const title = `${project.name} — ${type.name}`
+      const cost = usdRough(usage)
       const id = await createArtifact(project.id, {
-        title, artType: typeId, body, provenance: `✦ Claude · from ${n} notes`, fromCount: n,
+        title, artType: typeId, body, provenance: `✦ Claude · from ${n} notes${cost ? ' · ' + cost : ''}`, fromCount: n,
       })
-      await reload()
-      setNewId(id); setToast(title); setPrompt('')
-      setTimeout(() => setToast(null), 4500)
-      setTimeout(() => setNewId(null), 6000)
+      await reload(); setPrompt(''); go({ screen: 'artifact', id })
     } catch (e) {
       setToast('Couldn’t compose — ' + String(e?.message || e))
       setTimeout(() => setToast(null), 4500)

@@ -55,7 +55,7 @@ const TYPE_BRIEF = {
 // Compose a paste-ready deliverable from the FULL material — note bodies AND
 // meeting transcripts, not just summaries (a transcript is far richer source for
 // building an artifact than a lossy summary). Escalates to Sonnet for big inputs.
-export async function composeDeliverable(typeId, instructions, sourceLabel, notes) {
+export async function composeDeliverable(typeId, instructions, sourceLabel, notes, onUsage) {
   const corpus = notes.map((n) => {
     const body = (n.body || []).map((b) => b.p
       || (b.ul ? b.ul.map((i) => '- ' + i).join('\n')
@@ -73,7 +73,7 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
     `Source: ${sourceLabel}\nMaterial:\n${corpus}\n\n` +
     `Produce ${TYPE_BRIEF[typeId] || 'a brief'}.` +
     (instructions ? ` Instructions: ${instructions}` : '')
-  return (await claudeComplete(user, { system, model, max_tokens: 2000 })).trim()
+  return (await claudeComplete(user, { system, model, max_tokens: 2000, onUsage })).trim()
 }
 
 // "Update Document" guide. Given an existing document + a meeting, produce a
