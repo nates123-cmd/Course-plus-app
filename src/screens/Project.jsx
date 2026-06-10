@@ -9,9 +9,9 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, IconBtn, StatusPill, Priority, AreaDot, Card, Label, Tag,
-  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference,
+  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish,
 } from '../kit'
-import { briefingFor, composeDeliverable } from '../lib/ai'
+import { briefingFor, composeDeliverable, updateGuide } from '../lib/ai'
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
@@ -460,11 +460,12 @@ function DocSection({ label, notes, kind, project }) {
 }
 
 // ── Artifacts — project deliverables + Claude composer ──────────
-function Artifacts({ project, notes, reload }) {
-  const { t, f, go } = useApp()
+function Artifacts({ project, notes, meetings = [], reload }) {
+  const { t, f } = useApp()
   const rows = project.artifacts || []
   const [composing, setComposing] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [updating, setUpdating] = useState(false)
   const [mTitle, setMTitle] = useState('')
   const [mBody, setMBody] = useState('')
   const [expandedId, setExpandedId] = useState(null)
@@ -473,6 +474,32 @@ function Artifacts({ project, notes, reload }) {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
   const [newId, setNewId] = useState(null)
+  // update-doc form
+  const [docSrc, setDocSrc] = useState('paste') // 'existing' | 'paste'
+  const [docArtId, setDocArtId] = useState(rows[0]?.id || null)
+  const [docTitle, setDocTitle] = useState('')
+  const [docBody, setDocBody] = useState('')
+  const [meetingId, setMeetingId] = useState(meetings[0]?.id || null)
+  const [uInstr, setUInstr] = useState('')
+
+  const runUpdate = async () => {
+    const art = rows.find((r) => r.id === docArtId)
+    const mtg = meetings.find((m) => m.id === meetingId)
+    const dTitle = docSrc === 'existing' ? (art?.title || 'Document') : (docTitle.trim() || 'Document')
+    const dBody = docSrc === 'existing' ? (art?.body || '') : docBody
+    if (!dBody.trim() || !mtg) { setToast('Pick a document and a meeting.'); setTimeout(() => setToast(null), 3000); return }
+    setUpdating(false); setBusy(true)
+    try {
+      const tx = mtg.transcript || [mtg.summary, (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.join('; ') : (b.ol ? b.ol.join('; ') : ''))).join(' ')].filter(Boolean).join('\n')
+      const noteText = (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n')
+      const { guide } = await updateGuide({ documentTitle: dTitle, document: dBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
+      const title = `Update guide — ${dTitle}`
+      const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ Claude · update guide · from ${mtg.title}` })
+      await reload(); setNewId(id); setExpandedId(id); setToast(title); setUInstr('')
+      setTimeout(() => setToast(null), 4500); setTimeout(() => setNewId(null), 6000)
+    } catch (e) { setToast('Couldn’t build guide — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
+    finally { setBusy(false) }
+  }
 
   const addManual = async () => {
     const ttl = mTitle.trim() || 'Untitled'; const bod = mBody
@@ -508,9 +535,51 @@ function Artifacts({ project, notes, reload }) {
 
   return <div style={{ position: 'relative' }}>
     <SectionHead label={rows.length ? 'Artifacts · ' + rows.length : 'Artifacts'} />
-    {!composing && !adding && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
-      <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false) }}>Add file</Btn>
-      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false) }}>Generate with Claude</Btn>
+    {!composing && !adding && !updating && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
+      <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false); setUpdating(false) }}>Add file</Btn>
+      <Btn kind="outline" size="sm" icon="file-diff" onClick={() => { setUpdating(true); setAdding(false); setComposing(false); setDocArtId(rows[0]?.id || null); setMeetingId(meetings[0]?.id || null) }}>Update doc from meeting</Btn>
+      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with Claude</Btn>
+    </div>}
+
+    {updating && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+        <Icon n="file-diff" s={14} c={t.accent} />
+        <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Update doc from a meeting</span>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>Claude returns what to edit & where — not a rewrite</span>
+      </div>
+      {/* document source */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Document</span>
+        {[['existing', 'Existing artifact'], ['paste', 'Paste']].map(([id, label]) => {
+          const on = docSrc === id; const disabled = id === 'existing' && rows.length === 0
+          return <span key={id} onClick={() => !disabled && setDocSrc(id)} style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+        })}
+      </div>
+      {docSrc === 'existing'
+        ? <select value={docArtId || ''} onChange={(e) => setDocArtId(e.target.value)} style={{ width: '100%', marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
+            {rows.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+          </select>
+        : <>
+            <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Document title…"
+              style={{ width: '100%', marginBottom: 6, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }} />
+            <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} placeholder="Paste the current document here…"
+              style={{ width: '100%', minHeight: 110, marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px', whiteSpace: 'pre' }} />
+          </>}
+      {/* meeting source */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>From meeting</span>
+        {meetings.length
+          ? <select value={meetingId || ''} onChange={(e) => setMeetingId(e.target.value)} style={{ flex: 1, minWidth: 160, border: '1px solid ' + t.line2, borderRadius: 8, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
+              {meetings.map((m) => <option key={m.id} value={m.id}>{m.title}{m.transcript ? '' : ' (no transcript)'}</option>)}
+            </select>
+          : <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No meetings on this project yet — add one first.</span>}
+      </div>
+      <textarea value={uInstr} onChange={(e) => setUInstr(e.target.value)} placeholder="Optional — extra instructions…"
+        style={{ width: '100%', minHeight: 42, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: f.body, fontSize: 13, color: t.t1, padding: '8px 10px' }} />
+      <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
+        <Btn kind="primary" size="sm" icon="file-diff" onClick={runUpdate}>Build edit guide</Btn>
+        <Btn kind="ghost" size="sm" onClick={() => setUpdating(false)}>Cancel</Btn>
+      </div>
     </div>}
 
     {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 12, padding: 12, marginBottom: 12 }}>
@@ -588,8 +657,10 @@ function Artifacts({ project, notes, reload }) {
               <div style={{ flex: 1 }} />
               <Btn kind="ghost" size="sm" icon="trash" onClick={() => removeArtifact(a.id, a.title)} style={{ color: t.risk }}>Delete</Btn>
             </div>
-            <pre className="selectable" style={{ margin: 0, maxHeight: 360, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line,
-              borderRadius: 9, padding: '11px 13px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
+            {a.artType === 'file'
+              ? <pre className="selectable" style={{ margin: 0, maxHeight: 360, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line,
+                  borderRadius: 9, padding: '11px 13px', fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
+              : <div style={{ maxHeight: 460, overflow: 'auto', background: t.bg, border: '1px solid ' + t.line, borderRadius: 9, padding: '12px 14px' }}><Markish text={a.body || ''} /></div>}
           </div>}
         </div>
       })}
@@ -783,7 +854,7 @@ export function ProjectScreen() {
     <ActionItems project={project} reload={reload} />
     <DocSection label="Meetings" notes={meetings} kind="meeting" project={project} />
     <DocSection label="Notes" notes={docNotes} kind="note" project={project} />
-    <Artifacts project={project} notes={briefingNotes} reload={reload} />
+    <Artifacts project={project} notes={briefingNotes} meetings={meetings} reload={reload} />
   </div>
 
   const rail = <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>

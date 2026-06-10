@@ -76,6 +76,38 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
   return (await claudeComplete(user, { system, model, max_tokens: 2000 })).trim()
 }
 
+// "Update Document" guide. Given an existing document + a meeting, produce a
+// hand-applyable EDIT GUIDE (NOT a rewrite) — for editing the doc on a
+// disconnected work machine. Hybrid output: a what/why summary, then anchored
+// find/replace edits. Returns { guide, usage }.
+export async function updateGuide({ documentTitle = '', document = '', meetingTitle = '', transcript = '', notes = '', instructions = '' } = {}) {
+  const system =
+    'You produce a precise EDIT GUIDE for a document the user will hand-edit on a DISCONNECTED ' +
+    'computer. NEVER rewrite or reprint the whole document. The meeting (transcript + the user\'s ' +
+    'notes) is the source of truth for what changed. Only suggest edits the meeting actually ' +
+    'implies — minimal and specific. Anchor every edit to a short, unique quote of the EXISTING ' +
+    'document text so it can be found by search offline. Output clean markdown only.'
+  const parts = [`CURRENT DOCUMENT — "${documentTitle || 'Untitled'}":\n${document || '(empty)'}`]
+  if (notes.trim()) parts.push(`MY NOTES from the meeting (high priority):\n${notes.trim()}`)
+  if (transcript.trim()) parts.push(`MEETING TRANSCRIPT — "${meetingTitle || 'meeting'}":\n${transcript.trim()}`)
+  if (instructions.trim()) parts.push(`EXTRA INSTRUCTIONS: ${instructions.trim()}`)
+  const user = parts.join('\n\n---\n\n') + '\n\n' +
+    'Produce the edit guide as markdown in TWO parts:\n\n' +
+    '## Summary of changes\n' +
+    'A few bullets: what you suggest changing and WHY, tied to what the meeting decided/surfaced.\n\n' +
+    '## Edits\n' +
+    'In document order, one block per change:\n' +
+    '### <section / location heading>\n' +
+    '- **Find:** "<short unique quote of the existing text>"\n' +
+    '- **Action:** Replace | Insert after | Delete\n' +
+    '- **New text:** <the exact text to write>\n\n' +
+    'If a change can\'t be anchored to a quote, anchor to the nearest heading. Add a final ' +
+    '"## New sections to add" only if needed. If nothing needs changing, say so plainly.'
+  let usage = null
+  const guide = (await claudeComplete(user, { system, model: 'claude-sonnet-4-6', max_tokens: 4096, onUsage: (u) => { usage = u } })).trim()
+  return { guide, usage }
+}
+
 // Synthesize a meeting into exactly three things the user wants: a bullet-point
 // topic summary (for fast orientation), action items, and smart searchable tags.
 // The user's OWN live notes are the highest-signal input — they wrote those down
