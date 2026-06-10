@@ -8,13 +8,32 @@ export const blocksToText = (blocks = []) => blocks.map((b) => {
   return ''
 }).join('\n\n')
 
-export const textToBlocks = (text) => (text || '').split(/\n{2,}/).map((chunk) => {
-  const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean)
-  if (!lines.length) return null
-  if (lines.every((l) => l.startsWith('- ') || l.startsWith('* '))) return { ul: lines.map((l) => l.slice(2).trim()) }
-  if (lines.every((l) => OL_LINE.test(l))) return { ol: lines.map((l) => l.replace(OL_LINE, '').trim()) }
-  const links = chunk.match(/\[\[(.+?)\]\]/g)
-  const stripped = chunk.replace(/\[\[(.+?)\]\]/g, '').replace(/(\s|,|and)/gi, '').trim()
-  if (links && stripped === '') return { links: links.map((m) => m.slice(2, -2)) }
-  return { p: chunk.replace(/\n/g, ' ').trim() }
-}).filter(Boolean)
+const UL_LINE = /^[-*•]\s+/ // "- ", "* ", "• "
+const CHECK = /^[-*•]\s+\[\s?\]\s+/ // "- [ ] " checklist → treated as a bullet
+// Line-aware parse: consecutive bullet / numbered lines group into {ul}/{ol}
+// even with no blank line separating them from preceding text, and paragraphs
+// flush on a blank line. Fixes lists typed right under a paragraph.
+export const textToBlocks = (text) => {
+  const lines = (text || '').replace(/\r/g, '').split('\n')
+  const blocks = []
+  let para = [], ul = [], ol = []
+  const flushPara = () => {
+    if (!para.length) return
+    const joined = para.join(' ').trim(); para = []
+    const links = joined.match(/\[\[(.+?)\]\]/g)
+    const stripped = joined.replace(/\[\[(.+?)\]\]/g, '').replace(/(\s|,|and)/gi, '').trim()
+    if (links && stripped === '') blocks.push({ links: links.map((m) => m.slice(2, -2)) })
+    else if (joined) blocks.push({ p: joined })
+  }
+  const flushUl = () => { if (ul.length) { blocks.push({ ul: ul.slice() }); ul = [] } }
+  const flushOl = () => { if (ol.length) { blocks.push({ ol: ol.slice() }); ol = [] } }
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) { flushPara(); flushUl(); flushOl(); continue }
+    if (UL_LINE.test(line)) { flushPara(); flushOl(); ul.push(line.replace(CHECK, '').replace(UL_LINE, '').trim()); continue }
+    if (OL_LINE.test(line)) { flushPara(); flushUl(); ol.push(line.replace(OL_LINE, '').trim()); continue }
+    flushUl(); flushOl(); para.push(line)
+  }
+  flushPara(); flushUl(); flushOl()
+  return blocks
+}

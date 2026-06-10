@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow } from '../kit'
+import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish } from '../kit'
 import { fmtClock } from '../lib/recorder'
 import { textToBlocks } from '../lib/blocks'
 import { createTask } from '../lib/db'
@@ -43,17 +43,6 @@ function guessProjects(text, has) {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 function todayLabel() { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` }
 
-// Render a bullet-markdown summary ("- topic" per line) as a list.
-function BulletSummary({ text }) {
-  const { t, f } = useApp()
-  const lines = (text || '').split('\n').map((l) => l.trim()).filter(Boolean)
-  const items = lines.map((l) => l.replace(/^[-*]\s+/, ''))
-  const allBullets = lines.every((l) => /^[-*]\s+/.test(l))
-  if (!allBullets) return <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{text}</div>
-  return <ul className="selectable" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
-    {items.map((it, i) => <li key={i} style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1 }}>{it}</li>)}
-  </ul>
-}
 
 // One relabelable speaker row. key=sp so it remounts (resets) after a rename.
 function SpeakerRow({ sp, people, onRename }) {
@@ -489,7 +478,7 @@ export function RecordScreen() {
       </div>}
       {synth.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
         <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
-        <BulletSummary text={synth.summary} /></Card>}
+        <Markish text={synth.summary} /></Card>}
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 9, flexWrap: 'wrap' }}>
           <Label style={{ margin: 0 }}>My action items · {actions.length}</Label>

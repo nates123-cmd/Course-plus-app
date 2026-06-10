@@ -6,7 +6,7 @@ import { Fragment, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
-  Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference,
+  Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, Markish, inlineMd,
 } from '../kit'
 import { updateNote, createTask } from '../lib/db'
 import { blocksToText, textToBlocks } from '../lib/blocks'
@@ -32,16 +32,16 @@ function Body({ blocks }) {
   const { noteByTitle } = useData()
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
     {(blocks || []).map((b, i) => {
-      if (b.p) return <p key={i} style={{ margin: 0, fontFamily: f.body, fontSize: 16, lineHeight: 1.68, color: t.t1, textWrap: 'pretty' }}>{b.p}</p>
+      if (b.p) return <p key={i} style={{ margin: 0, fontFamily: f.body, fontSize: 16, lineHeight: 1.68, color: t.t1, textWrap: 'pretty' }}>{inlineMd(b.p)}</p>
       if (b.ul) return <ul key={i} style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {b.ul.map((li, j) => <li key={j} style={{ display: 'flex', gap: 11, fontFamily: f.body, fontSize: 15.5, lineHeight: 1.55, color: t.t1 }}>
           <span style={{ width: 5, height: 5, borderRadius: 3, background: t.accent, flex: 'none', marginTop: 9 }} />
-          <span style={{ flex: 1 }}>{li}</span></li>)}
+          <span style={{ flex: 1 }}>{inlineMd(li)}</span></li>)}
       </ul>
       if (b.ol) return <ol key={i} style={{ margin: 0, paddingLeft: 0, listStyle: 'none', counterReset: 'ol', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {b.ol.map((li, j) => <li key={j} style={{ display: 'flex', gap: 11, fontFamily: f.body, fontSize: 15.5, lineHeight: 1.55, color: t.t1 }}>
           <span style={{ fontFamily: f.ui, fontWeight: 700, fontSize: 13, color: t.accent, flex: 'none', minWidth: 16, marginTop: 1 }}>{j + 1}.</span>
-          <span style={{ flex: 1 }}>{li}</span></li>)}
+          <span style={{ flex: 1 }}>{inlineMd(li)}</span></li>)}
       </ol>
       if (b.links) return <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {b.links.map((lk, j) => { const tgt = noteByTitle(lk)
@@ -265,14 +265,7 @@ export function NoteScreen() {
     {isMeeting && !editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
       {n.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
         <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
-        {(() => {
-          const ls = n.summary.split('\n').map((l) => l.trim()).filter(Boolean)
-          const allB = ls.length > 0 && ls.every((l) => /^[-*]\s+/.test(l))
-          return allB
-            ? <ul className="selectable" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {ls.map((l, i) => <li key={i} style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1 }}>{l.replace(/^[-*]\s+/, '')}</li>)}</ul>
-            : <div className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, textWrap: 'pretty' }}>{n.summary}</div>
-        })()}
+        <Markish text={n.summary} />
       </Card>}
       {(n.actions || []).length > 0 && <div>
         <Label style={{ marginBottom: 9 }}>Action items · {n.actions.length}</Label>

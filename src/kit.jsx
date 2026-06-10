@@ -216,6 +216,49 @@ export function isReference(n) {
   return n.kind === 'knowledge' || (n.tags || []).includes('reference')
 }
 
+// ── Markdown-lite rendering ─────────────────────────────────────
+// inlineMd: render **bold**, *italic*, `code` inline (so the literal asterisks
+// don't show). Returns an array of strings + elements.
+export function inlineMd(text) {
+  const s = String(text == null ? '' : text)
+  const re = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|`([^`]+)`)/g
+  const out = []; let last = 0, m, k = 0
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push(s.slice(last, m.index))
+    if (m[2] != null || m[3] != null) out.push(<strong key={k++}>{m[2] ?? m[3]}</strong>)
+    else if (m[4] != null) out.push(<em key={k++}>{m[4]}</em>)
+    else if (m[5] != null) out.push(<code key={k++} style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.92em' }}>{m[5]}</code>)
+    last = m.index + m[0].length
+  }
+  if (last < s.length) out.push(s.slice(last))
+  return out
+}
+
+// Markish: render a markdown-lite string — bullet lists ("- "/"* "/"• "),
+// numbered lists ("1. "/"1) "), and paragraphs — with inline emphasis. Used for
+// AI summaries so they read as real bullets, not raw markdown.
+export function Markish({ text, style }) {
+  const { t, f } = useApp()
+  const lines = String(text || '').replace(/\r/g, '').split('\n')
+  const blocks = []; let cur = null
+  const add = (type, content) => { if (!cur || cur.type !== type) { cur = { type, items: [] }; blocks.push(cur) } cur.items.push(content) }
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) { cur = null; continue }
+    if (/^[-*•]\s+/.test(line)) add('ul', line.replace(/^[-*•]\s+\[?\s?\]?\s*/, '').replace(/^[-*•]\s+/, ''))
+    else if (/^\d+[.)]\s+/.test(line)) add('ol', line.replace(/^\d+[.)]\s+/, ''))
+    else add('p', line)
+  }
+  const liStyle = { fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1, marginBottom: 4 }
+  return <div style={{ ...style }}>
+    {blocks.map((b, i) => {
+      if (b.type === 'ul') return <ul key={i} className="selectable" style={{ margin: '0 0 8px', paddingLeft: 20 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ul>
+      if (b.type === 'ol') return <ol key={i} className="selectable" style={{ margin: '0 0 8px', paddingLeft: 22 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ol>
+      return <p key={i} className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, margin: '0 0 8px', textWrap: 'pretty' }}>{inlineMd(b.items.join(' '))}</p>
+    })}
+  </div>
+}
+
 // ── Dates ───────────────────────────────────────────────────────
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const _now = new Date()
