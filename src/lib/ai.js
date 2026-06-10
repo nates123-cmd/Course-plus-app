@@ -52,17 +52,28 @@ const TYPE_BRIEF = {
   email: 'a ready-to-send email draft',
   deck: 'a slide-by-slide deck outline',
 }
-// Compose a paste-ready deliverable from a note or a project's notes.
+// Compose a paste-ready deliverable from the FULL material — note bodies AND
+// meeting transcripts, not just summaries (a transcript is far richer source for
+// building an artifact than a lossy summary). Escalates to Sonnet for big inputs.
 export async function composeDeliverable(typeId, instructions, sourceLabel, notes) {
-  const corpus = notes.map((n) => `• ${n.title}${n.summary ? ': ' + n.summary : ''}`).join('\n')
+  const corpus = notes.map((n) => {
+    const body = (n.body || []).map((b) => b.p
+      || (b.ul ? b.ul.map((i) => '- ' + i).join('\n')
+      : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n')
+    const tx = n.transcript ? `\nTranscript:\n${n.transcript}` : ''
+    return `## ${n.title}${n.summary ? '\nSummary: ' + n.summary : ''}${body ? '\n' + body : ''}${tx}`
+  }).join('\n\n---\n\n')
+  const big = corpus.length > 12000 || notes.length > 6
+  const model = big ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
   const system =
-    'You compose clean, paste-ready business deliverables from notes. ' +
+    'You compose clean, paste-ready business deliverables. Work from the FULL source material ' +
+    '(note bodies and meeting transcripts) — use the detail, not just the summaries. ' +
     'Output ONLY the deliverable content in plain markdown — no preamble, no "here is".'
   const user =
     `Source: ${sourceLabel}\nMaterial:\n${corpus}\n\n` +
     `Produce ${TYPE_BRIEF[typeId] || 'a brief'}.` +
     (instructions ? ` Instructions: ${instructions}` : '')
-  return (await claudeComplete(user, { system, max_tokens: 1200 })).trim()
+  return (await claudeComplete(user, { system, model, max_tokens: 2000 })).trim()
 }
 
 // Synthesize a meeting into exactly three things the user wants: a bullet-point
@@ -70,10 +81,18 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
 // The user's OWN live notes are the highest-signal input — they wrote those down
 // because they mattered — so they're weighted above the transcript. Long
 // transcripts escalate to Sonnet for whole-meeting recall.
-export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [] } = {}) {
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'medium' } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
-  const model = long ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const model = (detail === 'high' || long) ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const maxTok = detail === 'high' ? 4096 : detail === 'low' ? 1100 : 2400
+  const summarySpec = detail === 'high'
+    ? 'a THOROUGH, in-depth briefing as markdown bullets — cover every topic, decision, number, ' +
+      'commitment, and nuance, with indented sub-bullets where useful. Be detailed enough that I ' +
+      'could build a deliverable from this summary alone.'
+    : detail === 'low'
+    ? 'a tight, highest-level digest — 3 to 6 markdown bullets, only the essentials.'
+    : 'a clear markdown bullet overview — roughly one or two "- " bullets per topic discussed.'
   const system =
     'You synthesize a meeting for a personal work app used by Nate (me / the note-taker — ' +
     'always one of the participants). The USER\'S OWN NOTES are the highest-signal input — they ' +
@@ -91,21 +110,33 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     : ''
   const user =
     parts.join('\n\n---\n\n') + '\n\n' +
-    'Return ONLY JSON: {' +
-    '"summary": string (concise markdown BULLET points — one "- " line per topic discussed, ' +
-    'so I can re-orient at a glance; lead with what my notes emphasize), ' +
+    'Return ONLY JSON (no markdown fences, no prose around it). Use real "\\n" in strings for line ' +
+    'breaks and "- " for bullets. Shape: {' +
+    '"summary": string (' + summarySpec + '), ' +
     '"actions": [{"text": string, "owner": string}], ' +
-    '"next_steps": string (markdown BULLET points — your suggested next steps / follow-ups / ' +
-    'recommendations for how I should move this forward; be specific and useful), ' +
+    '"next_steps": string (markdown bullet points — your suggested next steps / follow-ups / ' +
+    'recommendations for how I should move this forward; specific and useful), ' +
     '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10), ' +
     '"speakers": object (map each transcript speaker label to a real first name)}\n\n' +
     'IMPORTANT: "actions" must contain ONLY action items that are MINE to do — the note-taker / ' +
     'first person ("I will…", "my job is…", things assigned to me — I am Nate). OMIT other people\'s ' +
     'to-dos. Set each owner to "me". If none are mine, return [].' + speakerAsk
   let usage = null
-  const raw = await claudeComplete(user, { system, model, max_tokens: 2200, onUsage: (u) => { usage = u } })
-  const j = extractJSON(raw) || { summary: raw, actions: [], tags: [], next_steps: '', speakers: {} }
-  return { summary: j.summary || '', actions: j.actions || [], tags: j.tags || [], nextSteps: j.next_steps || '', speakers: j.speakers || {}, people: [], terms: [], usage }
+  const raw = await claudeComplete(user, { system, model, max_tokens: maxTok, onUsage: (u) => { usage = u } })
+  // Tolerant parse: if the JSON is truncated (big detailed summary hits the token
+  // cap) JSON.parse fails — salvage the string fields by regex so the user never
+  // sees a raw "{...\n..." blob.
+  const j = extractJSON(raw) || {}
+  const grab = (k) => { try { const m = raw.match(new RegExp('"' + k + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"')); return m ? JSON.parse('"' + m[1] + '"') : '' } catch { return '' } }
+  const summary = (typeof j.summary === 'string' && j.summary) ? j.summary : grab('summary')
+  const nextSteps = (typeof j.next_steps === 'string' && j.next_steps) ? j.next_steps : grab('next_steps')
+  return {
+    summary: summary || '', nextSteps: nextSteps || '',
+    actions: Array.isArray(j.actions) ? j.actions : [],
+    tags: Array.isArray(j.tags) ? j.tags : [],
+    speakers: (j.speakers && typeof j.speakers === 'object') ? j.speakers : {},
+    people: [], terms: [], usage,
+  }
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────

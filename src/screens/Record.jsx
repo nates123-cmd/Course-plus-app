@@ -135,7 +135,7 @@ export function RecordScreen() {
   const notesRef = useRef(null)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
-  const { phase, seconds, title, home, pillar, people, agenda, notes, source, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize } = rec
+  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
@@ -524,11 +524,19 @@ export function RecordScreen() {
     </div>}
 
     {/* synthesize bar */}
-    {showSynthBar && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg }}>
+    {showSynthBar && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
       <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 140 }}>
         <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Synthesize</div>
-        <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>{transcriptText ? `${lines.length} turns${speakers.length ? ' · ' + speakers.length + ' speakers' : ''} · ` : ''}your notes → bullet summary, action items & tags</div>
+        <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>{transcriptText ? `${lines.length} turns${speakers.length ? ' · ' + speakers.length + ' speakers' : ''} · ` : ''}summary, action items & tags</div>
+      </div>
+      {/* detail level */}
+      <div style={{ display: 'inline-flex', background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 9, padding: 2 }}>
+        {[['low', 'Brief'], ['medium', 'Medium'], ['high', 'Detailed']].map(([id, label]) => {
+          const on = detail === id
+          return <span key={id} onClick={() => rec.setMeta({ detail: id })} title={id === 'high' ? 'In-depth — best for building an artifact' : id === 'low' ? 'Highest-level — key points only' : 'Balanced overview'}
+            style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2, background: on ? t.accent : 'transparent', borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+        })}
       </div>
       <Btn kind="primary" size="sm" icon={synthBusy ? 'loader-2' : 'wand'} onClick={() => !synthBusy && canSynth && rec.synthesize()}>{synthBusy ? 'Synthesizing…' : 'Synthesize'}</Btn>
     </Card>}

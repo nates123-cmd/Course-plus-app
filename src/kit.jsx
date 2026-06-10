@@ -239,7 +239,12 @@ export function inlineMd(text) {
 // AI summaries so they read as real bullets, not raw markdown.
 export function Markish({ text, style }) {
   const { t, f } = useApp()
-  const lines = String(text || '').replace(/\r/g, '').split('\n')
+  // Defensive cleanup: unescape literal "\n"/"\t" that can leak from JSON, strip
+  // surrounding braces/quotes/backticks if a raw value sneaks through.
+  const clean = String(text || '')
+    .replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"')
+    .replace(/^\s*[`{]+\s*/, '').replace(/\s*[`}]+\s*$/, '')
+  const lines = clean.replace(/\r/g, '').split('\n')
   const blocks = []; let cur = null
   const add = (type, content) => { if (!cur || cur.type !== type) { cur = { type, items: [] }; blocks.push(cur) } cur.items.push(content) }
   for (const raw of lines) {

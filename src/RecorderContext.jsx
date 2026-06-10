@@ -50,6 +50,7 @@ export function RecorderProvider({ go, children }) {
   const [agenda, setAgenda] = useState('')     // pre-meeting prep notes
   const [notes, setNotes] = useState('')       // live notes (highest-signal)
   const [source, setSource] = useState('paste') // transcript source: 'paste' | 'record'
+  const [detail, setDetail] = useState('medium') // synthesis depth: low | medium | high
   // transcription tuning (record mode only)
   const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
   const [diarize, setDiarize] = useState(true)   // speaker labels on/off
@@ -74,6 +75,7 @@ export function RecorderProvider({ go, children }) {
     if ('agenda' in patch) setAgenda(patch.agenda)
     if ('notes' in patch) setNotes(patch.notes)
     if ('source' in patch) setSource(patch.source)
+    if ('detail' in patch) setDetail(patch.detail)
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
   }
@@ -346,7 +348,7 @@ export function RecorderProvider({ go, children }) {
     setProc('synth')
     try {
       const speakerLabels = [...new Set(lines.map((l) => l.sp))]
-      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels })
+      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels, detail })
       setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [], nextSteps: s.nextSteps || '' })
       // Apply Claude's speaker-name guesses (leads with the People list; else inferred).
       if (s.speakers && typeof s.speakers === 'object') {
@@ -383,12 +385,12 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
-    title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost,
+    title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
