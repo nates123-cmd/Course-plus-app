@@ -121,7 +121,8 @@ export function RecordScreen() {
     requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
   }
 
-  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn } = rec
+  const { phase, seconds, title, home, pillar, notes, lines, transcriptText, synth, error, cost, warn, speakers, diarize, multiLang } = rec
+  const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused' // can't change after transcribe
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
   // where the meeting lands: a project's area, or the chosen pillar, or nothing (Library)
@@ -266,8 +267,27 @@ export function RecordScreen() {
             on={pillar === a.id} onClick={() => { rec.setMeta({ pillar: a.id }); setPillarOpen(false) }} />)}
         </Popover>}
       </span>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
-        <Icon n="users" s={13} />Speaker labels on</span>
+    </div>
+
+    {/* transcription tuning — fixes over/under speaker counting; off = clean single stream */}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Transcribe</span>
+      <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
+          color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px',
+          cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+        <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
+      {diarize && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
+        <input type="number" min={1} max={10} disabled={tuneLocked} value={speakers ?? ''} placeholder="auto"
+          onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
+          style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card,
+            fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
+        <span>expected speakers</span></span>}
+      <span onClick={() => !tuneLocked && rec.setMeta({ multiLang: !multiLang })} title="Mixed languages (e.g. English + Spanish)"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
+          color: multiLang ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px',
+          cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+        <Icon n="language" s={13} c={multiLang ? t.accent : t.t3} />Multilingual {multiLang ? 'on' : 'off'}</span>
     </div>
 
     {/* projects discussed — multiple */}

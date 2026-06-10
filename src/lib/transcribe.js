@@ -28,7 +28,8 @@ function formatUtterances(utterances, fallback) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // blob -> transcript text. onStatus('uploading'|'queued'|'processing') for UI.
-export async function transcribeAudio(blob, { onStatus } = {}) {
+// opts: { speakersExpected, diarize, languageDetection } tune AssemblyAI.
+export async function transcribeAudio(blob, { onStatus, speakersExpected, diarize, languageDetection } = {}) {
   if (!blob || !blob.size) throw new Error('empty recording')
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('not signed in')
@@ -42,7 +43,11 @@ export async function transcribeAudio(blob, { onStatus } = {}) {
   if (up.error) throw new Error('upload: ' + up.error.message)
 
   onStatus?.('queued')
-  const { id } = await callFn({ op: 'start', path })
+  const startReq = { op: 'start', path }
+  if (diarize === false) startReq.speaker_labels = false
+  if (Number.isInteger(speakersExpected) && speakersExpected >= 1) startReq.speakers_expected = speakersExpected
+  if (languageDetection) startReq.language_detection = true
+  const { id } = await callFn(startReq)
   if (!id) throw new Error('no transcript id')
 
   // Poll up to ~40 min. 2hr audio usually completes in a few minutes.

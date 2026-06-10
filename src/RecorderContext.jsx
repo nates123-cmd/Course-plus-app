@@ -42,6 +42,10 @@ export function RecorderProvider({ go, children }) {
   const [pillar, setPillar] = useState(null)  // area id when no home project
   const [projects, setProjects] = useState([]) // discussed/linked project ids
   const [notes, setNotes] = useState('')
+  // transcription tuning
+  const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
+  const [diarize, setDiarize] = useState(true)   // speaker labels on/off
+  const [multiLang, setMultiLang] = useState(false) // multilingual detection
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
   const [transcriptText, setTranscriptText] = useState('')
   const [synth, setSynth] = useState(emptySynth)
@@ -60,6 +64,9 @@ export function RecorderProvider({ go, children }) {
     if ('pillar' in patch) setPillar(patch.pillar)
     if ('projects' in patch) setProjects(patch.projects)
     if ('notes' in patch) setNotes(patch.notes)
+    if ('speakers' in patch) setSpeakers(patch.speakers)
+    if ('diarize' in patch) setDiarize(patch.diarize)
+    if ('multiLang' in patch) setMultiLang(patch.multiLang)
   }
 
   const start = async () => {
@@ -92,7 +99,8 @@ export function RecorderProvider({ go, children }) {
     if (!blob || !blob.size) { setError('No audio was captured.'); setProc(PROC_IDLE); return }
     setProc('transcribing')
     try {
-      const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing') })
+      const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'),
+        speakersExpected: speakers, diarize, languageDetection: multiLang })
       const parsed = parseLines(text)
       // attach rough timestamps (we don't get word-level offsets back here)
       const withAt = parsed.map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
@@ -154,9 +162,10 @@ export function RecorderProvider({ go, children }) {
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, notes, lines, transcriptText, synth, cost,
+    speakers, diarize, multiLang,
     setMeta, setProjects, setError, setWarn,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, notes, lines, transcriptText, synth, cost])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, notes, lines, transcriptText, synth, cost, speakers, diarize, multiLang])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
