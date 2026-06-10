@@ -234,9 +234,9 @@ export function inlineMd(text) {
   return out
 }
 
-// Markish: render a markdown-lite string — bullet lists ("- "/"* "/"• "),
-// numbered lists ("1. "/"1) "), and paragraphs — with inline emphasis. Used for
-// AI summaries so they read as real bullets, not raw markdown.
+// Markish: render a markdown-lite string — headings (#/##/###), bullet lists,
+// numbered lists, and paragraphs — with inline emphasis and proper spacing, so
+// AI summaries read as a real document rather than raw markdown.
 export function Markish({ text, style }) {
   const { t, f } = useApp()
   // Defensive cleanup: unescape literal "\n"/"\t" that can leak from JSON, strip
@@ -250,16 +250,23 @@ export function Markish({ text, style }) {
   for (const raw of lines) {
     const line = raw.trim()
     if (!line) { cur = null; continue }
+    const h = line.match(/^(#{1,6})\s+(.*)$/)
+    if (h) { blocks.push({ type: 'h', level: h[1].length, items: [h[2].replace(/\*+/g, '')] }); cur = null; continue }
     if (/^[-*•]\s+/.test(line)) add('ul', line.replace(/^[-*•]\s+\[?\s?\]?\s*/, '').replace(/^[-*•]\s+/, ''))
     else if (/^\d+[.)]\s+/.test(line)) add('ol', line.replace(/^\d+[.)]\s+/, ''))
     else add('p', line)
   }
-  const liStyle = { fontFamily: f.body, fontSize: 14.5, lineHeight: 1.5, color: t.t1, marginBottom: 4 }
-  return <div style={{ ...style }}>
+  const liStyle = { fontFamily: f.body, fontSize: 14.5, lineHeight: 1.55, color: t.t1, marginBottom: 6 }
+  return <div className="selectable" style={{ ...style }}>
     {blocks.map((b, i) => {
-      if (b.type === 'ul') return <ul key={i} className="selectable" style={{ margin: '0 0 8px', paddingLeft: 20 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ul>
-      if (b.type === 'ol') return <ol key={i} className="selectable" style={{ margin: '0 0 8px', paddingLeft: 22 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ol>
-      return <p key={i} className="selectable" style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, margin: '0 0 8px', textWrap: 'pretty' }}>{inlineMd(b.items.join(' '))}</p>
+      if (b.type === 'h') {
+        const fs = b.level <= 1 ? 17 : b.level === 2 ? 15.5 : 14
+        return <div key={i} style={{ fontFamily: f.title, fontSize: fs, fontWeight: 700, letterSpacing: f.titleSpacing,
+          color: t.t1, marginTop: i === 0 ? 0 : 16, marginBottom: 7 }}>{inlineMd(b.items[0])}</div>
+      }
+      if (b.type === 'ul') return <ul key={i} style={{ margin: '0 0 12px', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 5 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ul>
+      if (b.type === 'ol') return <ol key={i} style={{ margin: '0 0 12px', paddingLeft: 22, display: 'flex', flexDirection: 'column', gap: 5 }}>{b.items.map((it, j) => <li key={j} style={liStyle}>{inlineMd(it)}</li>)}</ol>
+      return <p key={i} style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.62, color: t.t1, margin: '0 0 12px', textWrap: 'pretty' }}>{inlineMd(b.items.join(' '))}</p>
     })}
   </div>
 }

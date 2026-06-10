@@ -118,6 +118,9 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     'recommendations for how I should move this forward; specific and useful), ' +
     '"tags": string[] (smart, lowercase, searchable topic + key-term labels — 4 to 10), ' +
     '"speakers": object (map each transcript speaker label to a real first name)}\n\n' +
+    'Format "summary" and "next_steps" as clean, well-spaced markdown: short "## Heading" sections ' +
+    'where it helps, "- " bullets underneath, and a blank line between sections. Use "**bold**" for ' +
+    'emphasis sparingly — never leave stray "#" or "*" that aren\'t real markdown.\n\n' +
     'IMPORTANT: "actions" must contain ONLY action items that are MINE to do — the note-taker / ' +
     'first person ("I will…", "my job is…", things assigned to me — I am Nate). OMIT other people\'s ' +
     'to-dos. Set each owner to "me". If none are mine, return [].' + speakerAsk
