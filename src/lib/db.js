@@ -271,6 +271,11 @@ export async function deleteProject(id) {
   const { error } = await supabase.from('cp_projects').delete().eq('id', id)
   if (error) throw error
 }
+// Persist a new project ordering (sort = position). orderedIds = project ids in display order.
+export async function reorderProjects(orderedIds) {
+  const r = await Promise.all(orderedIds.map((id, sort) => supabase.from('cp_projects').update({ sort }).eq('id', id)))
+  const err = r.find((x) => x.error); if (err) throw err.error
+}
 
 // ── areas ──────────────────────────────────────────────────────────
 export async function createArea(name, sort = 0) {

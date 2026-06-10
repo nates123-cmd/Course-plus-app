@@ -8,7 +8,7 @@ import { useData } from './DataContext'
 import { t, F } from './theme/tokens'
 import { Icon, IconBtn, Btn, StatusPill, AreaDot, areaColor, usePersisted, Popover, PopRow, STATUS, statusSkin } from './kit'
 import { TOPICS } from './data'
-import { createArea, createProject, createNote, createTask, createInbox } from './lib/db'
+import { createArea, createProject, createNote, createTask, createInbox, reorderProjects } from './lib/db'
 
 import { OverviewScreen, AreaScreen } from './screens/Overview'
 import { ProjectScreen } from './screens/Project'
@@ -28,6 +28,31 @@ function SidebarContent({ onClose }) {
   const isOpen = (a) => open[a.id] ?? a.open
   const [adding, setAdding] = useState(null)
   const [newName, setNewName] = useState('')
+  const [dragPid, setDragPid] = useState(null)
+  const [pOrder, setPOrder] = useState(null) // { areaId, ids } — live-order override while dragging
+
+  const startProjDrag = (e, pid, areaId, liveIds) => { setDragPid(pid); setPOrder({ areaId, ids: liveIds.slice() }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', pid) } catch {} }
+  const overProjDrag = (e, overPid, areaId) => {
+    e.preventDefault()
+    if (!dragPid || dragPid === overPid) return
+    setPOrder((o) => {
+      if (!o || o.areaId !== areaId) return o
+      const ids = o.ids.slice(); const from = ids.indexOf(dragPid); const to = ids.indexOf(overPid)
+      if (from < 0 || to < 0 || from === to) return o
+      ids.splice(to, 0, ids.splice(from, 1)[0])
+      return { areaId, ids }
+    })
+  }
+  const endProjDrag = async (a) => {
+    const o = pOrder; setDragPid(null); setPOrder(null)
+    if (!o || o.areaId !== a.id) return
+    const ideaIds = a.projects.filter((p) => p.status === 'idea').map((p) => p.id)
+    const archIds = a.projects.filter((p) => p.status === 'archived').map((p) => p.id)
+    const full = [...o.ids, ...ideaIds, ...archIds]
+    const orig = a.projects.map((p) => p.id)
+    if (full.join(',') === orig.join(',')) return
+    try { await reorderProjects(full); await reload() } catch (e) { window.alert('Could not reorder: ' + (e?.message || e)) }
+  }
 
   const commitArea = async () => {
     const nm = newName.trim(); setNewName(''); setAdding(null)
@@ -45,13 +70,15 @@ function SidebarContent({ onClose }) {
     background: t.card, fontFamily: F.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }
   const inboxCount = inbox.length
 
-  // a single project row (shared by live / ideas / archive); indent varies by nesting
-  const projRow = (p, indent = 28) => {
+  // a single project row (shared by live / ideas / archive); indent varies by
+  // nesting. `drag` (optional) carries HTML5 drag props for reorderable live rows.
+  const projRow = (p, indent = 28, drag = null) => {
     const active = route.screen === 'project' && route.id === p.id
-    return <div key={p.id} onClick={() => { go({ screen: 'project', id: p.id }); onClose && onClose() }}
+    const dragProps = drag ? { draggable: true, onDragStart: drag.onDragStart, onDragOver: drag.onDragOver, onDrop: drag.onDrop, onDragEnd: drag.onDragEnd } : {}
+    return <div key={p.id} {...dragProps} onClick={() => { go({ screen: 'project', id: p.id }); onClose && onClose() }}
       style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5,
         fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
-        padding: `6px 10px 6px ${indent}px`, borderRadius: 7, margin: '1px 0',
+        padding: `6px 10px 6px ${indent}px`, borderRadius: 7, margin: '1px 0', opacity: drag && drag.dragging ? 0.4 : 1,
         background: active ? t.sel : 'transparent', borderLeft: '2px solid ' + (active ? t.accent : 'transparent') }}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
@@ -138,7 +165,19 @@ function SidebarContent({ onClose }) {
             <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{live.length || ''}</span>
           </div>
           {isOpen(a) && <>
-            {live.map((p) => projRow(p))}
+            {(() => {
+              const liveIds = live.map((p) => p.id)
+              const display = (pOrder && pOrder.areaId === a.id)
+                ? pOrder.ids.map((id) => a.projects.find((p) => p.id === id)).filter(Boolean)
+                : live
+              return display.map((p) => projRow(p, 28, {
+                dragging: dragPid === p.id,
+                onDragStart: (e) => startProjDrag(e, p.id, a.id, liveIds),
+                onDragOver: (e) => overProjDrag(e, p.id, a.id),
+                onDrop: (e) => e.preventDefault(),
+                onDragEnd: () => endProjDrag(a),
+              }))
+            })()}
             {ideas.length > 0 && <>
               {folderRow(ideasKey, 'Ideas', ideas.length, 28)}
               {open[ideasKey] && ideas.map((p) => projRow(p, 40))}
