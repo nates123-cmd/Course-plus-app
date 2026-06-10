@@ -108,7 +108,7 @@ export function statusSkin(t, id) {
     case 'active':   return { color: t.onAccent, bg: t.accent, dot: t.accent }
     case 'next-up':  return { color: t.accent, bg: t.accentBg, line: t.accentLine, dot: t.accent }
     case 'sent':     return { color: t.good, bg: t.goodBg, dot: t.good }
-    case 'on-hold':  return { color: t.t2, bg: t.tagBg, dot: t.t2 }
+    case 'on-hold':  return { color: t.risk, bg: t.riskBg, line: t.riskLine, dot: t.risk }
     case 'idea':     return { color: t.area_brain, bg: 'transparent', line: t.line2, dot: t.area_brain }
     default:         return { color: t.t3, bg: t.tagBg, dot: t.t3 }
   }

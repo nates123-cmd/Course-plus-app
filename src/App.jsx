@@ -56,7 +56,7 @@ function SidebarContent({ onClose }) {
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
       <span style={{ width: 6, height: 6, borderRadius: 3, flex: 'none',
-        background: p.status === 'active' ? t.accent : t.t3, opacity: p.status === 'on-hold' ? 0.5 : 1 }} />
+        background: p.status === 'active' ? t.accent : p.status === 'on-hold' ? t.risk : t.t3 }} />
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
     </div>
   }
