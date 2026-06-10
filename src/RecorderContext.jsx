@@ -4,14 +4,18 @@
 // hook plus session meta (title, home project, discussed projects, scratch
 // notes, transcript lines, synthesized fields) and the phase machine that
 // drives both the full Record screen and the FloatingRecorder mini-window.
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './ctx'
 import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
-import { useRecorder, fmtClock } from './lib/recorder'
+import { useRecorder, fmtClock, getRecovered, clearRecovered } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
 import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
+import { createNote, updateNote, deleteNote } from './lib/db'
+import { textToBlocks, blocksToText } from './lib/blocks'
+
+const DRAFT_KEY = 'course.meetingDraft'
 
 // AssemblyAI async transcription, USD per hour (Best/Universal tier, speaker
 // diarization on). Nano tier (no good diarization) is ~$0.12/hr.
@@ -30,6 +34,7 @@ const emptySynth = { summary: '', actions: [], terms: [], people: [], tags: [] }
 export function RecorderProvider({ go, children }) {
   const recorder = useRecorder()
   const { status, seconds, interrupted } = recorder
+  const { areaOfProject, reload } = useData()
 
   // post-recording processing phase (idle when not in a processing stage)
   const [proc, setProc] = useState(PROC_IDLE) // idle | transcribing | ready | synth | done
@@ -71,6 +76,130 @@ export function RecorderProvider({ go, children }) {
     if ('source' in patch) setSource(patch.source)
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
+  }
+
+  // ── Recovery & autosave ─────────────────────────────────────────
+  const draftIdRef = useRef(null)       // stable cp_notes id for this draft
+  const draftSavedRef = useRef(false)   // has the incomplete note been written?
+  const hydratedRef = useRef(false)
+  const [recoveredBlob, setRecoveredBlob] = useState(null) // orphaned interrupted-recording audio
+
+  const meaningful = () => !!(title.trim() || notes.trim() || agenda.trim() || transcriptText.trim())
+
+  // Hydrate the draft from localStorage + detect recovered audio — once.
+  useEffect(() => {
+    if (hydratedRef.current) return
+    hydratedRef.current = true
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d && (d.title || d.notes || d.agenda || d.transcriptText)) {
+          setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
+          setProjects(d.projects || []); setPeople(d.people || []); setAgenda(d.agenda || '')
+          setNotes(d.notes || ''); setSource(d.source || 'paste')
+          setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
+          draftIdRef.current = d.draftNoteId || null
+          draftSavedRef.current = !!d.draftNoteId
+          setProc(d.transcriptText ? 'ready' : PROC_IDLE)
+        }
+      }
+    } catch {}
+    getRecovered().then((b) => { if (b && b.size) setRecoveredBlob(b) }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist the draft to localStorage (synchronous safety copy) on every change.
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    const has = meaningful() || people.length || projects.length
+    if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
+    const id = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, transcriptText, lines, synth, draftNoteId: draftIdRef.current })) } catch {}
+    }, 500)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, home, pillar, projects, people, agenda, notes, source, transcriptText, lines, synth])
+
+  // The note fields shared by autosave + finalize.
+  const noteFields = (incomplete) => ({
+    kind: 'meeting', title: title.trim() || 'Untitled meeting',
+    project: home || null, area: home ? (areaOfProject(home)?.id || null) : (pillar || null),
+    projects: [...new Set([home, ...projects].filter(Boolean))],
+    people: people || [], agenda: agenda.trim() || null, transcript: transcriptText || null,
+    body: notes.trim() ? textToBlocks(notes) : [],
+    date: (() => { const d = new Date(); const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` })(),
+    updated: 'now', status: incomplete ? 0 : 2, incomplete,
+  })
+
+  // Debounced best-effort DB autosave as a flagged incomplete meeting.
+  useEffect(() => {
+    if (!hydratedRef.current || !meaningful() || proc === 'done') return
+    const id = setTimeout(async () => {
+      try {
+        if (!draftIdRef.current) draftIdRef.current = (crypto?.randomUUID?.() || 'draft-' + Date.now())
+        const fields = noteFields(true)
+        if (!draftSavedRef.current) { await createNote({ ...fields, id: draftIdRef.current }); draftSavedRef.current = true }
+        else await updateNote(draftIdRef.current, fields)
+      } catch {} // RLS / offline → localStorage still holds the draft
+    }, 6000)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, home, pillar, projects, people, agenda, notes, transcriptText, proc])
+
+  // Warn before leaving while there's unsaved meeting content.
+  useEffect(() => {
+    const dirty = phase === 'recording' || phase === 'paused' || meaningful()
+    if (!dirty) return
+    const h = (e) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, title, notes, agenda, transcriptText])
+
+  // Finalize: persist the COMPLETE note (clearing the incomplete flag), reusing
+  // the draft row so there's no duplicate. Returns the note id.
+  const finalizeNote = async (fields) => {
+    const id = draftIdRef.current || (crypto?.randomUUID?.() || 'note-' + Date.now())
+    const full = { ...fields, incomplete: false }
+    if (draftSavedRef.current) await updateNote(id, full)
+    else await createNote({ ...full, id })
+    draftIdRef.current = id; draftSavedRef.current = true
+    return id
+  }
+
+  // Discard: delete the autosaved incomplete row (if any) + wipe the draft.
+  const discard = async () => {
+    try { if (draftSavedRef.current && draftIdRef.current) { await deleteNote(draftIdRef.current); await reload() } } catch {}
+    clear()
+  }
+
+  // Recover the audio from an interrupted recording → transcribe into the draft.
+  const recoverAudio = async () => {
+    const blob = recoveredBlob; setRecoveredBlob(null)
+    if (!blob) return
+    setSource('record'); setError(null); setProc('transcribing')
+    try {
+      const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'), speakersExpected: speakers, diarize })
+      setTranscriptText(text)
+      setLines(parseLines(text, people).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })))
+      setProc('ready')
+    } catch (e) { setError(humanize(e)); setProc('ready') }
+    clearRecovered().catch(() => {})
+  }
+  const dismissRecovered = () => { setRecoveredBlob(null); clearRecovered().catch(() => {}) }
+
+  // Resume a saved (incomplete) meeting note back into the composer.
+  const loadDraftFromNote = (n) => {
+    if (!n) return
+    draftIdRef.current = n.id; draftSavedRef.current = true
+    setTitle(n.title || ''); setHome(n.project || null); setPillar(n.project ? null : (n.area || null))
+    setProjects(n.projects || []); setPeople(n.people || []); setAgenda(n.agenda || '')
+    setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
+    setTranscriptText(n.transcript || '')
+    setLines(n.transcript ? parseLines(n.transcript, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
+    setSynth(emptySynth); setCost(null); setError(null); setWarn(null)
+    setProc(n.transcript ? 'ready' : PROC_IDLE)
   }
 
   const start = async () => {
@@ -137,6 +266,7 @@ export function RecorderProvider({ go, children }) {
       } else setWarn(null)
       setSource('record')
       setProc('ready')
+      clearRecovered().catch(() => {}) // audio captured into the transcript; no longer "interrupted"
     } catch (e) {
       setError(humanize(e))
       setProc(PROC_IDLE)
@@ -180,19 +310,24 @@ export function RecorderProvider({ go, children }) {
     setProjects([]); setPeople([]); setAgenda(''); setNotes(''); setPillar(null); setWarn(null); setSource('paste')
   }
 
-  // clear() — full teardown after a save (also drops title).
+  // clear() — full teardown after a save/discard (drops title + the draft copies).
   const clear = () => {
     reset()
     setTitle('')
+    draftIdRef.current = null; draftSavedRef.current = false
+    setRecoveredBlob(null)
+    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    clearRecovered().catch(() => {})
   }
 
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost,
-    speakers, diarize,
+    speakers, diarize, recoveredBlob,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost, speakers, diarize])
+    finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote,
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

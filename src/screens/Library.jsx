@@ -102,6 +102,14 @@ export function LibraryScreen() {
                 </div>
               </div>
 
+              {n.incomplete && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui,
+                  fontSize: 10.5, fontWeight: 700, color: t.risk, background: t.riskBg,
+                  border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>
+                  <Icon n="alert-triangle" s={11} />Incomplete
+                </span>
+              )}
+
               {ref && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui,
                   fontSize: 10.5, fontWeight: 600, color: t.accent, background: t.accentBg,

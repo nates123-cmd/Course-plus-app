@@ -11,6 +11,7 @@ import {
 import { updateNote, createTask } from '../lib/db'
 import { blocksToText, textToBlocks } from '../lib/blocks'
 import { summarizeNote, extractActions, suggestTags, rewriteNote } from '../lib/ai'
+import { useRecorderCtx } from '../RecorderContext'
 
 // Word count — for meetings, count the raw transcript (the body is just the
 // scratch notes). Else legacy rawWords display string, else the body.
@@ -160,6 +161,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 export function NoteScreen() {
   const { t, f, go, route, isMobile } = useApp()
   const { noteById, noteByTitle, projectName, reload } = useData()
+  const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
   const [agendaOpen, setAgendaOpen] = useState(false)
@@ -245,9 +247,19 @@ export function NoteScreen() {
     {/* date / people / words */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>{n.date}</span>
+      {n.incomplete && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 700,
+        letterSpacing: '0.02em', color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 7, padding: '2px 8px' }}>
+        <Icon n="alert-triangle" s={12} />Incomplete</span>}
       {(n.people || []).map((p) => <Person key={p} size="sm">{p}</Person>)}
       {words && <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>· {words} words</span>}
     </div>
+
+    {n.incomplete && !editing && <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 14, padding: '11px 14px',
+      borderRadius: 11, background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
+      <Icon n="player-pause" s={16} c={t.risk} />
+      <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>This meeting was interrupted and never finished. Resume it to add a transcript and synthesize.</span>
+      <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={() => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }}>Resume</Btn>
+    </div>}
 
     {/* meeting synthesis: summary + actions + terms */}
     {isMeeting && !editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>

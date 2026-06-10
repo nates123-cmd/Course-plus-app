@@ -11,7 +11,7 @@ import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow } from '../kit'
 import { fmtClock } from '../lib/recorder'
 import { textToBlocks } from '../lib/blocks'
-import { createNote, createTask } from '../lib/db'
+import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 
@@ -206,7 +206,7 @@ export function RecordScreen() {
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
       if ((notes || '').trim()) note.body = textToBlocks(notes)
-      const noteId = await createNote(note)
+      const noteId = await rec.finalizeNote(note)
       if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
       rec.clear(); await reload()
       go(home ? { screen: 'project', id: home } : { screen: 'note', id: noteId })
@@ -238,10 +238,22 @@ export function RecordScreen() {
     {(phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 14, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
       <Icon n="eye" s={13} c={t.t3} />Keep this tab in front and the screen on — backgrounding can pause audio capture.</div>}
 
+    {rec.recoveredBlob && <Card style={{ marginBottom: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 11, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
+      <Icon n="microphone" s={18} c={t.accent} />
+      <div style={{ flex: 1, minWidth: 160 }}>
+        <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Interrupted recording found</div>
+        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Audio from a recording that didn’t finish (~{Math.max(1, Math.round(rec.recoveredBlob.size / 1048576))} MB) — recover it to transcribe.</div>
+      </div>
+      <Btn kind="primary" size="sm" icon="wand" onClick={() => rec.recoverAudio()}>Recover</Btn>
+      <Btn kind="ghost" size="sm" onClick={() => rec.dismissRecovered()}>Discard</Btn>
+    </Card>}
+
     {/* header + title */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
       <Icon n="users" s={18} c={t.accent} />
       <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Meeting</span>
+      {(title || notes || agenda || transcriptText) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 10.5, color: t.t3 }}>
+        <Icon n="cloud-check" s={12} c={t.t3} />Auto-saved · recovers if you leave</span>}
     </div>
     <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
       style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
@@ -483,7 +495,7 @@ export function RecordScreen() {
         <Label style={{ marginRight: 4 }}>Tags</Label>{synth.tags.map((tg) => <Tag key={tg}>{tg}</Tag>)}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, flexWrap: 'wrap' }}>
         <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save}>{saving ? 'Saving…' : `Save to ${destLabel}`}</Btn>
-        <Btn kind="ghost" onClick={() => rec.reset()}>Discard</Btn>
+        <Btn kind="ghost" onClick={() => rec.discard()}>Discard</Btn>
         {(notes || '').trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginLeft: 'auto' }}><Icon n="note" s={13} />Your notes are weighted highest</span>}
       </div>
       {sheetAction && <TaskSheet task={sheetAction} projectId={sheetAction.project || home}
