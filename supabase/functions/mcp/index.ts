@@ -252,7 +252,6 @@ function loginPage(q: URLSearchParams) {
   const code_challenge = q.get('code_challenge') || ''
   const ok = isAllowedRedirect(redirect_uri) && q.get('code_challenge_method') === 'S256'
   if (!ok) return new Response('Invalid authorization request (need https claude.ai redirect + PKCE S256).', { status: 400 })
-  const esc = (s: string) => s.replace(/[<>"&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' }[c]!))
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Connect Course+</title><style>
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1a1d1b;--mut:#6b716e;--grn:#277059;--line:#e4e2dd}
