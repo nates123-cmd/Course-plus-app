@@ -37,10 +37,14 @@ function timeAgo(at) {
 }
 
 // ── Section header (label · optional action · optional + add) ────
-function SectionHead({ label, action, onAction, onAdd }) {
+function SectionHead({ label, action, onAction, onAdd, collapsible, collapsed, onToggle }) {
   const { t, f } = useApp()
+  const head = collapsible
+    ? <span onClick={onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <Icon n={collapsed ? 'chevron-right' : 'chevron-down'} s={14} c={t.t3} /><Label style={{ whiteSpace: 'nowrap' }}>{label}</Label></span>
+    : <Label style={{ whiteSpace: 'nowrap' }}>{label}</Label>
   return <div style={{ display: 'flex', alignItems: 'center', marginBottom: 11, gap: 10 }}>
-    <Label style={{ whiteSpace: 'nowrap' }}>{label}</Label>
+    {head}
     <div style={{ flex: 1 }} />
     {action && <span onClick={onAction} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
       fontFamily: f.ui, fontSize: 12, fontWeight: 500, color: t.accent, cursor: 'pointer' }}>{action}</span>}
@@ -183,6 +187,9 @@ function Updates({ project, reload }) {
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const collapseKey = 'course.updates.collapsed.' + project.id
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(collapseKey) === '1' } catch { return false } })
+  const toggleCollapsed = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem(collapseKey, n ? '1' : '0') } catch {} return n })
   const post = async () => {
     const v = text.trim()
     if (!v) { setAdding(false); setText(''); return }
@@ -192,7 +199,9 @@ function Updates({ project, reload }) {
   }
 
   return <div>
-    <SectionHead label={`Where it stands · ${items.length}`} action={adding ? null : '+ Update'} onAction={() => setAdding(true)} />
+    <SectionHead label={`Where it stands · ${items.length}`} action={adding || collapsed ? null : '+ Update'} onAction={() => setAdding(true)}
+      collapsible collapsed={collapsed} onToggle={toggleCollapsed} />
+    {!collapsed && <>
     {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 12, padding: 12, marginBottom: 14 }}>
       <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) post(); if (e.key === 'Escape') { setText(''); setAdding(false) } }}
@@ -223,6 +232,7 @@ function Updates({ project, reload }) {
             </div>
           })}
         </div>}
+    </>}
   </div>
 }
 
@@ -271,6 +281,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
 // ── Tasks — drag-to-reorder + inline add + long-press TaskSheet ──
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
+  const { recordUndo } = useData()
   // React owns order; seed from project, re-seed whenever the persisted set changes.
   const [order, setOrder] = useState(project.tasks || [])
   const idsKey = (project.tasks || []).map((x) => x.id).join(',')
@@ -284,15 +295,27 @@ function Tasks({ project, reload }) {
 
   const toggle = async (id) => {
     const x = order.find((o) => o.id === id); if (!x) return
+    const prevDone = x.done
     setOrder((os) => os.map((o) => o.id === id ? { ...o, done: !o.done } : o)) // optimistic
     await updateTask(id, { done: !x.done }); await reload()
+    recordUndo(async () => { await updateTask(id, { done: prevDone }); await reload() })
   }
-  const patch = async (id, p) => { await updateTask(id, p); await reload() }
-  const remove = async (id) => { setSheetTask(null); await deleteTask(id); await reload() }
+  const patch = async (id, p) => {
+    const cur = order.find((o) => o.id === id)
+    const inverse = cur ? Object.fromEntries(Object.keys(p).map((k) => [k, cur[k] ?? null])) : null
+    await updateTask(id, p); await reload()
+    if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
+  }
+  const remove = async (id) => {
+    const prev = order.find((o) => o.id === id)
+    setSheetTask(null); await deleteTask(id); await reload()
+    if (prev) recordUndo(async () => { await createTask(prev.project || project.id, prev); await reload() })
+  }
   const reassign = async (newPid) => {
     if (!sheetTask || newPid === project.id) return
-    const id = sheetTask.id; setSheetTask(null)
+    const id = sheetTask.id; const oldPid = sheetTask.project || project.id; setSheetTask(null)
     await updateTask(id, { project: newPid }); await reload()
+    recordUndo(async () => { await updateTask(id, { project: oldPid }); await reload() })
   }
   const commit = async () => {
     const v = text.trim(); setText(''); setAdding(false)
@@ -317,7 +340,10 @@ function Tasks({ project, reload }) {
     setDragId(null)
     const ids = order.map((o) => o.id)
     const orig = (project.tasks || []).map((o) => o.id)
-    if (ids.join(',') !== orig.join(',')) { await reorderTasks(ids); await reload() }
+    if (ids.join(',') !== orig.join(',')) {
+      await reorderTasks(ids); await reload()
+      recordUndo(async () => { await reorderTasks(orig); await reload() })
+    }
   }
 
   const openTasks = order.filter((x) => !x.done)

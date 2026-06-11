@@ -1,6 +1,21 @@
 // Scribe AI surfaces — real Claude calls (via the JWT-gated `claude` proxy)
 // that replace the prototype's setTimeout fakes.
-import { claudeComplete, extractJSON } from './claude'
+import { claudeComplete, claudeChat, extractJSON } from './claude'
+
+// Ask-about-this-document — a short multi-turn conversation grounded in ONE
+// document (an artifact, note, or meeting). `doc` = { title, kind, content };
+// `history` = prior [{role,content}] turns; returns the assistant reply text.
+export async function askDocument(doc, history, question) {
+  const { title = 'Untitled', kind = 'document', content = '' } = doc || {}
+  const system =
+    'You answer questions about ONE specific document the user is reading inside a personal work ' +
+    'app. Ground every answer in that document — if the answer is not in it, say so plainly. Be ' +
+    'concise and specific. Reply in clean markdown, no preamble.'
+  const docTurn = { role: 'user', content: `Document — "${title}" (${kind}):\n${content || '(empty)'}` }
+  const model = content.length > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const messages = [docTurn, ...(history || []), { role: 'user', content: question }]
+  return (await claudeChat(messages, { system, model, max_tokens: 1200 })).trim()
+}
 
 // Ask / retrieval — answer ONLY from the provided notes, cite note ids. Corpus
 // includes people / terms / body / transcript so content questions ("what did
@@ -175,7 +190,7 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
 }
 
 // ── Note Claude-rail actions ───────────────────────────────────────
-const noteContext = (note) => {
+export const noteContext = (note) => {
   const body = (note.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, n) => (n + 1) + '. ' + i).join('\n') : ''))).join('\n')
   return `Title: ${note.title}\n${note.summary ? 'Summary: ' + note.summary + '\n' : ''}Body:\n${body}${note.transcript ? '\nTranscript:\n' + note.transcript : ''}`
 }

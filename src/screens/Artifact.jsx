@@ -6,6 +6,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Markish } from '../kit'
 import { deleteArtifact } from '../lib/db'
+import { DocChat } from '../components/DocChat'
 
 const ART_KIND = {
   'update-guide': { icon: 'file-diff', label: 'Edit guide' },
@@ -20,6 +21,7 @@ export function ArtifactScreen() {
   const { t, f, go, route, isMobile } = useApp()
   const { artifactById, projectById, reload } = useData()
   const [copied, setCopied] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const a = artifactById(route.id)
 
   if (!a) return <div style={{ padding: 40, fontFamily: f.body, color: t.t3 }}>Artifact not found.</div>
@@ -52,6 +54,7 @@ export function ArtifactScreen() {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flex: 'none' }}>
+        <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setChatOpen(true)}>Ask Claude</Btn>
         <Btn kind="outline" size="sm" icon={copied ? 'check' : 'copy'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Btn>
         <IconBtn n="trash" s={17} title="Delete" onClick={del} />
       </div>
@@ -63,5 +66,7 @@ export function ArtifactScreen() {
             padding: '16px 18px', fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
         : <Card style={{ padding: '20px 22px' }} className="selectable"><Markish text={a.body || ''} /></Card>}
     </div>
+
+    {chatOpen && <DocChat doc={{ title: a.title || 'Untitled', kind: kind.label, content: a.body || '' }} onClose={() => setChatOpen(false)} />}
   </div>
 }

@@ -8,3 +8,7 @@ dist
 
 # local design reference (not shipped)
 _ref/
+
+# MCP server — local deps + saved session (refresh token, never commit)
+mcp/node_modules
+mcp/.session.json

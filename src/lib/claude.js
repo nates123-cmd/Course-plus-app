@@ -28,14 +28,9 @@ export function claudeCost(u) {
   return ((u.input_tokens || 0) * p.in + (u.output_tokens || 0) * p.out) / 1e6
 }
 
-export async function claudeComplete(prompt, opts = {}) {
-  const {
-    system = DEFAULT_SYSTEM,
-    max_tokens = 1024,
-    model = 'claude-haiku-4-5',
-    onUsage,
-  } = opts
-
+// Low-level POST to the shared proxy. Takes the request body verbatim (system,
+// messages, model, max_tokens) so callers control single- vs multi-turn shape.
+async function postClaude(body) {
   const url = import.meta.env.VITE_SUPABASE_URL
   const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
   const { data: { session } } = await supabase.auth.getSession()
@@ -47,22 +42,55 @@ export async function claudeComplete(prompt, opts = {}) {
       apikey: anon,
       Authorization: 'Bearer ' + (session?.access_token || anon),
     },
-    body: JSON.stringify({
-      system: system || DEFAULT_SYSTEM,
-      messages: [{ role: 'user', content: prompt }],
-      model,
-      max_tokens,
-    }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
     throw new Error('claude proxy ' + res.status + ': ' + detail.slice(0, 200))
   }
-  const data = await res.json()
-  const text = typeof data === 'string' ? data
+  return res.json()
+}
+
+// Pull text out of the proxy response (string, {text}, or {content:[blocks]}).
+function responseText(data) {
+  return typeof data === 'string' ? data
     : data?.text ? data.text
     : Array.isArray(data?.content) ? data.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
     : JSON.stringify(data)
+}
+
+// Multi-turn chat. messages = [{role:'user'|'assistant', content}]. Returns text.
+export async function claudeChat(messages, opts = {}) {
+  const { system = DEFAULT_SYSTEM, max_tokens = 1024, model = 'claude-haiku-4-5', onUsage } = opts
+  const data = await postClaude({ system: system || DEFAULT_SYSTEM, messages, model, max_tokens })
+  const text = responseText(data)
+  if (onUsage) {
+    const u = data && typeof data === 'object' ? data.usage : null
+    if (u && (u.input_tokens != null || u.output_tokens != null)) {
+      onUsage({ model, input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, estimated: false })
+    } else {
+      const inChars = (system || '').length + messages.reduce((a, m) => a + (m.content || '').length, 0)
+      onUsage({ model, input_tokens: Math.ceil(inChars / 4), output_tokens: Math.ceil((text || '').length / 4), estimated: true })
+    }
+  }
+  return text
+}
+
+export async function claudeComplete(prompt, opts = {}) {
+  const {
+    system = DEFAULT_SYSTEM,
+    max_tokens = 1024,
+    model = 'claude-haiku-4-5',
+    onUsage,
+  } = opts
+
+  const data = await postClaude({
+    system: system || DEFAULT_SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+    model,
+    max_tokens,
+  })
+  const text = responseText(data)
 
   // Report token usage if the caller wants it. Prefer the real usage the proxy
   // passes through; otherwise estimate (~4 chars/token) so cost is still shown.

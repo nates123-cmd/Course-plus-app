@@ -1,7 +1,7 @@
 // Loads the user's Course+ data from Supabase (seeding demo fixtures on first
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, seedIfEmpty } from './lib/db'
 
 const DataCtx = createContext(null)
@@ -30,6 +30,25 @@ export function DataProvider({ children }) {
   }
   const reload = () => load(true)
   useEffect(() => { load() }, [])
+
+  // ── Single-level undo (Cmd/Ctrl+Z) ──────────────────────────────
+  // Mutation sites call recordUndo(revertFn); the global key handler runs the
+  // last one. Skipped while focused in a text field so native text-undo wins.
+  const undoRef = useRef(null)
+  const [canUndo, setCanUndo] = useState(false)
+  const recordUndo = (revert) => { undoRef.current = revert; setCanUndo(!!revert) }
+  const runUndo = async () => { const r = undoRef.current; if (!r) return; undoRef.current = null; setCanUndo(false); try { await r() } catch (e) { console.error('undo failed', e) } }
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || (e.key !== 'z' && e.key !== 'Z')) return
+      const el = document.activeElement
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      if (!undoRef.current) return
+      e.preventDefault(); runUndo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const value = useMemo(() => {
     const allProjects = () => areas.flatMap((a) => a.projects.map((p) => ({ ...p, area: a.id, areaName: a.name })))
@@ -90,11 +109,11 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, status, error, reload,
+      areas, notes, inbox, status, error, reload, recordUndo, canUndo,
       allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch,
     }
-  }, [areas, notes, inbox, status, error])
+  }, [areas, notes, inbox, status, error, canUndo])
 
   return <DataCtx.Provider value={value}>{children}</DataCtx.Provider>
 }

@@ -79,8 +79,12 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   const [title, setTitle] = useState(task.label || '')
   const [pushed, setPushed] = useState(false)
   const titleRef = useRef(null)
+  // The long-press that opened this sheet emits a synthetic mouse/click event on
+  // release (esp. on touch). Stay "unarmed" briefly so that stray event can't
+  // dismiss the sheet the instant it appears.
+  const armed = useRef(false)
 
-  useEffect(() => { const r = requestAnimationFrame(() => setMounted(true)); return () => cancelAnimationFrame(r) }, [])
+  useEffect(() => { const r = requestAnimationFrame(() => setMounted(true)); const a = setTimeout(() => { armed.current = true }, 300); return () => { cancelAnimationFrame(r); clearTimeout(a) } }, [])
   const close = () => { setMounted(false); setTimeout(onClose, 180) }
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') close() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
 
@@ -105,9 +109,9 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
 
   const row = (label, control) => <div style={{ padding: '14px 20px', borderTop: '1px solid ' + t.line }}><FieldLabel>{label}</FieldLabel>{control}</div>
 
-  return <div onMouseDown={close} style={{ position: 'fixed', inset: 0, zIndex: 450, background: 'rgba(0,0,0,0.44)',
+  return <div onClick={() => { if (armed.current) close() }} style={{ position: 'fixed', inset: 0, zIndex: 450, background: 'rgba(0,0,0,0.44)',
     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', opacity: mounted ? 1 : 0, transition: 'opacity .18s ease' }}>
-    <div onMouseDown={(e) => e.stopPropagation()} style={{ width: 460, maxWidth: '96vw', background: t.card, border: '1px solid ' + t.line,
+    <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} style={{ width: 460, maxWidth: '96vw', background: t.card, border: '1px solid ' + t.line,
       borderRadius: isMobile ? '20px 20px 0 0' : '18px 18px 0 0', boxShadow: t.shadow, overflow: 'hidden', maxHeight: '86vh',
       display: 'flex', flexDirection: 'column', transform: mounted ? 'translateY(0)' : 'translateY(24px)', transition: 'transform .2s cubic-bezier(.2,.8,.2,1)' }}>
       <div style={{ display: 'flex', justifyContent: 'center', padding: '9px 0 2px', flex: 'none' }}>

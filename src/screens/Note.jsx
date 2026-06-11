@@ -10,8 +10,9 @@ import {
 } from '../kit'
 import { updateNote, createTask, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks } from '../lib/blocks'
-import { summarizeNote, extractActions, suggestTags, rewriteNote } from '../lib/ai'
+import { summarizeNote, extractActions, suggestTags, rewriteNote, noteContext } from '../lib/ai'
 import { useRecorderCtx } from '../RecorderContext'
+import { DocChat } from '../components/DocChat'
 
 // Word count — for meetings, count the raw transcript (the body is just the
 // scratch notes). Else legacy rawWords display string, else the body.
@@ -167,6 +168,7 @@ export function NoteScreen() {
   const [agendaOpen, setAgendaOpen] = useState(false)
   const [nextOpen, setNextOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const [refBusy, setRefBusy] = useState(false)
   const [taskDone, setTaskDone] = useState({}) // action index -> true once filed
   const [taskBusy, setTaskBusy] = useState(null)
@@ -238,6 +240,7 @@ export function NoteScreen() {
         : <span style={{ display: 'flex', gap: 8 }}>
             <IconBtn n="trash" s={17} title="Delete" onClick={deleteThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
+            <Btn kind="outline" size="sm" icon="message-circle" onClick={() => setChatOpen(true)}>Ask</Btn>
             <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>Claude</Btn>
           </span>}
     </div>
@@ -375,5 +378,6 @@ export function NoteScreen() {
     </div>
     {railOpen && <div onClick={() => setRailOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(0,0,0,0.35)' }}>
       <div onClick={(e) => e.stopPropagation()}><ClaudeRail note={n} onClose={() => setRailOpen(false)} onReload={reload} /></div></div>}
+    {chatOpen && <DocChat doc={{ title: n.title || 'Untitled', kind: n.kind || 'note', content: noteContext(n) }} onClose={() => setChatOpen(false)} />}
   </div>
 }

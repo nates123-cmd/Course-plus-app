@@ -320,9 +320,10 @@ function GlobalSearch() {
 
 // ── Top bar ─────────────────────────────────────────────────────
 function TopBar({ onMenu, onCapture, isMobile }) {
-  const { mode, setMode } = useApp()
+  const { mode, setMode, back, canBack } = useApp()
   return <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 22px', borderBottom: '1px solid ' + t.line, background: t.bg, flex: 'none' }}>
     {isMobile && <IconBtn n="menu-2" s={21} onClick={onMenu} />}
+    {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
     <div style={{ flex: 1 }} />
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
@@ -503,13 +504,17 @@ export default function App() {
   const [capture, setCapture] = useState(false)
   const [mode, setModeRaw] = useState(() => localStorage.getItem('course.mode') || 'light')
   const [route, setRoute] = useState(() => { try { return JSON.parse(localStorage.getItem('course.route')) || { screen: 'overview' } } catch { return { screen: 'overview' } } })
+  const [hist, setHist] = useState([])
 
   const setMode = (m) => { setModeRaw(m); localStorage.setItem('course.mode', m) }
-  const go = (r) => { setRoute(r); localStorage.setItem('course.route', JSON.stringify(r)); setDrawer(false); const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
+  const sameRoute = (a, b) => a && b && a.screen === b.screen && a.id === b.id
+  const applyRoute = (r) => { setRoute(r); localStorage.setItem('course.route', JSON.stringify(r)); setDrawer(false); const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
+  const go = (r) => { if (!sameRoute(r, route)) setHist((h) => [...h, route].slice(-50)); applyRoute(r) }
+  const back = () => { setHist((h) => { if (!h.length) return h; applyRoute(h[h.length - 1]); return h.slice(0, -1) }) }
   useEffect(() => { document.documentElement.setAttribute('data-theme', mode) }, [mode])
   useEffect(() => { if (!isMobile) setDrawer(false) }, [isMobile])
 
-  const ctx = useMemo(() => ({ t, f: F, mode, setMode, route, go, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, route, isMobile])
+  const ctx = useMemo(() => ({ t, f: F, mode, setMode, route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, route, isMobile, hist])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>
