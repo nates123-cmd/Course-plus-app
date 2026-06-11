@@ -245,53 +245,23 @@ async function handleRpc(msg: any, email: string) {
   return { jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } }
 }
 
-// ── OAuth login page ──
+// Where the browser-rendered login UI lives. Supabase's functions domain
+// downgrades text/html → text/plain (anti-phishing), so the page can't be
+// served from here — it's hosted on GitHub Pages and we redirect to it.
+const LOGIN_UI = Deno.env.get('MCP_LOGIN_URL') || 'https://nates123-cmd.github.io/Course-plus-app/mcp-login.html'
+
+// ── OAuth authorize → redirect to the hosted login page (PKCE params forwarded) ──
 function loginPage(q: URLSearchParams) {
   const redirect_uri = q.get('redirect_uri') || ''
   const state = q.get('state') || ''
   const code_challenge = q.get('code_challenge') || ''
   const ok = isAllowedRedirect(redirect_uri) && q.get('code_challenge_method') === 'S256'
   if (!ok) return new Response('Invalid authorization request (need https claude.ai redirect + PKCE S256).', { status: 400 })
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Connect Course+</title><style>
-:root{--bg:#f6f5f2;--card:#fff;--ink:#1a1d1b;--mut:#6b716e;--grn:#277059;--line:#e4e2dd}
-*{box-sizing:border-box;font-family:'Hanken Grotesk',-apple-system,system-ui,sans-serif}
-body{background:var(--bg);color:var(--ink);margin:0;display:grid;place-items:center;min-height:100vh}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:32px;width:340px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-h1{font-size:19px;margin:0 0 4px}p{color:var(--mut);font-size:13px;margin:0 0 20px;line-height:1.5}
-label{font-size:12px;color:var(--mut);display:block;margin:0 0 6px}
-input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;margin:0 0 14px;outline:none}
-input:focus{border-color:var(--grn)}
-button{width:100%;padding:11px;background:var(--grn);color:#fff;border:0;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer}
-button:disabled{opacity:.5;cursor:default}
-.msg{font-size:12px;margin:12px 0 0;min-height:16px}.err{color:#b4341f}.hide{display:none}
-</style></head><body><div class="card">
-<h1>Connect Course+</h1><p>Sign in to let Claude read and write your Course+ workspace.</p>
-<div id="s1"><label>Email</label><input id="email" type="email" autocomplete="email" placeholder="you@example.com">
-<button id="send">Send code</button></div>
-<div id="s2" class="hide"><label>8-digit code (check your email)</label><input id="code" inputmode="numeric" placeholder="••••••••" maxlength="8">
-<button id="verify">Verify &amp; connect</button></div>
-<p class="msg" id="msg"></p></div>
-<script>
-const R=${JSON.stringify({ redirect_uri, state, code_challenge })};
-const $=(i)=>document.getElementById(i),msg=$("msg");
-function err(t){msg.textContent=t;msg.className="msg err"}
-function ok(t){msg.textContent=t;msg.className="msg"}
-$("send").onclick=async()=>{const email=$("email").value.trim();if(!email)return err("Enter your email");
- $("send").disabled=true;ok("Sending…");
- const r=await fetch("authorize/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});
- const d=await r.json();$("send").disabled=false;
- if(!r.ok){err(d.error||"Could not send code");return}
- $("s1").className="hide";$("s2").className="";ok("Code sent to "+email);$("code").focus();$("verify").dataset.email=email};
-$("verify").onclick=async()=>{const email=$("verify").dataset.email,token=$("code").value.replace(/\\D/g,"");
- if(token.length<6)return err("Enter the code");$("verify").disabled=true;ok("Verifying…");
- const r=await fetch("authorize/verify",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({email,token,redirect_uri:R.redirect_uri,state:R.state,code_challenge:R.code_challenge})});
- const d=await r.json();
- if(!r.ok){$("verify").disabled=false;err(d.error||"Verification failed");return}
- ok("Connected — returning to Claude…");window.location=d.redirect};
-</script></body></html>`
-  return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS } })
+  const u = new URL(LOGIN_UI)
+  u.searchParams.set('redirect_uri', redirect_uri)
+  u.searchParams.set('state', state)
+  u.searchParams.set('code_challenge', code_challenge)
+  return new Response(null, { status: 302, headers: { ...CORS, Location: u.toString() } })
 }
 
 // ── main router ──

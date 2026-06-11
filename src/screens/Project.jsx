@@ -308,6 +308,7 @@ function Tasks({ project, reload }) {
   const patch = async (id, p) => {
     const cur = order.find((o) => o.id === id)
     const inverse = cur ? Object.fromEntries(Object.keys(p).map((k) => [k, cur[k] ?? null])) : null
+    setOrder((os) => os.map((o) => o.id === id ? { ...o, ...p } : o)) // optimistic — chip flips instantly
     await updateTask(id, p); await reload()
     if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
   }
