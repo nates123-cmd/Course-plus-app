@@ -161,7 +161,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
   const { t, f, go, route, isMobile } = useApp()
-  const { noteById, noteByTitle, projectName, reload } = useData()
+  const { noteById, noteByTitle, projectName, reload, projectDigest } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
@@ -378,6 +378,9 @@ export function NoteScreen() {
     </div>
     {railOpen && <div onClick={() => setRailOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(0,0,0,0.35)' }}>
       <div onClick={(e) => e.stopPropagation()}><ClaudeRail note={n} onClose={() => setRailOpen(false)} onReload={reload} /></div></div>}
-    {chatOpen && <DocChat doc={{ title: n.title || 'Untitled', kind: n.kind || 'note', content: noteContext(n) }} onClose={() => setChatOpen(false)} />}
+    {chatOpen && (() => { const pid = n.project || (n.projects || [])[0] || null
+      return <DocChat doc={{ title: n.title || 'Untitled', kind: n.kind || 'note', content: noteContext(n) }}
+        projectContext={pid ? projectDigest(pid) : ''} projectName={pid ? projectName(pid) : ''}
+        onClose={() => setChatOpen(false)} /> })()}
   </div>
 }

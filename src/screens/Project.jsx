@@ -282,10 +282,15 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
   const { recordUndo } = useData()
-  // React owns order; seed from project, re-seed whenever the persisted set changes.
+  // React owns order; re-seed whenever the persisted tasks change — keyed on the
+  // mutable fields too, not just ids, so a sheet edit (due/status/etc) shows live
+  // without a refresh. (Drag preview is safe: project.tasks only changes on drop.)
   const [order, setOrder] = useState(project.tasks || [])
-  const idsKey = (project.tasks || []).map((x) => x.id).join(',')
-  useEffect(() => { setOrder(project.tasks || []) }, [idsKey])
+  const tasksSig = (project.tasks || []).map((x) => {
+    const d = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m}-${x.dueDate.d}` : (x.due || '')
+    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}`
+  }).join('|')
+  useEffect(() => { setOrder(project.tasks || []) }, [tasksSig])
 
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
@@ -384,8 +389,9 @@ function Tasks({ project, reload }) {
         {doneTasks.map((x) => <TaskRow key={x.id} x={x} noDrag onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))} />)}
       </div>}
     </div>}
-    {sheetTask && <TaskSheet task={sheetTask} projectId={project.id}
-      onPatch={(p) => patch(sheetTask.id, p)} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} />}
+    {sheetTask && (() => { const live = order.find((o) => o.id === sheetTask.id) || sheetTask
+      return <TaskSheet task={live} projectId={project.id}
+        onPatch={(p) => patch(sheetTask.id, p)} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} /> })()}
   </div>
 }
 

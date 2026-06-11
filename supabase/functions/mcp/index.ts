@@ -305,13 +305,16 @@ Deno.serve(async (req) => {
   if (sub === '/.well-known/oauth-protected-resource') {
     return json({ resource: BASE, authorization_servers: [BASE] })
   }
-  if (sub === '/.well-known/oauth-authorization-server') {
+  // Serve both the OAuth (RFC 8414) and OIDC discovery docs — clients probe
+  // either /.well-known/oauth-authorization-server or /.well-known/openid-configuration.
+  if (sub === '/.well-known/oauth-authorization-server' || sub === '/.well-known/openid-configuration') {
     return json({
       issuer: BASE,
       authorization_endpoint: `${BASE}/authorize`,
       token_endpoint: `${BASE}/token`,
       registration_endpoint: `${BASE}/register`,
       response_types_supported: ['code'],
+      response_modes_supported: ['query'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],

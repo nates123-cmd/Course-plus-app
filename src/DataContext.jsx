@@ -3,6 +3,7 @@
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, seedIfEmpty } from './lib/db'
+import { blocksToText } from './lib/blocks'
 
 const DataCtx = createContext(null)
 export function useData() { return useContext(DataCtx) }
@@ -77,6 +78,48 @@ export function DataProvider({ children }) {
       })
       return out
     }
+    // Compact, bounded text digest of a whole project — name/status, where-it-
+    // stands updates, milestones, open tasks, and its notes/meetings (title +
+    // summary, no full transcripts). Used to give DocChat project-wide context.
+    const projectDigest = (projectId) => {
+      const p = projectById(projectId)
+      if (!p) return ''
+      const lines = []
+      lines.push(`PROJECT: ${p.name}${p.areaName ? ' · ' + p.areaName : ''}`)
+      const meta = [p.status && 'status: ' + p.status, p.priority && 'priority: ' + p.priority, p.due && 'due: ' + p.due].filter(Boolean)
+      if (meta.length) lines.push(meta.join(' · '))
+      if (p.blurb) lines.push(p.blurb)
+      if (p.hold) lines.push('On hold: ' + p.hold)
+
+      const upd = (p.updates || []).slice(0, 6)
+      if (upd.length) lines.push('\nWHERE IT STANDS (newest first):\n' + upd.map((u) => '- ' + (u.body || '')).join('\n'))
+
+      const ms = p.milestones || []
+      if (ms.length) lines.push('\nMILESTONES:\n' + ms.map((m) => `- ${m.label}${m.state ? ' (' + m.state + ')' : ''}${m.due ? ' — due ' + m.due : ''}`).join('\n'))
+
+      const tasks = p.tasks || []
+      const open = tasks.filter((x) => !x.done)
+      const done = tasks.filter((x) => x.done)
+      if (open.length) lines.push('\nOPEN TASKS:\n' + open.map((x) => {
+        const st = x.waiting ? 'waiting on ' + x.waiting : x.taskStatus || (x.next ? 'next' : '')
+        const due = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m + 1}-${x.dueDate.d}` : x.due
+        return `- ${x.label}${st ? ' [' + st + ']' : ''}${due ? ' (due ' + due + ')' : ''}`
+      }).join('\n'))
+      if (done.length) lines.push(`(+${done.length} completed task${done.length === 1 ? '' : 's'})`)
+
+      const seen = new Set()
+      const docs = [...ownedNotes(projectId), ...linkedMeetings(projectId)].filter((n) => (seen.has(n.id) ? false : seen.add(n.id)))
+      if (docs.length) lines.push('\nNOTES & MEETINGS IN THIS PROJECT:\n' + docs.map((n) => {
+        const gist = n.summary || blocksToText(n.body || []).slice(0, 280)
+        return `- [${n.kind}${n.date ? ', ' + n.date : ''}] ${n.title}${gist ? ': ' + gist.replace(/\s+/g, ' ').trim() : ''}`
+      }).join('\n'))
+
+      const arts = (p.artifacts || [])
+      if (arts.length) lines.push('\nARTIFACTS:\n' + arts.map((a) => `- ${a.title || 'Untitled'} (${a.artType || 'artifact'})`).join('\n'))
+
+      return lines.join('\n')
+    }
+
     const notesByTag = (tag) => notes.filter((n) => (n.tags || []).includes(tag))
     const ALL_TAGS = [...new Set(notes.flatMap((n) => n.tags || []))].sort()
 
@@ -111,7 +154,7 @@ export function DataProvider({ children }) {
     return {
       areas, notes, inbox, status, error, reload, recordUndo, canUndo,
       allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
-      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch,
+      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest,
     }
   }, [areas, notes, inbox, status, error, canUndo])
 

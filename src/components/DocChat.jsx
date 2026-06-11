@@ -1,14 +1,18 @@
 // "Ask Claude about this document" — a docked, ephemeral chat panel grounded in
 // ONE document (artifact, note, or meeting). Thread lives in local state only:
 // it clears on close / reload (by design). Multi-turn via askDocument().
-//   Props: doc = { title, kind, content }, onClose()
+//   Props: doc = { title, kind, content }, onClose(),
+//   projectContext? (string digest of the surrounding project),
+//   projectName? (label for the scope toggle)
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../ctx'
 import { Icon, IconBtn, Markish } from '../kit'
 import { askDocument } from '../lib/ai'
 
-export function DocChat({ doc, onClose }) {
+export function DocChat({ doc, onClose, projectContext = '', projectName = '' }) {
   const { t, f, isMobile } = useApp()
+  const hasProject = !!(projectContext && projectContext.trim())
+  const [useProject, setUseProject] = useState(hasProject) // include whole-project context
   const [messages, setMessages] = useState([]) // [{role:'user'|'assistant', content}]
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -29,7 +33,7 @@ export function DocChat({ doc, onClose }) {
     setMessages([...history, { role: 'user', content: q }])
     setInput(''); setBusy(true)
     try {
-      const reply = await askDocument(doc, history, q)
+      const reply = await askDocument(doc, history, q, useProject ? projectContext : '')
       setMessages((m) => [...m, { role: 'assistant', content: reply }])
     } catch (e) {
       setErr({ q, message: String(e?.message || e) })
@@ -53,11 +57,24 @@ export function DocChat({ doc, onClose }) {
       <IconBtn n="x" s={18} title="Close" onClick={onClose} />
     </div>
 
+    {/* Scope toggle — widen context to the whole project */}
+    {hasProject && <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderBottom: '1px solid ' + t.line, flex: 'none' }}>
+      <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>Context</span>
+      {[{ on: false, label: 'This doc', icon: 'file-text' }, { on: true, label: projectName || 'Whole project', icon: 'folder' }].map((opt) => {
+        const active = useProject === opt.on
+        return <span key={String(opt.on)} onClick={() => setUseProject(opt.on)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
+            color: active ? t.accent : t.t3, background: active ? t.accentBg : t.sel, border: '1px solid ' + (active ? t.accentLine : 'transparent'),
+            borderRadius: 7, padding: '4px 9px' }}>
+          <Icon n={opt.icon} s={12} c={active ? t.accent : t.t3} />{opt.label}</span>
+      })}
+    </div>}
+
     {/* Thread */}
     <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       {messages.length === 0 && !busy && <div style={{ margin: 'auto', textAlign: 'center', maxWidth: 240, color: t.t3, fontFamily: f.ui, fontSize: 13, lineHeight: 1.5 }}>
         <Icon n="message-circle" s={22} c={t.t3} style={{ marginBottom: 8 }} />
-        <div>Ask anything about this document — Claude answers from its contents.</div>
+        <div>Ask anything about this document{hasProject && useProject ? ' or its project' : ''} — Claude answers from {hasProject && useProject ? 'this work' : 'its contents'}.</div>
       </div>}
 
       {messages.map((m, i) => m.role === 'user'

@@ -50,6 +50,15 @@ Reuses suite creds from `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
 ```
 Restart Desktop → tools appear.
 
+## Phase 2 — DEPLOYED ✅
+Live at `https://xsmnfcmtbpeaccnyinkr.supabase.co/functions/v1/mcp` (edge function `mcp`,
+`verify_jwt=false`). One file `supabase/functions/mcp/index.ts` = MCP JSON-RPC server +
+OAuth 2.1 authorization server (discovery, DCR, authorize w/ email-OTP login page, token,
+PKCE-S256). OAuth state in `cp_mcp_codes` / `cp_mcp_tokens` / `cp_mcp_session` (RLS on, no
+policies = service-role only). Guards: email allowlist (`MCP_ALLOWED_EMAIL`), redirect locked
+to claude.ai/claude.com, 5-min single-use codes, `COURSE_MCP_READONLY` toggle. Connect in
+claude.ai → Settings → Connectors → Add custom connector → paste the URL → OAuth login.
+
 ## Phase 2 — Remote MCP + OAuth (claude.ai web + Desktop, one server for both)
 - `supabase/functions/mcp/index.ts` — MCP over **Streamable HTTP** (JSON-RPC) in Deno, reusing the
   same tool handlers (shared TS module).

@@ -19,7 +19,7 @@ const ART_KIND = {
 
 export function ArtifactScreen() {
   const { t, f, go, route, isMobile } = useApp()
-  const { artifactById, projectById, reload } = useData()
+  const { artifactById, projectById, reload, projectDigest } = useData()
   const [copied, setCopied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const a = artifactById(route.id)
@@ -67,6 +67,8 @@ export function ArtifactScreen() {
         : <Card style={{ padding: '20px 22px' }} className="selectable"><Markish text={a.body || ''} /></Card>}
     </div>
 
-    {chatOpen && <DocChat doc={{ title: a.title || 'Untitled', kind: kind.label, content: a.body || '' }} onClose={() => setChatOpen(false)} />}
+    {chatOpen && <DocChat doc={{ title: a.title || 'Untitled', kind: kind.label, content: a.body || '' }}
+      projectContext={a.project ? projectDigest(a.project) : ''} projectName={proj?.name}
+      onClose={() => setChatOpen(false)} />}
   </div>
 }

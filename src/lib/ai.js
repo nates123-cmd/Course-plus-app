@@ -2,18 +2,28 @@
 // that replace the prototype's setTimeout fakes.
 import { claudeComplete, claudeChat, extractJSON } from './claude'
 
-// Ask-about-this-document — a short multi-turn conversation grounded in ONE
-// document (an artifact, note, or meeting). `doc` = { title, kind, content };
-// `history` = prior [{role,content}] turns; returns the assistant reply text.
-export async function askDocument(doc, history, question) {
+// Ask-about-this-document — a short multi-turn conversation centred on ONE
+// document (an artifact, note, or meeting), optionally widened with project
+// context. `doc` = { title, kind, content }; `history` = prior [{role,content}]
+// turns; `projectContext` = optional digest of the surrounding project. Returns
+// the assistant reply text.
+export async function askDocument(doc, history, question, projectContext = '') {
   const { title = 'Untitled', kind = 'document', content = '' } = doc || {}
+  const hasProject = !!(projectContext && projectContext.trim())
   const system =
-    'You answer questions about ONE specific document the user is reading inside a personal work ' +
-    'app. Ground every answer in that document — if the answer is not in it, say so plainly. Be ' +
-    'concise and specific. Reply in clean markdown, no preamble.'
-  const docTurn = { role: 'user', content: `Document — "${title}" (${kind}):\n${content || '(empty)'}` }
-  const model = content.length > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
-  const messages = [docTurn, ...(history || []), { role: 'user', content: question }]
+    'You answer questions for the user about a document they are reading inside a personal work ' +
+    'app. The PRIMARY DOCUMENT is the focus; ' +
+    (hasProject
+      ? 'the PROJECT CONTEXT (other notes, meetings, tasks, and status for the surrounding project) is supporting background you may draw on when the question reaches beyond the document. '
+      : '') +
+    'Ground answers in this material — if something is not covered, say so plainly. Be concise and specific. Reply in clean markdown, no preamble.'
+  const docBlock = `PRIMARY DOCUMENT — "${title}" (${kind}):\n${content || '(empty)'}`
+  const firstTurn = hasProject
+    ? `${docBlock}\n\n---\n\nPROJECT CONTEXT (background):\n${projectContext.trim()}`
+    : docBlock
+  const totalLen = firstTurn.length
+  const model = totalLen > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const messages = [{ role: 'user', content: firstTurn }, ...(history || []), { role: 'user', content: question }]
   return (await claudeChat(messages, { system, model, max_tokens: 1200 })).trim()
 }
 
