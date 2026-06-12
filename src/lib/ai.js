@@ -80,6 +80,7 @@ const TYPE_BRIEF = {
   exec: 'a decision-first executive summary of 3–5 bullets',
   email: 'a ready-to-send email draft',
   deck: 'a slide-by-slide deck outline',
+  other: 'the deliverable described in the instructions below',
 }
 // Compose a paste-ready deliverable from the FULL material — note bodies AND
 // meeting transcripts, not just summaries (a transcript is far richer source for

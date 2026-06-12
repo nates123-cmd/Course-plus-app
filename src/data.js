@@ -343,6 +343,7 @@ export const COMPOSE_TYPES = [
   { id: 'exec', icon: 'clipboard-text', name: 'Exec summary', desc: '3–5 bullets, decision-first' },
   { id: 'email', icon: 'mail', name: 'Email draft', desc: 'Ready to send' },
   { id: 'deck', icon: 'layout-board', name: 'Deck outline', desc: 'Slide-by-slide skeleton' },
+  { id: 'other', icon: 'wand', name: 'Other', desc: 'Anything else — describe it in the prompt' },
 ]
 
 // Suggested Ask questions (shown before first query)

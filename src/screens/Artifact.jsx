@@ -17,6 +17,7 @@ const ART_KIND = {
   exec: { icon: 'clipboard-text', label: 'Exec summary' },
   email: { icon: 'mail', label: 'Email draft' },
   deck: { icon: 'layout-board', label: 'Deck outline' },
+  other: { icon: 'wand', label: 'Custom' },
 }
 
 export function ArtifactScreen() {

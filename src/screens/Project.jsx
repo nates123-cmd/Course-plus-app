@@ -650,7 +650,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       </div>
       <textarea autoFocus value={prompt} onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run(); if (e.key === 'Escape') setComposing(false) }}
-        placeholder="Optional — extra instructions for Claude…"
+        placeholder={typeId === 'other' ? 'Describe the deliverable you want — format, audience, length…' : 'Optional — extra instructions for Claude…'}
         style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
