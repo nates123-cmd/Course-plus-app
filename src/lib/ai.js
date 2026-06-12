@@ -78,10 +78,24 @@ export async function briefingFor(projectName, notes) {
 const TYPE_BRIEF = {
   auto: 'the single most useful deliverable for this material — choose the best format yourself (document, table, list, email, etc.)',
   document: 'a clean, well-structured written document',
-  message: 'a ready-to-send message - either an email or a Teams/chat message as the instructions imply - that is concise, natural, and in a warm professional voice. Lead with the point, keep it skimmable. (A personal writing-style brief will be supplied here later to match the user\'s voice.)',
+  message: 'a ready-to-send message - either an email or a Teams/chat message as the instructions imply - that is concise, natural, and written in Nate\'s own voice (see the WRITING VOICE brief below). Lead with the point, keep it skimmable.',
   csv: 'a CSV table whose columns are ALWAYS separated by the pipe character "|" (never commas). First line is the header row, then one record per line. Output raw pipe-delimited text only — no markdown table syntax, no code fences, no commentary',
   copilot: 'a single ready-to-paste Microsoft 365 Copilot prompt that, given this context, will generate the intended deliverable inside Office (Word / Excel / PowerPoint / Outlook). Output ONLY the prompt text the user would paste into Copilot',
 }
+
+// Nate's personal writing voice. Appended to the system prompt whenever the
+// deliverable is a 'message' (email/Teams), so drafts sound like him. Lives in
+// the prompt (not provider code) so it applies under BOTH AI engines — Claude
+// and Deepseek route through the same pickModel/claudeComplete path.
+const NATE_STYLE_BRIEF =
+  '\n\nWRITING VOICE — write this message as Nate would write it himself:\n' +
+  '- Greeting: "Hi [Name]," (groups: "Hi team," / "Hi all,"). Never "Dear" or a bare "Hello,".\n' +
+  '- Pick the register from the recipient/context (default to WORK if unclear):\n' +
+  '  • WORK (colleagues, boss, partners, anything professional): state the purpose in sentence one — no warm-up, small talk, or flattery. Restrained: exclamation marks rare, NO emoji. Light softeners ("I\'m reaching out to", "I\'m looking to", "Let me know what you think", "Please feel free to"). Use a colon to introduce a short list.\n' +
+  '  • PERSONAL (friends, family, vendors, reservations, support): warm and upbeat — exclamation marks and an occasional ":)" are welcome. One thought per line with blank lines between (no dense paragraphs). Heavier softeners ("by any chance", "I was wondering if", "Would it be possible", "Please let me know"). Often writes as "we".\n' +
+  '- Always true: contractions (I\'m, don\'t, we\'re); NO em-dashes (use short sentences, colons, or *word* emphasis); concise short-to-medium sentences; CLOSE on a clear ask or next step.\n' +
+  '- Sign-off: "Thanks," / "Thank you," / "All the best," then "Nate".\n' +
+  '- Avoid: corporate stiffness ("Kindly advise", "Best regards"), dense unbroken paragraphs, over-explaining.'
 // Compose a paste-ready deliverable from the FULL material — note bodies AND
 // meeting transcripts, not just summaries (a transcript is far richer source for
 // building an artifact than a lossy summary). Escalates to Sonnet for big inputs.
@@ -98,7 +112,9 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
   const system =
     'You compose clean, paste-ready business deliverables. Work from the FULL source material ' +
     '(note bodies and meeting transcripts) — use the detail, not just the summaries. ' +
-    'Output ONLY the deliverable content in plain markdown — no preamble, no "here is".'
+    'Output ONLY the deliverable content in plain markdown — no preamble, no "here is".' +
+    // For email/Teams messages, write in Nate's own voice (applies to Claude + Deepseek).
+    (typeId === 'message' ? NATE_STYLE_BRIEF : '')
   const user =
     `Source: ${sourceLabel}\nMaterial:\n${corpus}\n\n` +
     `Produce ${TYPE_BRIEF[typeId] || 'a brief'}.` +
