@@ -120,6 +120,30 @@ export function DataProvider({ children }) {
       return lines.join('\n')
     }
 
+    // Whole-pillar (area) digest — every project in the area at a summary level:
+    // status/blurb, latest update, top open tasks, note/meeting titles. Bounded
+    // (no note bodies) so a big pillar still fits. Used for DocChat area scope.
+    const areaDigest = (areaId) => {
+      const a = areaById(areaId)
+      if (!a) return ''
+      const lines = [`AREA / PILLAR: ${a.name} — ${(a.projects || []).length} project${(a.projects || []).length === 1 ? '' : 's'}`]
+      for (const p of (a.projects || [])) {
+        const seg = [`\n### ${p.name}${p.status ? ' (' + p.status + ')' : ''}${p.due ? ' · due ' + p.due : ''}`]
+        if (p.blurb) seg.push(p.blurb)
+        if (p.hold) seg.push('On hold: ' + p.hold)
+        const latest = (p.updates || [])[0]
+        if (latest) seg.push('Latest: ' + (latest.body || '').replace(/\s+/g, ' ').trim().slice(0, 240))
+        const open = (p.tasks || []).filter((x) => !x.done).slice(0, 6)
+        if (open.length) seg.push('Open tasks: ' + open.map((x) => x.label).join('; '))
+        const docs = [...ownedNotes(p.id), ...linkedMeetings(p.id)]
+        if (docs.length) seg.push('Docs: ' + docs.map((n) => n.title).slice(0, 12).join('; '))
+        const arts = (p.artifacts || [])
+        if (arts.length) seg.push('Artifacts: ' + arts.map((x) => x.title || 'Untitled').slice(0, 8).join('; '))
+        lines.push(seg.join('\n'))
+      }
+      return lines.join('\n')
+    }
+
     const notesByTag = (tag) => notes.filter((n) => (n.tags || []).includes(tag))
     const ALL_TAGS = [...new Set(notes.flatMap((n) => n.tags || []))].sort()
 
@@ -154,7 +178,7 @@ export function DataProvider({ children }) {
     return {
       areas, notes, inbox, status, error, reload, recordUndo, canUndo,
       allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
-      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest,
+      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
     }
   }, [areas, notes, inbox, status, error, canUndo])
 

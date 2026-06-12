@@ -1,12 +1,20 @@
-// Markdown-ish text <-> structured note body blocks ({p}|{ul}|{ol}|{links}).
+// Markdown-ish text <-> structured note body blocks. Legacy blocks are
+// {p}|{ul}|{ol}|{links}; rich bodies are stored as a single {md} block holding
+// a full markdown string (headings, tables, indent — things the legacy block
+// shape can't express). blocksToText flattens either to a markdown string.
 const OL_LINE = /^\d+[.)]\s+/ // "1. " or "1) "
 export const blocksToText = (blocks = []) => blocks.map((b) => {
+  if (b.md != null) return b.md
   if (b.p) return b.p
   if (b.ul) return b.ul.map((i) => '- ' + i).join('\n')
   if (b.ol) return b.ol.map((i, n) => (n + 1) + '. ' + i).join('\n')
   if (b.links) return b.links.map((l) => `[[${l}]]`).join(' ')
   return ''
 }).join('\n\n')
+
+// Save a note body edited as markdown — store it as one {md} block so all the
+// rich markdown (headings/tables/nested indent) round-trips losslessly.
+export const markdownToBlocks = (md) => [{ md: String(md || '') }]
 
 const UL_LINE = /^[-*•]\s+/ // "- ", "* ", "• "
 const CHECK = /^[-*•]\s+\[\s?\]\s+/ // "- [ ] " checklist → treated as a bullet

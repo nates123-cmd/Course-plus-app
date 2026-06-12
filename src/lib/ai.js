@@ -2,29 +2,33 @@
 // that replace the prototype's setTimeout fakes.
 import { claudeComplete, claudeChat, extractJSON } from './claude'
 
-// Ask-about-this-document — a short multi-turn conversation centred on ONE
-// document (an artifact, note, or meeting), optionally widened with project
-// context. `doc` = { title, kind, content }; `history` = prior [{role,content}]
-// turns; `projectContext` = optional digest of the surrounding project. Returns
-// the assistant reply text.
-export async function askDocument(doc, history, question, projectContext = '') {
+// Ask-about-this-document — a short multi-turn conversation whose SCOPE the user
+// chooses: just the open document, its whole project, or its whole area/pillar.
+// `doc` = { title, kind, content }; `history` = prior [{role,content}] turns;
+// `opts` = { scope:'document'|'project'|'area', contextText, contextLabel }.
+// At project/area scope the wider context is genuinely in-scope (not background)
+// so questions that reach past the doc get real answers. Returns reply text.
+export async function askDocument(doc, history, question, opts = {}) {
+  const { scope = 'document', contextText = '', contextLabel = '' } = opts
   const { title = 'Untitled', kind = 'document', content = '' } = doc || {}
-  const hasProject = !!(projectContext && projectContext.trim())
-  const system =
-    'You answer questions for the user about a document they are reading inside a personal work ' +
-    'app. The PRIMARY DOCUMENT is the focus; ' +
-    (hasProject
-      ? 'the PROJECT CONTEXT (other notes, meetings, tasks, and status for the surrounding project) is supporting background you may draw on when the question reaches beyond the document. '
-      : '') +
-    'Ground answers in this material — if something is not covered, say so plainly. Be concise and specific. Reply in clean markdown, no preamble.'
-  const docBlock = `PRIMARY DOCUMENT — "${title}" (${kind}):\n${content || '(empty)'}`
-  const firstTurn = hasProject
-    ? `${docBlock}\n\n---\n\nPROJECT CONTEXT (background):\n${projectContext.trim()}`
+  const wide = scope !== 'document' && !!(contextText && contextText.trim())
+  const word = scope === 'area' ? 'area / pillar' : 'project'
+  const system = wide
+    ? `You are helping the user with their ${word} "${contextLabel}" inside a personal work app. ` +
+      `The ENTIRE ${word.toUpperCase()} is in scope — its projects, notes, meetings, tasks, status, and artifacts are all provided below and you may use ANY of it to answer. ` +
+      `Do NOT restrict yourself to the single document the user happens to have open (provided last) — that is one item within the ${word}, give it weight only when the question is about it. ` +
+      `Ground answers in the provided material; if something genuinely isn't there, say so. Be concise and specific. Reply in clean markdown, no preamble.`
+    : 'You answer questions about ONE specific document the user is reading inside a personal work app. ' +
+      'Ground every answer in that document — if the answer is not in it, say so plainly. Be concise and specific. Reply in clean markdown, no preamble.'
+  const docBlock = `OPEN DOCUMENT — "${title}" (${kind}):\n${content || '(empty)'}`
+  // Put the wide context FIRST and the single doc LAST so the model doesn't
+  // over-anchor on the open document.
+  const firstTurn = wide
+    ? `${scope === 'area' ? 'AREA' : 'PROJECT'} CONTEXT — "${contextLabel}":\n${contextText.trim()}\n\n---\n\n${docBlock}`
     : docBlock
-  const totalLen = firstTurn.length
-  const model = totalLen > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const model = firstTurn.length > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
   const messages = [{ role: 'user', content: firstTurn }, ...(history || []), { role: 'user', content: question }]
-  return (await claudeChat(messages, { system, model, max_tokens: 1200 })).trim()
+  return (await claudeChat(messages, { system, model, max_tokens: 1400 })).trim()
 }
 
 // Ask / retrieval — answer ONLY from the provided notes, cite note ids. Corpus

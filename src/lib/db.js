@@ -250,6 +250,13 @@ export async function createArtifact(projectId, art = {}) {
   if (error) throw error
   return id
 }
+const ARTIFACT_COLS = { title: 'title', body: 'body', artType: 'art_type', provenance: 'provenance', fromCount: 'from_count', project: 'project_id' }
+export async function updateArtifact(id, patch) {
+  const row = {}
+  for (const k in patch) if (ARTIFACT_COLS[k]) row[ARTIFACT_COLS[k]] = patch[k]
+  const { error } = await supabase.from('cp_artifacts').update(row).eq('id', id)
+  if (error) throw error
+}
 export async function deleteArtifact(id) {
   const { error } = await supabase.from('cp_artifacts').delete().eq('id', id)
   if (error) throw error

@@ -9,7 +9,9 @@ import {
   Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, Markish, inlineMd,
 } from '../kit'
 import { updateNote, createTask, deleteNote } from '../lib/db'
-import { blocksToText, textToBlocks } from '../lib/blocks'
+import { blocksToText, textToBlocks, markdownToBlocks } from '../lib/blocks'
+import { RichText } from '../components/RichText'
+import { MdEditor } from '../components/MdEditor'
 import { summarizeNote, extractActions, suggestTags, rewriteNote, noteContext } from '../lib/ai'
 import { useRecorderCtx } from '../RecorderContext'
 import { DocChat } from '../components/DocChat'
@@ -102,7 +104,7 @@ function ClaudeRail({ note, onClose, onReload }) {
   const applyRewrite = async () => {
     if (!preview) return
     setBusy('rewrite'); setMsg(null)
-    try { await updateNote(note.id, { body: textToBlocks(preview.md) }); await onReload(); setPreview(null); setMsg('Body rewritten.') }
+    try { await updateNote(note.id, { body: markdownToBlocks(preview.md) }); await onReload(); setPreview(null); setMsg('Body rewritten.') }
     catch (e) { setMsg('Failed — ' + String(e?.message || e)) }
     finally { setBusy(null) }
   }
@@ -161,7 +163,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
   const { t, f, go, route, isMobile } = useApp()
-  const { noteById, noteByTitle, projectName, reload, projectDigest } = useData()
+  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
@@ -214,7 +216,7 @@ export function NoteScreen() {
   }
   const saveEdit = async () => {
     setSaving(true); setErr(null)
-    try { await updateNote(n.id, { title: eTitle.trim() || 'Untitled', body: textToBlocks(eBody) }); await reload(); setEditing(false) }
+    try { await updateNote(n.id, { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }); await reload(); setEditing(false) }
     catch (e) { setErr(e) } finally { setSaving(false) }
   }
 
@@ -331,13 +333,10 @@ export function NoteScreen() {
       {editing
         ? <>
             <Label style={{ marginBottom: 8 }}>Body</Label>
-            <textarea value={eBody} onChange={(e) => setEBody(e.target.value)} className="selectable"
-              placeholder="Write in markdown — paragraphs, - bullets, 1. numbered, [[note links]]. Blank line between blocks."
-              style={{ width: '100%', minHeight: 300, border: '1px solid ' + t.line2, borderRadius: 11, padding: '14px 16px',
-                outline: 0, background: t.card, resize: 'vertical', fontFamily: f.body, fontSize: 15, lineHeight: 1.7, color: t.t1 }} />
-            {err && <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 10 }}>Couldn’t save — {String(err?.message || err)}.</div>}
+            <MdEditor value={eBody} onChange={setEBody} minHeight={360} />
+            {err && <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 10 }}>Couldn’t save - {String(err?.message || err)}.</div>}
           </>
-        : <Body blocks={n.body} />}
+        : <RichText text={blocksToText(n.body || [])} />}
     </div>
 
     {/* tags */}
@@ -379,8 +378,11 @@ export function NoteScreen() {
     {railOpen && <div onClick={() => setRailOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(0,0,0,0.35)' }}>
       <div onClick={(e) => e.stopPropagation()}><ClaudeRail note={n} onClose={() => setRailOpen(false)} onReload={reload} /></div></div>}
     {chatOpen && (() => { const pid = n.project || (n.projects || [])[0] || null
+      const proj = pid ? projectById(pid) : null
+      const areaId = n.area || proj?.area || null
       return <DocChat doc={{ title: n.title || 'Untitled', kind: n.kind || 'note', content: noteContext(n) }}
         projectContext={pid ? projectDigest(pid) : ''} projectName={pid ? projectName(pid) : ''}
+        areaContext={areaId ? areaDigest(areaId) : ''} areaName={proj?.areaName || ''}
         onClose={() => setChatOpen(false)} /> })()}
   </div>
 }

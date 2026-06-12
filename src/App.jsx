@@ -16,6 +16,7 @@ import { NoteScreen } from './screens/Note'
 import { AskScreen } from './screens/Ask'
 import { InboxScreen } from './screens/Inbox'
 import { LibraryScreen } from './screens/Library'
+import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
 import { RecorderProvider, FloatingRecorder } from './RecorderContext'
@@ -127,6 +128,7 @@ function SidebarContent({ onClose }) {
     </div>
 
     {nav('layout-grid', 'Work', 'overview')}
+    {nav('calendar', 'Agenda', 'agenda')}
     {nav('sparkles', 'Ask', 'ask')}
     {nav('inbox', 'Inbox', 'inbox', inboxCount)}
     {nav('stack-2', 'Library', 'library')}
@@ -479,6 +481,7 @@ function Screen() {
   const { route } = useApp()
   switch (route.screen) {
     case 'overview': return <OverviewScreen />
+    case 'agenda':   return <AgendaScreen />
     case 'area':     return <AreaScreen key={route.id} />
     case 'project':  return <ProjectScreen key={route.id} />
     case 'note':     return <NoteScreen key={route.id} />

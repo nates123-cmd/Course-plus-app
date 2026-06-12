@@ -10,9 +10,26 @@
 // (all allow-listed) fixes it without changing the shared proxy.
 import { supabase } from './supabase'
 
+// House style appended to EVERY system prompt (the deterministic houseStyle()
+// sanitizer below also enforces these on the way out, in case the model slips).
+export const HOUSE_STYLE =
+  ' House style (always): never use em dashes or en dashes — use a hyphen "-" instead. ' +
+  'Always write "Arrowsphere" (one word, capital A) — never "aerosphere" or any other spelling.'
+
 const DEFAULT_SYSTEM =
   'You are a writing and reference assistant inside a personal work app called Course. ' +
-  'Return only the requested content — no preamble, no commentary.'
+  'Return only the requested content - no preamble, no commentary.' + HOUSE_STYLE
+
+// Deterministic enforcement of HOUSE_STYLE on generated text. Runs on every
+// proxy response so the rules hold even when the model ignores the instruction.
+// Only touches Claude OUTPUT — the user's own typed notes are never rewritten.
+export function houseStyle(text) {
+  if (!text || typeof text !== 'string') return text
+  return text
+    .replace(/\s*[—–]\s*/g, ' - ')                 // em / en dash -> spaced hyphen
+    .replace(/\b[aA][eé]rosphere\b/g, 'Arrowsphere') // common misspelling
+    .replace(/\barrowsphere\b/gi, 'Arrowsphere')     // normalize any casing
+}
 
 // Per-model price, USD per 1M tokens (input, output). Update if pricing changes.
 export const MODEL_PRICING = {
@@ -51,12 +68,14 @@ async function postClaude(body) {
   return res.json()
 }
 
-// Pull text out of the proxy response (string, {text}, or {content:[blocks]}).
+// Pull text out of the proxy response (string, {text}, or {content:[blocks]}),
+// then apply house style so every surface gets the same enforced output.
 function responseText(data) {
-  return typeof data === 'string' ? data
+  const raw = typeof data === 'string' ? data
     : data?.text ? data.text
     : Array.isArray(data?.content) ? data.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
     : JSON.stringify(data)
+  return houseStyle(raw)
 }
 
 // Multi-turn chat. messages = [{role:'user'|'assistant', content}]. Returns text.
