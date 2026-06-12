@@ -323,11 +323,23 @@ function GlobalSearch() {
 // ── Top bar ─────────────────────────────────────────────────────
 function TopBar({ onMenu, onCapture, isMobile }) {
   const { mode, setMode, back, canBack } = useApp()
+  // AI engine toggle (Claude <-> Deepseek). Read by lib/claude.js#aiProvider at
+  // call time, so flipping it here re-routes every AI surface (synthesis,
+  // compose, Ask, note actions). Persisted in localStorage; UI-only state here.
+  const [ai, setAi] = useState(() => { try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' } })
+  const dsOn = ai === 'deepseek'
+  const toggleAi = () => setAi((v) => { const n = v === 'deepseek' ? 'claude' : 'deepseek'; try { localStorage.setItem('course.ai', n) } catch {} return n })
   return <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 22px', borderBottom: '1px solid ' + t.line, background: t.bg, flex: 'none' }}>
     {isMobile && <IconBtn n="menu-2" s={21} onClick={onMenu} />}
     {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
     <div style={{ flex: 1 }} />
+    <button onClick={toggleAi} title={`AI engine: ${dsOn ? 'Deepseek' : 'Claude'} — tap to switch`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
+        fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: dsOn ? t.accent : t.t3,
+        background: dsOn ? t.accentBg : 'transparent', border: '1px solid ' + (dsOn ? t.accentLine : t.line2), borderRadius: 8 }}>
+      <Icon n="sparkles" s={14} c={dsOn ? t.accent : t.t3} />{dsOn ? 'Deepseek' : 'Claude'}
+    </button>
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
     <Btn kind="primary" icon="plus" onClick={onCapture}>New</Btn>
   </div>

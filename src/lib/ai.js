@@ -1,6 +1,6 @@
 // Scribe AI surfaces — real Claude calls (via the JWT-gated `claude` proxy)
 // that replace the prototype's setTimeout fakes.
-import { claudeComplete, claudeChat, extractJSON } from './claude'
+import { claudeComplete, claudeChat, extractJSON, pickModel } from './claude'
 
 // Ask-about-this-document — a short multi-turn conversation whose SCOPE the user
 // chooses: just the open document, its whole project, or its whole area/pillar.
@@ -26,7 +26,7 @@ export async function askDocument(doc, history, question, opts = {}) {
   const firstTurn = wide
     ? `${scope === 'area' ? 'AREA' : 'PROJECT'} CONTEXT — "${contextLabel}":\n${contextText.trim()}\n\n---\n\n${docBlock}`
     : docBlock
-  const model = firstTurn.length > 12000 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const model = pickModel(firstTurn.length > 12000 ? 'heavy' : 'light')
   const messages = [{ role: 'user', content: firstTurn }, ...(history || []), { role: 'user', content: question }]
   return (await claudeChat(messages, { system, model, max_tokens: 1400 })).trim()
 }
@@ -94,7 +94,7 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
     return `## ${n.title}${n.summary ? '\nSummary: ' + n.summary : ''}${body ? '\n' + body : ''}${tx}`
   }).join('\n\n---\n\n')
   const big = corpus.length > 12000 || notes.length > 6
-  const model = big ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const model = pickModel(big ? 'heavy' : 'light')
   const system =
     'You compose clean, paste-ready business deliverables. Work from the FULL source material ' +
     '(note bodies and meeting transcripts) — use the detail, not just the summaries. ' +
@@ -134,7 +134,7 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
     'If a change can\'t be anchored to a quote, anchor to the nearest heading. Add a final ' +
     '"## New sections to add" only if needed. If nothing needs changing, say so plainly.'
   let usage = null
-  const guide = (await claudeComplete(user, { system, model: 'claude-sonnet-4-6', max_tokens: 4096, onUsage: (u) => { usage = u } })).trim()
+  const guide = (await claudeComplete(user, { system, model: pickModel('heavy'), max_tokens: 4096, onUsage: (u) => { usage = u } })).trim()
   return { guide, usage }
 }
 
@@ -146,7 +146,7 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
 export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low' } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
-  const model = (detail === 'high' || long) ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+  const model = pickModel((detail === 'high' || long) ? 'heavy' : 'light')
   const maxTok = detail === 'high' ? 4096 : detail === 'low' ? 1100 : 2400
   const summarySpec = detail === 'high'
     ? 'a THOROUGH, in-depth briefing as markdown bullets — cover every topic, decision, number, ' +

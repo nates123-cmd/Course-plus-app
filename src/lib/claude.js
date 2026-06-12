@@ -32,10 +32,27 @@ export function houseStyle(text) {
 }
 
 // Per-model price, USD per 1M tokens (input, output). Update if pricing changes.
+// Deepseek prices are the standard (cache-miss) rates — approximate.
 export const MODEL_PRICING = {
   'claude-haiku-4-5':  { in: 1, out: 5 },
   'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-opus-4-8':   { in: 15, out: 75 },
+  'deepseek-chat':     { in: 0.27, out: 1.1 },
+  'deepseek-reasoner': { in: 0.55, out: 2.19 },
+}
+
+// AI engine preference (set by the TopBar toggle, read at call time so flipping
+// the switch re-routes the very next AI call). 'claude' | 'deepseek'.
+export function aiProvider() {
+  try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' }
+}
+
+// Resolve a capability tier ('light' | 'heavy') to a concrete model id for the
+// currently-selected engine. Callers ask for a tier, not a vendor model, so the
+// same call works on either engine. The shared `claude` proxy routes by id.
+export function pickModel(tier = 'light') {
+  if (aiProvider() === 'deepseek') return tier === 'heavy' ? 'deepseek-reasoner' : 'deepseek-chat'
+  return tier === 'heavy' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
 }
 
 // Dollar cost for a usage record { model, input_tokens, output_tokens }.
@@ -80,7 +97,7 @@ function responseText(data) {
 
 // Multi-turn chat. messages = [{role:'user'|'assistant', content}]. Returns text.
 export async function claudeChat(messages, opts = {}) {
-  const { system = DEFAULT_SYSTEM, max_tokens = 1024, model = 'claude-haiku-4-5', onUsage } = opts
+  const { system = DEFAULT_SYSTEM, max_tokens = 1024, model = pickModel('light'), onUsage } = opts
   const data = await postClaude({ system: system || DEFAULT_SYSTEM, messages, model, max_tokens })
   const text = responseText(data)
   if (onUsage) {
@@ -99,7 +116,7 @@ export async function claudeComplete(prompt, opts = {}) {
   const {
     system = DEFAULT_SYSTEM,
     max_tokens = 1024,
-    model = 'claude-haiku-4-5',
+    model = pickModel('light'),
     onUsage,
   } = opts
 
