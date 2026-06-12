@@ -1,0 +1,13 @@
+{
+  "name": "Scribe",
+  "short_name": "Scribe",
+  "description": "Claude-connected notes & reference.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f5f6",
+  "theme_color": "#f4f5f6",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
