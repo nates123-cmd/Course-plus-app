@@ -322,23 +322,21 @@ function GlobalSearch() {
 
 // ── Top bar ─────────────────────────────────────────────────────
 function TopBar({ onMenu, onCapture, isMobile }) {
-  const { mode, setMode, back, canBack } = useApp()
-  // AI engine toggle (Claude <-> Deepseek). Read by lib/claude.js#aiProvider at
-  // call time, so flipping it here re-routes every AI surface (synthesis,
-  // compose, Ask, note actions). Persisted in localStorage; UI-only state here.
-  const [ai, setAi] = useState(() => { try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' } })
+  const { mode, setMode, ai, setAi, aiName, back, canBack } = useApp()
+  // AI engine toggle (Claude <-> Deepseek). State lives in app context so every
+  // "Generate with <engine>" label across the app hot-switches with it; the same
+  // localStorage key drives lib/claude.js#aiProvider routing.
   const dsOn = ai === 'deepseek'
-  const toggleAi = () => setAi((v) => { const n = v === 'deepseek' ? 'claude' : 'deepseek'; try { localStorage.setItem('course.ai', n) } catch {} return n })
   return <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 22px', borderBottom: '1px solid ' + t.line, background: t.bg, flex: 'none' }}>
     {isMobile && <IconBtn n="menu-2" s={21} onClick={onMenu} />}
     {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
     <div style={{ flex: 1 }} />
-    <button onClick={toggleAi} title={`AI engine: ${dsOn ? 'Deepseek' : 'Claude'} — tap to switch`}
+    <button onClick={() => setAi(dsOn ? 'claude' : 'deepseek')} title={`AI engine: ${aiName} — tap to switch`}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
         fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: dsOn ? t.accent : t.t3,
         background: dsOn ? t.accentBg : 'transparent', border: '1px solid ' + (dsOn ? t.accentLine : t.line2), borderRadius: 8 }}>
-      <Icon n="sparkles" s={14} c={dsOn ? t.accent : t.t3} />{dsOn ? 'Deepseek' : 'Claude'}
+      <Icon n="sparkles" s={14} c={dsOn ? t.accent : t.t3} />{aiName}
     </button>
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
     <Btn kind="primary" icon="plus" onClick={onCapture}>New</Btn>
@@ -518,10 +516,15 @@ export default function App() {
   const [drawer, setDrawer] = useState(false)
   const [capture, setCapture] = useState(false)
   const [mode, setModeRaw] = useState(() => localStorage.getItem('course.mode') || 'light')
+  // AI engine ('claude' | 'deepseek'). Lives here (not TopBar-local) so the whole
+  // tree re-renders on toggle and every "Generate with X" label hot-switches.
+  // lib/claude.js#aiProvider reads the same localStorage key for actual routing.
+  const [ai, setAiRaw] = useState(() => { try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' } })
   const [route, setRoute] = useState(() => { try { return JSON.parse(localStorage.getItem('course.route')) || { screen: 'overview' } } catch { return { screen: 'overview' } } })
   const [hist, setHist] = useState([])
 
   const setMode = (m) => { setModeRaw(m); localStorage.setItem('course.mode', m) }
+  const setAi = (v) => { setAiRaw(v); try { localStorage.setItem('course.ai', v) } catch {} }
   const sameRoute = (a, b) => a && b && a.screen === b.screen && a.id === b.id
   const applyRoute = (r) => { setRoute(r); localStorage.setItem('course.route', JSON.stringify(r)); setDrawer(false); const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
   const go = (r) => { if (!sameRoute(r, route)) setHist((h) => [...h, route].slice(-50)); applyRoute(r) }
@@ -529,7 +532,7 @@ export default function App() {
   useEffect(() => { document.documentElement.setAttribute('data-theme', mode) }, [mode])
   useEffect(() => { if (!isMobile) setDrawer(false) }, [isMobile])
 
-  const ctx = useMemo(() => ({ t, f: F, mode, setMode, route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, route, isMobile, hist])
+  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'deepseek' ? 'Deepseek' : 'Claude', route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, route, isMobile, hist])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>

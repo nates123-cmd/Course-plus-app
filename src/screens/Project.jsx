@@ -498,7 +498,7 @@ function DocSection({ label, notes, kind, project }) {
 
 // ── Artifacts — project deliverables + Claude composer ──────────
 function Artifacts({ project, notes, meetings = [], reload }) {
-  const { t, f, go } = useApp()
+  const { t, f, go, aiName } = useApp()
   const rows = project.artifacts || []
   const [composing, setComposing] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -532,7 +532,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       const { guide, usage } = await updateGuide({ documentTitle: dTitle, document: dBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
       const title = `Update guide — ${dTitle}`
       const cost = usdRough(usage)
-      const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ Claude · update guide · from ${mtg.title}${cost ? ' · ' + cost : ''}` })
+      const id = await createArtifact(project.id, { title, artType: 'update-guide', body: guide, provenance: `✦ ${aiName} · update guide · from ${mtg.title}${cost ? ' · ' + cost : ''}` })
       await reload(); setUInstr(''); go({ screen: 'artifact', id })
       setTimeout(() => setToast(null), 4500); setTimeout(() => setNewId(null), 6000)
     } catch (e) { setToast('Couldn’t build guide — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
@@ -561,7 +561,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       const title = `${project.name} — ${type.name}`
       const cost = usdRough(usage)
       const id = await createArtifact(project.id, {
-        title, artType: typeId, body, provenance: `✦ Claude · from ${n} notes${cost ? ' · ' + cost : ''}`, fromCount: n,
+        title, artType: typeId, body, provenance: `✦ ${aiName} · from ${n} notes${cost ? ' · ' + cost : ''}`, fromCount: n,
       })
       await reload(); setPrompt(''); go({ screen: 'artifact', id })
     } catch (e) {
@@ -575,14 +575,14 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     {!composing && !adding && !updating && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
       <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false); setUpdating(false) }}>Add file</Btn>
       <Btn kind="outline" size="sm" icon="file-diff" onClick={() => { setUpdating(true); setAdding(false); setComposing(false); setDocArtId(rows[0]?.id || null); setMeetingId(meetings[0]?.id || null) }}>Update doc from meeting</Btn>
-      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with Claude</Btn>
+      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with {aiName}</Btn>
     </div>}
 
     {updating && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
         <Icon n="file-diff" s={14} c={t.accent} />
         <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Update doc from a meeting</span>
-        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>Claude returns what to edit & where — not a rewrite</span>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{aiName} returns what to edit & where — not a rewrite</span>
       </div>
       {/* document source */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -636,7 +636,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     {composing && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
         <Icon n="sparkles" s={14} c={t.accent} />
-        <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask Claude</span>
+        <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask {aiName}</span>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>reads this project's {notes.length} notes, drops the result here</span>
       </div>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
@@ -650,7 +650,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       </div>
       <textarea autoFocus value={prompt} onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run(); if (e.key === 'Escape') setComposing(false) }}
-        placeholder={typeId === 'csv' ? 'What columns do you want? Any extra instructions…' : 'Optional — extra instructions for Claude…'}
+        placeholder={typeId === 'csv' ? 'What columns do you want? Any extra instructions…' : `Optional — extra instructions for ${aiName}…`}
         style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
@@ -663,7 +663,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       borderColor: t.accentLine, background: t.accentBg }}>
       <Icon n="loader-2" s={20} c={t.accent} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Claude is working…</div>
+        <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>{aiName} is working…</div>
         <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 1 }}>Reading {notes.length} notes in {project.name} · composing</div>
       </div>
     </Card>}
@@ -700,7 +700,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       display: 'flex', alignItems: 'center', gap: 10, background: t.card, border: '1px solid ' + t.accentLine,
       borderRadius: 12, boxShadow: t.shadow, padding: '11px 15px', maxWidth: '90vw' }}>
       <Icon n="sparkles" s={16} c={t.accent} />
-      <span style={{ fontFamily: f.ui, fontSize: 13, color: t.t1 }}>Claude added <b style={{ fontWeight: 600 }}>{toast}</b> to Artifacts</span></div>}
+      <span style={{ fontFamily: f.ui, fontSize: 13, color: t.t1 }}>{aiName} added <b style={{ fontWeight: 600 }}>{toast}</b> to Artifacts</span></div>}
   </div>
 }
 

@@ -28,7 +28,7 @@ const ART_KIND = {
 }
 
 export function ArtifactScreen() {
-  const { t, f, go, route, isMobile } = useApp()
+  const { t, f, go, route, isMobile, aiName } = useApp()
   const { artifactById, projectById, reload, projectDigest, areaDigest } = useData()
   const [copied, setCopied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -86,7 +86,7 @@ export function ArtifactScreen() {
               <Btn kind="primary" size="sm" icon={saving ? 'loader-2' : 'circle-check'} onClick={saving ? undefined : saveEdit}>{saving ? 'Saving…' : 'Save'}</Btn>
             </>
           : <>
-              <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setChatOpen(true)}>Ask Claude</Btn>
+              <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setChatOpen(true)}>Ask {aiName}</Btn>
               <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
               <Btn kind="outline" size="sm" icon={copied ? 'check' : 'copy'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Btn>
               <IconBtn n="trash" s={17} title="Delete" onClick={del} />

@@ -116,7 +116,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 }
 
 export function RecordScreen() {
-  const { t, f, go, route, isMobile } = useApp()
+  const { t, f, go, route, isMobile, aiName } = useApp()
   const { allProjects, projectById, areaOfProject, areas, areaById, reload } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
@@ -521,7 +521,7 @@ export function RecordScreen() {
           borderRadius: showNext ? '11px 11px 0 0' : 11, cursor: 'pointer', background: t.card, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>
           <Icon n={showNext ? 'chevron-down' : 'chevron-right'} s={14} c={t.t3} />
           <Icon n="bulb" s={15} c={t.accent} />Suggested next steps
-          <span style={{ flex: 1 }} /><span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 500, color: t.t3 }}>Claude’s take</span></div>
+          <span style={{ flex: 1 }} /><span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 500, color: t.t3 }}>{aiName}’s take</span></div>
         {showNext && <div style={{ padding: '14px 16px', background: t.card, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 11px 11px' }}>
           <Markish text={synth.nextSteps} /></div>}
       </div>}

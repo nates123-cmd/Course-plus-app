@@ -72,7 +72,7 @@ function RefToggle({ note, onToggle, busy }) {
 
 // ── Claude action rail (overlay panel) ───────────────────────────
 function ClaudeRail({ note, onClose, onReload }) {
-  const { t, f, go } = useApp()
+  const { t, f, go, aiName } = useApp()
   const [busy, setBusy] = useState(null)
   const [msg, setMsg] = useState(null)
   const [preview, setPreview] = useState(null) // { body } from Rewrite, awaiting apply
@@ -120,7 +120,7 @@ function ClaudeRail({ note, onClose, onReload }) {
     borderLeft: '1px solid ' + t.line, boxShadow: t.shadow, padding: 18, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
       <Icon n="sparkles" s={16} c={t.accent} />
-      <span style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 600, color: t.t1 }}>Claude actions</span>
+      <span style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 600, color: t.t1 }}>{aiName} actions</span>
       <div style={{ flex: 1 }} /><IconBtn n="x" s={18} onClick={onClose} />
     </div>
 
@@ -162,7 +162,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
-  const { t, f, go, route, isMobile } = useApp()
+  const { t, f, go, route, isMobile, aiName } = useApp()
   const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
@@ -251,7 +251,7 @@ export function NoteScreen() {
             <IconBtn n="trash" s={17} title="Delete" onClick={deleteThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
             <Btn kind="outline" size="sm" icon="message-circle" onClick={() => setChatOpen(true)}>Ask</Btn>
-            <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>Claude</Btn>
+            <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>{aiName}</Btn>
           </span>}
     </div>
 
