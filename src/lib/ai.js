@@ -78,6 +78,7 @@ export async function briefingFor(projectName, notes) {
 const TYPE_BRIEF = {
   auto: 'the single most useful deliverable for this material — choose the best format yourself (document, table, list, email, etc.)',
   document: 'a clean, well-structured written document',
+  message: 'a ready-to-send message - either an email or a Teams/chat message as the instructions imply - that is concise, natural, and in a warm professional voice. Lead with the point, keep it skimmable. (A personal writing-style brief will be supplied here later to match the user\'s voice.)',
   csv: 'a CSV table whose columns are ALWAYS separated by the pipe character "|" (never commas). First line is the header row, then one record per line. Output raw pipe-delimited text only — no markdown table syntax, no code fences, no commentary',
   copilot: 'a single ready-to-paste Microsoft 365 Copilot prompt that, given this context, will generate the intended deliverable inside Office (Word / Excel / PowerPoint / Outlook). Output ONLY the prompt text the user would paste into Copilot',
 }

@@ -16,6 +16,7 @@ const ART_KIND = {
   // current compose types
   auto: { icon: 'sparkles', label: 'Document' },
   document: { icon: 'file-text', label: 'Document' },
+  message: { icon: 'message', label: 'Message' },
   csv: { icon: 'table', label: 'CSV' },
   copilot: { icon: 'prompt', label: 'Copilot prompt' },
   // legacy compose types (kept so older artifacts still label correctly)
