@@ -76,11 +76,10 @@ export async function briefingFor(projectName, notes) {
 }
 
 const TYPE_BRIEF = {
-  onepager: 'a tight one-page brief',
-  exec: 'a decision-first executive summary of 3–5 bullets',
-  email: 'a ready-to-send email draft',
-  deck: 'a slide-by-slide deck outline',
-  other: 'the deliverable described in the instructions below',
+  auto: 'the single most useful deliverable for this material — choose the best format yourself (document, table, list, email, etc.)',
+  document: 'a clean, well-structured written document',
+  csv: 'a CSV table whose columns are ALWAYS separated by the pipe character "|" (never commas). First line is the header row, then one record per line. Output raw pipe-delimited text only — no markdown table syntax, no code fences, no commentary',
+  copilot: 'a single ready-to-paste Microsoft 365 Copilot prompt that, given this context, will generate the intended deliverable inside Office (Word / Excel / PowerPoint / Outlook). Output ONLY the prompt text the user would paste into Copilot',
 }
 // Compose a paste-ready deliverable from the FULL material — note bodies AND
 // meeting transcripts, not just summaries (a transcript is far richer source for

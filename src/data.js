@@ -339,11 +339,10 @@ export const SEED_INBOX = [
 export const TOPICS = ['novation', 'pricing', 'arm', 'proposal', 'review']
 
 export const COMPOSE_TYPES = [
-  { id: 'onepager', icon: 'file-text', name: 'One-pager', desc: 'Tight single-page brief' },
-  { id: 'exec', icon: 'clipboard-text', name: 'Exec summary', desc: '3–5 bullets, decision-first' },
-  { id: 'email', icon: 'mail', name: 'Email draft', desc: 'Ready to send' },
-  { id: 'deck', icon: 'layout-board', name: 'Deck outline', desc: 'Slide-by-slide skeleton' },
-  { id: 'other', icon: 'wand', name: 'Other', desc: 'Anything else — describe it in the prompt' },
+  { id: 'auto', icon: 'sparkles', name: 'Auto', desc: 'Claude picks the best format' },
+  { id: 'document', icon: 'file-text', name: 'Document', desc: 'Clean written document' },
+  { id: 'csv', icon: 'table', name: 'CSV', desc: 'Pipe-separated table ( | )' },
+  { id: 'copilot', icon: 'prompt', name: 'Copilot prompt', desc: 'Ready-to-paste M365 Copilot prompt' },
 ]
 
 // Suggested Ask questions (shown before first query)

@@ -13,6 +13,12 @@ import { MdEditor } from '../components/MdEditor'
 const ART_KIND = {
   'update-guide': { icon: 'file-diff', label: 'Edit guide' },
   file: { icon: 'file-text', label: 'File' },
+  // current compose types
+  auto: { icon: 'sparkles', label: 'Document' },
+  document: { icon: 'file-text', label: 'Document' },
+  csv: { icon: 'table', label: 'CSV' },
+  copilot: { icon: 'prompt', label: 'Copilot prompt' },
+  // legacy compose types (kept so older artifacts still label correctly)
   onepager: { icon: 'file-text', label: 'One-pager' },
   exec: { icon: 'clipboard-text', label: 'Exec summary' },
   email: { icon: 'mail', label: 'Email draft' },
