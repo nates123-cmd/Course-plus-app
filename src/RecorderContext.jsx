@@ -10,6 +10,7 @@ import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock, getRecovered, clearRecovered } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
+import { transcribeInBrowser, browserWhisperSupported } from './lib/whisper'
 import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
 import { createNote, updateNote, deleteNote } from './lib/db'
@@ -54,6 +55,11 @@ export function RecorderProvider({ go, children }) {
   // transcription tuning (record mode only)
   const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
   const [diarize, setDiarize] = useState(true)   // speaker labels on/off
+  // engine: 'cloud' = AssemblyAI edge fn (speaker labels). 'browser' = on-device
+  // Whisper (private, free, no speaker labels). Falls back to cloud if unsupported.
+  const [engine, setEngine] = useState('cloud')
+  const [tStatus, setTStatus] = useState('') // browser-engine sub-status: ''|'loading-model'|'transcribing'
+  const [modelPct, setModelPct] = useState(0) // on-device model download %
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
   const [transcriptText, setTranscriptText] = useState('')
   const [synth, setSynth] = useState(emptySynth)
@@ -78,7 +84,26 @@ export function RecorderProvider({ go, children }) {
     if ('detail' in patch) setDetail(patch.detail)
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
+    if ('engine' in patch) setEngine(browserWhisperSupported ? patch.engine : 'cloud')
   }
+
+  // Run the chosen transcription engine on a blob → plain transcript text.
+  // Cloud = speaker-labeled (AssemblyAI); browser = on-device Whisper (no labels).
+  const runEngine = async (blob) => {
+    setTStatus(''); setModelPct(0)
+    if (engine === 'browser' && browserWhisperSupported) {
+      setTStatus('loading-model')
+      return transcribeInBrowser(blob, {
+        onStatus: setTStatus,
+        onModelProgress: ({ progress }) => setModelPct(Math.round(progress || 0)),
+      })
+    }
+    return transcribeAudio(blob, { onStatus: () => setProc('transcribing'), speakersExpected: speakers, diarize })
+  }
+  // On-device output has no diarization — render it as one un-attributed turn.
+  const linesFor = (text) => engine === 'browser'
+    ? (text ? [{ sp: 'Transcript', text, at: fmtClock(2) }] : [])
+    : parseLines(text, people).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
 
   // ── Recovery & autosave ─────────────────────────────────────────
   const draftIdRef = useRef(null)       // stable cp_notes id for this draft
@@ -100,6 +125,7 @@ export function RecorderProvider({ go, children }) {
           setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
           setProjects(d.projects || []); setPeople(d.people || []); setAgenda(d.agenda || '')
           setNotes(d.notes || ''); setSource(d.source || 'paste')
+          if (d.engine) setEngine(browserWhisperSupported ? d.engine : 'cloud')
           setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
           draftIdRef.current = d.draftNoteId || null
           draftSavedRef.current = !!d.draftNoteId
@@ -117,11 +143,11 @@ export function RecorderProvider({ go, children }) {
     const has = meaningful() || people.length || projects.length
     if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
     const id = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, transcriptText, lines, synth, draftNoteId: draftIdRef.current })) } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, draftNoteId: draftIdRef.current })) } catch {}
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, home, pillar, projects, people, agenda, notes, source, transcriptText, lines, synth])
+  }, [title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth])
 
   // The note fields shared by autosave + finalize.
   const noteFields = (incomplete) => ({
@@ -182,9 +208,9 @@ export function RecorderProvider({ go, children }) {
     if (!blob) return
     setSource('record'); setError(null); setProc('transcribing')
     try {
-      const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'), speakersExpected: speakers, diarize })
+      const text = await runEngine(blob)
       setTranscriptText(text)
-      setLines(parseLines(text, people).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })))
+      setLines(linesFor(text))
       setProc('ready')
     } catch (e) { setError(humanize(e)); setProc('ready') }
     clearRecovered().catch(() => {})
@@ -219,6 +245,7 @@ export function RecorderProvider({ go, children }) {
   const start = async () => {
     setError(null); setWarn(null)
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
+    setTStatus(''); setModelPct(0)
     setProc(PROC_IDLE)
     await recorder.start()
   }
@@ -304,11 +331,9 @@ export function RecorderProvider({ go, children }) {
     if (!blob || !blob.size) { setError('No audio was captured.'); setProc(PROC_IDLE); return }
     setProc('transcribing')
     try {
-      const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'),
-        speakersExpected: speakers, diarize })
-      const parsed = parseLines(text, people)
+      const text = await runEngine(blob)
       // attach rough timestamps (we don't get word-level offsets back here)
-      const withAt = parsed.map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) }))
+      const withAt = linesFor(text)
       setLines(withAt)
       setTranscriptText(text)
       // Completeness check: ~120 wpm is normal speech. If the transcript is far
@@ -354,8 +379,9 @@ export function RecorderProvider({ go, children }) {
       if (s.speakers && typeof s.speakers === 'object') {
         for (const [label, name] of Object.entries(s.speakers)) { if (name && String(name).trim() && label !== name) renameSpeaker(label, name) }
       }
-      // Paste path is free; only in-app recording incurs AssemblyAI cost.
-      const transcribe = source === 'record' ? (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR : 0
+      // Paste path is free; only cloud in-app recording incurs AssemblyAI cost
+      // (on-device Whisper is free).
+      const transcribe = source === 'record' && engine === 'cloud' ? (seconds / 3600) * TRANSCRIBE_USD_PER_HOUR : 0
       const claude = claudeCost(s.usage)
       setCost({ transcribe, claude, total: transcribe + claude, usage: s.usage || null, estimated: !!(s.usage && s.usage.estimated) })
       setProc('done')
@@ -387,10 +413,11 @@ export function RecorderProvider({ go, children }) {
     phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
+    engine, browserWhisperSupported, tStatus, modelPct,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

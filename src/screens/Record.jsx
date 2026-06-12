@@ -135,7 +135,7 @@ export function RecordScreen() {
   const notesRef = useRef(null)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
-  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize } = rec
+  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
@@ -246,8 +246,13 @@ export function RecordScreen() {
   const showSynthBar = phase === 'ready' || phase === 'synth' || (phase === 'idle' && (notes || '').trim() && !transcribed)
   const isRecordMode = source === 'record'
 
+  const transcribingText = engine === 'browser'
+    ? (tStatus === 'loading-model'
+        ? 'Downloading Whisper model (first time only)…' + (modelPct > 0 ? ` ${modelPct}%` : '')
+        : 'Transcribing on this device…')
+    : 'Transcribing…'
   const statusText = phase === 'recording' ? 'Recording — audio captured'
-    : phase === 'paused' ? 'Paused' : phase === 'transcribing' ? 'Transcribing…'
+    : phase === 'paused' ? 'Paused' : phase === 'transcribing' ? transcribingText
     : phase === 'ready' ? 'Transcribed — ready to synthesize' : phase === 'synth' ? 'Synthesizing…'
     : phase === 'done' ? 'Synthesized' : 'Ready to record'
 
@@ -461,6 +466,20 @@ export function RecordScreen() {
               style={{ width: '100%', minHeight: 150, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
           </div>
         : <>
+            {/* engine picker — cloud (speaker labels) vs on-device Whisper (private, free) */}
+            {browserWhisperSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Transcribe with</span>
+              <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+                {[['cloud', 'Cloud · speaker labels', 'cloud'], ['browser', 'On device · private', 'device-laptop']].map(([id, label, icon]) => {
+                  const on = engine === id
+                  const locked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
+                  return <span key={id} onClick={() => { if (!locked) rec.setMeta({ engine: id }) }} title={id === 'browser' ? 'Runs in your browser — nothing leaves this device, no cost, no speaker labels' : 'AssemblyAI — identifies who said what'}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1, color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+                    <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
+                })}
+              </div>
+              {engine === 'browser' && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>first use downloads a ~40MB model, then it's offline &amp; free</span>}
+            </div>}
             {/* recorder card */}
             <Card style={{ padding: '22px 24px', background: t.panel }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -487,8 +506,8 @@ export function RecordScreen() {
                 </div>}
               </div>
             </Card>
-            {/* tuning */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {/* tuning — speaker labels only exist on the cloud engine */}
+            {engine === 'cloud' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
                 <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
@@ -497,12 +516,13 @@ export function RecordScreen() {
                   onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
                   style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
                 <span>expected speakers</span></span>}
-            </div>
+            </div>}
           </>}
     </div>
 
-    {/* speakers — only after synthesize; AI has guessed names (People-led, else inferred) */}
-    {phase === 'done' && speakers.length > 0 && <SpeakerLabeler speakers={speakers} people={people} onRename={(from, to) => rec.renameSpeaker(from, to)} />}
+    {/* speakers — only after synthesize; AI has guessed names (People-led, else inferred).
+        On-device Whisper has no diarization, so there's nothing to label. */}
+    {phase === 'done' && engine === 'cloud' && speakers.length > 0 && <SpeakerLabeler speakers={speakers} people={people} onRename={(from, to) => rec.renameSpeaker(from, to)} />}
 
     {/* recorded transcript preview (record mode) */}
     {isRecordMode && (phase === 'transcribing' || (transcribed && lines.length > 0)) && <div style={{ marginTop: 18 }}>
