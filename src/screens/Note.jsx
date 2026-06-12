@@ -208,7 +208,15 @@ export function NoteScreen() {
     catch (e) { window.alert('Could not remove: ' + (e?.message || e)) }
   }
 
-  const startEdit = () => { setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null); setEditing(true) }
+  // Meetings carry far more than a body — folder, agenda, people, transcript,
+  // transcript options. Editing those lives in the composer, so a meeting's
+  // "Edit" reopens the full composer (synthesis is preserved). Plain notes get
+  // the inline body editor.
+  const resumeMeeting = () => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }
+  const startEdit = () => {
+    if (isMeeting) return resumeMeeting()
+    setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null); setEditing(true)
+  }
   const deleteThis = async () => {
     if (!window.confirm(`Delete “${n.title || 'this item'}”? This can’t be undone.`)) return
     try { await deleteNote(n.id); await reload(); go(n.project ? { screen: 'project', id: n.project } : { screen: 'library' }) }
@@ -252,9 +260,9 @@ export function NoteScreen() {
       ? <input value={eTitle} onChange={(e) => setETitle(e.target.value)} placeholder="Untitled" className="selectable"
           style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28,
             fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15, padding: 0 }} />
-      : <h1 onClick={startEdit} title="Click to edit"
+      : <h1 onClick={isMeeting ? undefined : startEdit} title={isMeeting ? undefined : 'Click to edit'}
           style={{ margin: 0, fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
-            color: t.t1, lineHeight: 1.15, textWrap: 'pretty', cursor: 'text' }}>{n.title}</h1>}
+            color: t.t1, lineHeight: 1.15, textWrap: 'pretty', cursor: isMeeting ? 'default' : 'text' }}>{n.title}</h1>}
 
     {/* date / people / words */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

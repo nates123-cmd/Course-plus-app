@@ -14,7 +14,7 @@ import { transcribeInBrowser, browserWhisperSupported } from './lib/whisper'
 import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
 import { createNote, updateNote, deleteNote } from './lib/db'
-import { textToBlocks, blocksToText } from './lib/blocks'
+import { markdownToBlocks, blocksToText } from './lib/blocks'
 
 const DRAFT_KEY = 'course.meetingDraft'
 
@@ -155,7 +155,7 @@ export function RecorderProvider({ go, children }) {
     project: home || null, area: home ? (areaOfProject(home)?.id || null) : (pillar || null),
     projects: [...new Set([home, ...projects].filter(Boolean))],
     people: people || [], agenda: agenda.trim() || null, transcript: transcriptText || null,
-    body: notes.trim() ? textToBlocks(notes) : [],
+    body: notes.trim() ? markdownToBlocks(notes) : [],
     date: (() => { const d = new Date(); const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` })(),
     updated: 'now', status: incomplete ? 0 : 2, incomplete,
   })
@@ -238,8 +238,14 @@ export function RecorderProvider({ go, children }) {
     setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
     setTranscriptText(n.transcript || '')
     setLines(n.transcript ? parseLines(n.transcript, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
-    setSynth(emptySynth); setCost(null); setError(null); setWarn(null)
-    setProc(n.transcript ? 'ready' : PROC_IDLE)
+    // Restore prior synthesis so reopening a finished meeting keeps its summary/
+    // actions/tags/next-steps — and re-saving from the composer doesn't wipe them.
+    const synthesized = !n.incomplete && !!(n.summary || (n.actions || []).length || (n.tags || []).length || (n.nextSteps && n.nextSteps.trim()))
+    setSynth(synthesized
+      ? { summary: n.summary || '', actions: (n.actions || []).map((a) => ({ text: a.text, owner: a.owner || 'me' })), terms: [], people: [], tags: n.tags || [], nextSteps: n.nextSteps || '' }
+      : emptySynth)
+    setCost(null); setError(null); setWarn(null)
+    setProc(synthesized ? 'done' : (n.transcript ? 'ready' : PROC_IDLE))
   }
 
   const start = async () => {

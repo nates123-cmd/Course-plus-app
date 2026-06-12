@@ -5,15 +5,16 @@
 // (Copilot/Teams — better speakers, no cost). Synthesis → bullet summary +
 // action items + smart tags, weighting your notes above the transcript.
 // Session state lives in RecorderContext (above the router) so it survives nav.
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
 import { fmtClock } from '../lib/recorder'
-import { textToBlocks } from '../lib/blocks'
+import { markdownToBlocks } from '../lib/blocks'
 import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
+import { MdEditor } from '../components/MdEditor'
 
 // Stable speaker hue from a fixed palette, keyed by speaker label.
 const SPEAKER_KEYS = ['accent', 'area_arrow', 'area_brain', 'area_sds', 'good']
@@ -132,7 +133,6 @@ export function RecordScreen() {
   const [personDraft, setPersonDraft] = useState('')
   const [actionDraft, setActionDraft] = useState('')
   const [showNext, setShowNext] = useState(false)
-  const notesRef = useRef(null)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
   const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct } = rec
@@ -145,52 +145,6 @@ export function RecordScreen() {
   const destArea = destAreaId ? areaById(destAreaId) : null
   const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
   const pillarProjects = pickerProjects.filter((p) => p.area === effectivePillar)
-
-  // list toolbar for the live-notes scratchpad
-  const prefixLines = (kind) => {
-    const el = notesRef.current; if (!el) return
-    const val = rec.notes || ''
-    const a = el.selectionStart, b = el.selectionEnd
-    const lineStart = val.lastIndexOf('\n', a - 1) + 1
-    let lineEnd = val.indexOf('\n', b); if (lineEnd < 0) lineEnd = val.length
-    const ls = val.slice(lineStart, lineEnd).split('\n')
-    let n = 1
-    const mark = (indent, bod) => kind === 'ul' ? indent + '- ' + bod : kind === 'ol' ? indent + (n++) + '. ' + bod : kind === 'todo' ? indent + '- [ ] ' + bod : indent + bod
-    const out = ls.map((L) => {
-      const m = L.match(/^(\s*)(.*)$/); const indent = m[1]
-      const bod = m[2].replace(/^([-*•]\s+(\[\s?\]\s+)?|\d+[.)]\s+)/, '')
-      return mark(indent, bod) // also prefixes empty lines so clicking on a blank line starts a list
-    }).join('\n')
-    const next = val.slice(0, lineStart) + out + val.slice(lineEnd)
-    rec.setMeta({ notes: next })
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(lineStart, lineStart + out.length) })
-  }
-
-  // Enter continues a list (- / 1. / - [ ]); Enter on an empty item exits it.
-  const onNotesKey = (e) => {
-    if (e.key !== 'Enter' || e.shiftKey) return
-    const el = e.target; const val = el.value; const pos = el.selectionStart
-    if (pos !== el.selectionEnd) return
-    const lineStart = val.lastIndexOf('\n', pos - 1) + 1
-    const line = val.slice(lineStart, pos)
-    const ul = line.match(/^(\s*)([-*•])\s+(\[\s?\]\s+)?(.*)$/)
-    const ol = line.match(/^(\s*)(\d+)[.)]\s+(.*)$/)
-    const setAt = (nextVal, caret) => { rec.setMeta({ notes: nextVal }); requestAnimationFrame(() => { el.focus(); el.selectionStart = el.selectionEnd = caret }) }
-    if (ul) {
-      const [, indent, m2, chk, content] = ul
-      e.preventDefault()
-      if (!content.trim()) return setAt(val.slice(0, lineStart) + val.slice(pos), lineStart) // empty item → exit
-      const ins = '\n' + indent + m2 + ' ' + (chk ? '[ ] ' : '')
-      return setAt(val.slice(0, pos) + ins + val.slice(pos), pos + ins.length)
-    }
-    if (ol) {
-      const [, indent, num, content] = ol
-      e.preventDefault()
-      if (!content.trim()) return setAt(val.slice(0, lineStart) + val.slice(pos), lineStart)
-      const ins = '\n' + indent + (parseInt(num, 10) + 1) + '. '
-      return setAt(val.slice(0, pos) + ins + val.slice(pos), pos + ins.length)
-    }
-  }
 
   // seed title/home from the route when starting fresh
   useEffect(() => {
@@ -270,7 +224,7 @@ export function RecordScreen() {
         date: todayLabel(), updated: 'now', status: 2,
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
-      if ((notes || '').trim()) note.body = textToBlocks(notes)
+      if ((notes || '').trim()) note.body = markdownToBlocks(notes)
       const noteId = await rec.finalizeNote(note)
       if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
       rec.clear(); await reload()
@@ -402,25 +356,14 @@ export function RecordScreen() {
       </div>
     </div>
 
-    {/* live notes — highest signal */}
+    {/* live notes — highest signal. Full markdown editor (headings, tables,
+        bold, lists) — same formatting as every other notes section. */}
     <div style={{ marginTop: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Label style={{ margin: 0 }}>My notes</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you write down — weighted above the transcript</span>
       </div>
-      <div style={editorBox}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 8px', borderBottom: '1px solid ' + t.line }}>
-          {[['list', 'ul', 'Bullets'], ['list-numbers', 'ol', 'Numbered'], ['checkbox', 'todo', 'Checklist']].map(([icon, kind, label]) =>
-            <button key={kind} title={label} onClick={() => prefixLines(kind)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: 'transparent', border: 0, borderRadius: 7, padding: '5px 8px', cursor: 'pointer' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-              <Icon n={icon} s={15} />{label}</button>)}
-          <div style={{ flex: 1 }} />
-          <span style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, paddingRight: 6 }}>“- ” bullet · “1. ” numbered</span>
-        </div>
-        <textarea ref={notesRef} value={notes} onChange={(e) => rec.setMeta({ notes: e.target.value })} onKeyDown={onNotesKey} className="selectable"
-          placeholder="Jot what matters as you go — these are treated as the most important signal…"
-          style={{ width: '100%', minHeight: 120, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1, padding: '14px 16px' }} />
-      </div>
+      <MdEditor value={notes} onChange={(v) => rec.setMeta({ notes: v })} minHeight={200} />
     </div>
 
     {/* action items — yours; Claude appends your action items on synthesize */}
