@@ -34,6 +34,20 @@ function fromRow(r) {
   }
 }
 
+// Safeguard against Today writing duplicate rows: collapse blocks that are the
+// SAME event at the same time — identical hour + duration + title (case/space-
+// insensitive) + type. Keep the first occurrence. The underlying placed_blocks
+// data is left untouched; this only de-dupes what the agenda shows.
+function dedupe(blocks) {
+  const seen = new Set()
+  return blocks.filter((b) => {
+    const key = [b.hour, b.duration, b.type, (b.title || '').trim().toLowerCase()].join('|')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function BlockRow({ block }) {
   const { t, f } = useApp()
   const end = block.hour + block.duration / 60
@@ -72,7 +86,7 @@ export function AgendaScreen() {
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) { setError(error.message); setStatus('error'); return }
-        setBlocks((data ?? []).map(fromRow))
+        setBlocks(dedupe((data ?? []).map(fromRow)))
         setStatus('ready')
       })
     return () => { cancelled = true }
