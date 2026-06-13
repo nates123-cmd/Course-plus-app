@@ -4,6 +4,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, seedIfEmpty } from './lib/db'
 import { blocksToText } from './lib/blocks'
+import { holdView } from './kit'
+
+// Human line for a project.hold in Claude-facing digests (was '[object Object]').
+const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'On hold: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
 
 const DataCtx = createContext(null)
 export function useData() { return useContext(DataCtx) }
@@ -89,7 +93,7 @@ export function DataProvider({ children }) {
       const meta = [p.status && 'status: ' + p.status, p.priority && 'priority: ' + p.priority, p.due && 'due: ' + p.due].filter(Boolean)
       if (meta.length) lines.push(meta.join(' · '))
       if (p.blurb) lines.push(p.blurb)
-      if (p.hold) lines.push('On hold: ' + p.hold)
+      if (p.hold) lines.push(holdLine(p.hold))
 
       const upd = (p.updates || []).slice(0, 6)
       if (upd.length) lines.push('\nWHERE IT STANDS (newest first):\n' + upd.map((u) => '- ' + (u.body || '')).join('\n'))
@@ -130,7 +134,7 @@ export function DataProvider({ children }) {
       for (const p of (a.projects || [])) {
         const seg = [`\n### ${p.name}${p.status ? ' (' + p.status + ')' : ''}${p.due ? ' · due ' + p.due : ''}`]
         if (p.blurb) seg.push(p.blurb)
-        if (p.hold) seg.push('On hold: ' + p.hold)
+        if (p.hold) seg.push(holdLine(p.hold))
         const latest = (p.updates || [])[0]
         if (latest) seg.push('Latest: ' + (latest.body || '').replace(/\s+/g, ' ').trim().slice(0, 240))
         const open = (p.tasks || []).filter((x) => !x.done).slice(0, 6)

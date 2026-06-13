@@ -22,6 +22,7 @@ import {
   createMilestone, updateMilestone, createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
+import { HoldSheet } from './HoldSheet'
 
 // ── relative-ish time from an ISO/at string ─────────────────────
 function timeAgo(at) {
@@ -63,6 +64,7 @@ function ProjectHeader({ project, reload }) {
   const { areas } = useData()
   const [open, setOpen] = useState(false)
   const [areaOpen, setAreaOpen] = useState(false)
+  const [holdOpen, setHoldOpen] = useState(false)
   const [newPillar, setNewPillar] = useState(null) // null = closed, '' = typing
   const [editTitle, setEditTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -72,7 +74,21 @@ function ProjectHeader({ project, reload }) {
     if (!v || v === project.name) return
     await updateProject(project.id, { name: v }); await reload()
   }
-  const setStatus = async (k) => { setOpen(false); if (k !== project.status) { await updateProject(project.id, { status: k }); await reload() } }
+  const setStatus = async (k) => {
+    setOpen(false)
+    if (k === project.status) return
+    // Putting on hold is a gated flow, not a bare label flip — collect a reason
+    // + resurface date first (HoldSheet), then write status + hold together.
+    if (k === 'on-hold') { setHoldOpen(true); return }
+    // Leaving hold clears the hold payload so a stale reason/date can't linger.
+    const patch = project.hold ? { status: k, hold: null } : { status: k }
+    await updateProject(project.id, patch); await reload()
+  }
+  const commitHold = async ({ reason, resurfaceOn, setAt }) => {
+    await updateProject(project.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
+    await createUpdate(project.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+    await reload()
+  }
   const setDue = async (d) => { await updateProject(project.id, { due: d || null }); await reload() }
   const reassignArea = async (areaId) => {
     setAreaOpen(false); setNewPillar(null)
@@ -132,6 +148,7 @@ function ProjectHeader({ project, reload }) {
       {project.priority ? <Priority level={project.priority} /> : null}
       <DatePill value={project.due || null} onChange={setDue} label="Due" empty="+ Due date" />
     </div>
+    {holdOpen && <HoldSheet project={project} onConfirm={commitHold} onClose={() => setHoldOpen(false)} />}
   </div>
 }
 

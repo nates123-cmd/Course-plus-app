@@ -10,9 +10,9 @@
 import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted } from '../kit'
+import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
-import { updateTask, deleteTask } from '../lib/db'
+import { updateTask, deleteTask, updateProject, createUpdate } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -38,6 +38,8 @@ function ProjectCard({ p }) {
   const { done, total } = taskProgress(p)
   const next = (p.tasks || []).find((x) => x.next && !x.done)
   const onHold = p.status === 'on-hold'
+  const hv = onHold ? holdView(p.hold) : null
+  const dueNow = onHold && holdDue(p.hold)
   const openActions = actionsForProject(p.id).filter((a) => /you|open|in progress/i.test(a.owner || '')).length
   const dueLabel = projDueText(p)
   const sk = statusSkin(t, p.status)
@@ -73,9 +75,10 @@ function ProjectCard({ p }) {
         {dueText(next) && <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{dueText(next)}</span>}
       </div>}
 
-      {onHold && p.hold && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11,
+      {onHold && hv && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 11,
         paddingTop: 10, borderTop: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12, color: t.t3 }}>
-        <Icon n="player-pause" s={13} />Waiting on {p.hold.waitingOn} · check {p.hold.checkIn}</div>}
+        <Icon n="player-pause" s={13} /><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hv.reason || 'On hold'}</span>
+        {hv.resurfaceText && <span style={{ color: dueNow ? t.risk : t.t3, fontWeight: dueNow ? 600 : 400, whiteSpace: 'nowrap' }}>{dueNow ? 'resurfaced' : 'back ' + hv.resurfaceText}</span>}</div>}
     </div>
   </Card>
 }
@@ -198,6 +201,51 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
 }
 
 // ── Work overview ───────────────────────────────────────────────
+// ── Resurfacing banner ──────────────────────────────────────────
+// Held projects whose resurfaceOn date has arrived. This is the payoff of the
+// hold flow: "on hold" was a timer, and the timer fired. Each forces a decision
+// — reactivate (back to work), snooze (push the date out), or open to triage.
+function ResurfaceBanner() {
+  const { t, f, go } = useApp()
+  const { allProjects, reload } = useData()
+  const due = allProjects().filter((p) => p.status === 'on-hold' && holdDue(p.hold))
+  if (!due.length) return null
+
+  const reactivate = async (p) => {
+    await updateProject(p.id, { status: 'active', hold: null })
+    await createUpdate(p.id, 'Reactivated from hold')
+    await reload()
+  }
+  const snooze = async (p, days) => {
+    const hv = holdView(p.hold)
+    await updateProject(p.id, { hold: { ...p.hold, resurfaceOn: addDays(TODAY, days), reason: hv?.reason || '' } })
+    await reload()
+  }
+
+  return <Card style={{ padding: '15px 18px', marginTop: 22, border: '1px solid ' + t.riskLine, background: t.riskBg }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <Icon n="bell" s={15} c={t.risk} />
+      <span style={{ fontFamily: f.label, fontSize: 11, fontWeight: 700, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.risk }}>
+        Resurfacing · {due.length}</span>
+    </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {due.map((p) => { const hv = holdView(p.hold); return (
+        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <span onClick={() => go({ screen: 'project', id: p.id })} style={{ fontFamily: f.body, fontSize: 14, fontWeight: 600, color: t.t1, cursor: 'pointer' }}>{p.name}</span>
+            {hv?.reason && <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hv.reason}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 7, flex: 'none' }}>
+            <Btn kind="primary" size="sm" icon="player-play" onClick={() => reactivate(p)}>Reactivate</Btn>
+            <Btn kind="ghost" size="sm" icon="alarm" onClick={() => snooze(p, 7)}>+1 wk</Btn>
+            <Btn kind="ghost" size="sm" onClick={() => snooze(p, 30)}>+1 mo</Btn>
+          </div>
+        </div>
+      )})}
+    </div>
+  </Card>
+}
+
 export function OverviewScreen() {
   const { t, f } = useApp()
   const { areas, allProjects } = useData()
@@ -222,6 +270,8 @@ export function OverviewScreen() {
       </div>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{todayLabel()}</span>
     </div>
+
+    <ResurfaceBanner />
 
     <OpenTasks projects={projects} sheetTask={sheetTask} setSheetTask={setSheetTask} />
 

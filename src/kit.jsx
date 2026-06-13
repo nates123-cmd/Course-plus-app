@@ -277,6 +277,28 @@ const _now = new Date()
 export const TODAY = { y: _now.getFullYear(), m: _now.getMonth(), d: _now.getDate() }
 export function fmtDate(d) { return d ? MONTHS[d.m] + ' ' + d.d : null }
 
+// Normalize a project.hold for display + triage. Handles the new shape
+// { reason, resurfaceOn:{y,m,d}, setAt } AND the legacy seed shape
+// { waitingOn, checkIn:'Jun 18' }. Returns null when there is no hold.
+export function holdView(hold) {
+  if (!hold) return null
+  const reason = hold.reason || hold.waitingOn || ''
+  const resurfaceOn = hold.resurfaceOn && typeof hold.resurfaceOn === 'object' ? hold.resurfaceOn : null
+  const resurfaceText = resurfaceOn ? fmtDate(resurfaceOn) : (hold.checkIn || hold.resurface || '')
+  return { reason, resurfaceOn, resurfaceText, setAt: hold.setAt || null }
+}
+// True when a held project's resurfaceOn date has arrived (<= today). Legacy
+// string check-in dates have no parsable {y,m,d} and never auto-fire.
+export function holdDue(hold) {
+  const v = holdView(hold); if (!v || !v.resurfaceOn) return false
+  const d = v.resurfaceOn
+  if (d.y !== TODAY.y) return d.y < TODAY.y
+  if (d.m !== TODAY.m) return d.m < TODAY.m
+  return d.d <= TODAY.d
+}
+// Add n days to a {y,m,d} date, normalizing across month/year via Date.
+export function addDays(d, n) { const dt = new Date(d.y, d.m, d.d + n); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } }
+
 // Inline month calendar
 export function MiniCal({ value, onPick, onClear }) {
   const { t, f } = useApp()
