@@ -327,7 +327,10 @@ function TopBar({ onMenu, onCapture, isMobile }) {
   // "Generate with <engine>" label across the app hot-switches with it; the same
   // localStorage key drives lib/claude.js#aiProvider routing.
   const dsOn = ai === 'deepseek'
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 22px', borderBottom: '1px solid ' + t.line, background: t.bg, flex: 'none' }}>
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 12,
+    paddingTop: 'calc(11px + env(safe-area-inset-top))', paddingBottom: 11,
+    paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))',
+    borderBottom: '1px solid ' + t.line, background: t.bg, flex: 'none' }}>
     {isMobile && <IconBtn n="menu-2" s={21} onClick={onMenu} />}
     {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
@@ -506,7 +509,7 @@ function Screen() {
 }
 
 function FullScreenMsg({ children, spin }) {
-  return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: t.bg, color: t.t2, fontFamily: F.ui, fontSize: 14 }}>
+  return <div style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: t.bg, color: t.t2, fontFamily: F.ui, fontSize: 14 }}>
     {spin && <Icon n="loader-2" s={18} c={t.t1} />}{children}</div>
 }
 
@@ -539,14 +542,14 @@ export default function App() {
 
   return <CourseCtx.Provider value={ctx}>
     <RecorderProvider go={go}>
-      <div style={{ display: 'flex', height: '100vh', background: t.bg, color: t.t1, fontFamily: F.body }}>
+      <div style={{ display: 'flex', height: '100dvh', maxWidth: '100%', overflowX: 'hidden', background: t.bg, color: t.t1, fontFamily: F.body }}>
         {!isMobile && <Sidebar />}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <TopBar onMenu={() => setDrawer(true)} onCapture={() => setCapture(true)} isMobile={isMobile} />
-          <div id="course-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}><Screen /></div>
+          <div id="course-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}><Screen /></div>
         </div>
         {isMobile && drawer && <div onClick={() => setDrawer(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.45)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: 288, maxWidth: '86%', height: '100%', background: t.panel, borderRight: '1px solid ' + t.line, display: 'flex', flexDirection: 'column', padding: '16px 12px', boxShadow: t.shadow }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 288, maxWidth: '86%', height: '100%', background: t.panel, borderRight: '1px solid ' + t.line, display: 'flex', flexDirection: 'column', paddingTop: 'calc(16px + env(safe-area-inset-top))', paddingBottom: 'calc(16px + env(safe-area-inset-bottom))', paddingLeft: 'max(12px, env(safe-area-inset-left))', paddingRight: 12, boxShadow: t.shadow, overflowY: 'auto' }}>
             <SidebarContent onClose={() => setDrawer(false)} /></div></div>}
         {capture && <QuickCapture initial={capture === true ? null : capture} onClose={() => setCapture(false)} />}
         <FloatingRecorder />

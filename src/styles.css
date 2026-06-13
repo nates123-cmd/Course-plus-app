@@ -67,14 +67,26 @@
   --onArea: #16130e;
 }
 
-html, body { margin: 0; padding: 0; height: 100%; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  /* Mobile hardening (suite rule): never scroll sideways, never rubber-band. */
+  overflow-x: hidden;
+  overscroll-behavior: none;
+}
 * { box-sizing: border-box; }
-#root { height: 100vh; }
+/* dvh = dynamic viewport height: tracks the iOS Safari URL-bar so the shell
+   doesn't get cut off or jump on scroll. 100vh kept as the older-browser fallback. */
+#root { height: 100vh; height: 100dvh; max-width: 100%; }
 body {
   background: var(--bg);
   color: var(--t1);
   font-family: 'Hanken Grotesk', sans-serif;
   -webkit-font-smoothing: antialiased;
+  /* Kill the 300ms tap delay + double-tap-to-zoom; pinch-zoom already off via meta. */
+  touch-action: manipulation;
 }
 input::placeholder, textarea::placeholder { color: var(--ph); }
 ::selection { background: var(--selection); }
@@ -102,6 +114,7 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 /* ── Auth gate ─────────────────────────────────────────────── */
 .auth-shell {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;

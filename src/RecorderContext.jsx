@@ -453,7 +453,8 @@ export function FloatingRecorder() {
   const busy = phase === 'transcribing' || phase === 'synth'
   const open = () => go({ screen: 'record', project: home, title })
 
-  return <div style={{ position: 'fixed', right: 20, bottom: 20, zIndex: 460, width: 286,
+  return <div style={{ position: 'fixed', zIndex: 460, width: 'min(286px, calc(100vw - 32px))',
+    right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(16px + env(safe-area-inset-bottom))',
     background: t.card, border: '1px solid ' + (live ? t.riskLine : t.line2), borderRadius: 14,
     boxShadow: t.shadow, overflow: 'hidden' }}>
     <div onClick={open} title="Return to recording" style={{ display: 'flex', alignItems: 'center', gap: 11,
