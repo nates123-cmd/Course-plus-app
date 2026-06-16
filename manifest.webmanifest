@@ -1,0 +1,13 @@
+{
+  "name": "Course+",
+  "short_name": "Course+",
+  "description": "Claude-connected project & meeting workspace.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f5f6",
+  "theme_color": "#f4f5f6",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" rx="225" fill="#f0f4f0"/>
+  <g transform="translate(0,0) scale(6.737)">
+    <circle cx="76" cy="76" r="54" fill="#1a2e1e"/>
+    <circle cx="76" cy="76" r="54" fill="none" stroke="#2e5c38" stroke-width="2"/>
+    <rect x="74" y="22" width="4" height="8" rx="1" fill="#7dd4a8"/>
+    <rect x="74" y="122" width="4" height="8" rx="1" fill="#2e5c38"/>
+    <rect x="122" y="74" width="8" height="4" rx="1" fill="#2e5c38"/>
+    <rect x="22" y="74" width="8" height="4" rx="1" fill="#2e5c38"/>
+    <path d="M 76 30 L 86 76 L 76 76 Z" fill="#4caf7a"/>
+    <path d="M 76 30 L 86 76 L 76 76 Z" fill="none" stroke="#2e7a50" stroke-width="0.5"/>
+    <path d="M 76 30 L 66 76 L 76 76 Z" fill="#a8e8c8"/>
+    <path d="M 76 122 L 86 76 L 76 76 Z" fill="#1a3820"/>
+    <path d="M 76 122 L 66 76 L 76 76 Z" fill="#254d2c"/>
+    <circle cx="76" cy="76" r="5" fill="#1a2e1e"/>
+    <circle cx="76" cy="76" r="5" fill="none" stroke="#7dd4a8" stroke-width="1.5"/>
+  </g>
+</svg>
