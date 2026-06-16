@@ -4,6 +4,7 @@
 import { lazy, Suspense } from 'react'
 import '@uiw/react-md-editor/markdown-editor.css'
 import { useApp } from '../ctx'
+import { handleTablePaste } from '../lib/tablePaste'
 
 const MDEditor = lazy(() => import('@uiw/react-md-editor'))
 
@@ -17,7 +18,11 @@ export function MdEditor({ value, onChange, minHeight = 360 }) {
         height={minHeight}
         preview="edit"
         visibleDragbar
-        textareaProps={{ placeholder: 'Write in markdown — toolbar above, or **bold**, # heading, - list, | tables |…' }}
+        textareaProps={{
+          placeholder: 'Write in markdown — toolbar above, or **bold**, # heading, - list, | tables |…',
+          // Paste a table from Excel/Sheets/Word/web → real GFM markdown table
+          onPaste: (e) => handleTablePaste(e, value || '', (v) => onChange(v)),
+        }}
       />
     </Suspense>
   </div>
