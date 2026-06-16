@@ -1,18 +1,33 @@
-// Agenda.jsx — today's time-blocked day schedule, read-only. The retrieval is
-// ported from the Today app's usePlacedBlocks: read `placed_blocks` for the
-// current date, ordered by hour. Same shared suite Supabase + per-user RLS, so
-// Course+ sees the same user's blocks Today writes. Display only here — editing
-// the schedule still lives in Today.
+// Agenda.jsx — this week's time-blocked schedule, read-only. Retrieval is ported
+// from the Today app's usePlacedBlocks but widened to a 7-day window starting
+// today: read `placed_blocks` for date in [today, today+6], ordered by date then
+// hour. Same shared suite Supabase + per-user RLS, so Course+ sees the same
+// user's blocks Today writes. Editing the schedule still lives in Today.
+// Click any block → opens the meeting composer with the title pre-filled.
 import { useEffect, useState } from 'react'
 import { useApp } from '../ctx'
 import { supabase } from '../lib/supabase'
 import { Icon, Card, TODAY, MONTHS } from '../kit'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const todayISO = () => new Date().toISOString().slice(0, 10)
-const todayLabel = () => {
-  const d = new Date(TODAY.y, TODAY.m, TODAY.d)
-  return `${WEEKDAYS[d.getDay()]}, ${MONTHS[TODAY.m]} ${TODAY.d}`
+const WEEK_DAYS = 7
+
+// local-date ISO (avoid toISOString UTC drift — TODAY/kit dates are local)
+const isoLocal = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const weekStart = () => new Date(TODAY.y, TODAY.m, TODAY.d)
+const todayISO = () => isoLocal(weekStart())
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+
+// "2026-06-16" -> { weekday, label, isToday }
+function dayMeta(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return {
+    weekday: WEEKDAYS[date.getDay()],
+    label: `${MONTHS[m - 1]} ${d}`,
+    isToday: iso === todayISO(),
+  }
 }
 
 // decimal hour -> "9:30a" (ported from Today's Live.jsx fmtTime)
@@ -29,33 +44,53 @@ const pillarLabel = (id) => (id ? id.charAt(0).toUpperCase() + id.slice(1) : nul
 // placed_blocks row -> UI block (mirrors Today's fromRow, read-only fields)
 function fromRow(r) {
   return {
-    id: r.id, hour: Number(r.hour), duration: r.duration_minutes,
+    id: r.id, date: r.date, hour: Number(r.hour), duration: r.duration_minutes,
     type: r.type, title: r.title, pillar: r.pillar, source: r.source,
   }
 }
 
 // Safeguard against Today writing duplicate rows: collapse blocks that are the
-// SAME event at the same time — identical hour + duration + title (case/space-
-// insensitive) + type. Keep the first occurrence. The underlying placed_blocks
-// data is left untouched; this only de-dupes what the agenda shows.
+// SAME event on the same day at the same time — identical date + hour + duration
+// + title (case/space-insensitive) + type. Keep the first occurrence. The
+// underlying placed_blocks data is left untouched; this only de-dupes display.
 function dedupe(blocks) {
   const seen = new Set()
   return blocks.filter((b) => {
-    const key = [b.hour, b.duration, b.type, (b.title || '').trim().toLowerCase()].join('|')
+    const key = [b.date, b.hour, b.duration, b.type, (b.title || '').trim().toLowerCase()].join('|')
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 }
 
-function BlockRow({ block }) {
+// group blocks (already date+hour sorted) into [{ iso, blocks }] for days that
+// have at least one block, in chronological order
+function groupByDay(blocks) {
+  const map = new Map()
+  for (const b of blocks) {
+    if (!map.has(b.date)) map.set(b.date, [])
+    map.get(b.date).push(b)
+  }
+  return [...map.keys()].sort().map((iso) => ({ iso, blocks: map.get(iso) }))
+}
+
+function BlockRow({ block, onOpen }) {
   const { t, f } = useApp()
+  const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
   const badge =
     pillarLabel(block.pillar) ||
     (block.type === 'meeting' ? 'Meeting' : block.type === 'routine' ? 'Routine' : 'Open')
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 16px', borderBottom: '1px solid ' + t.line }}>
+    <div
+      onClick={() => onOpen(block)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Open a meeting for this"
+      style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 16px',
+        borderBottom: '1px solid ' + t.line, cursor: 'pointer',
+        background: hover ? t.tagBg : 'transparent', transition: 'background .12s' }}
+    >
       <div style={{ flex: 'none', width: 96, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2,
         fontVariantNumeric: 'tabular-nums', paddingTop: 1 }}>
         {fmtTime(block.hour)} – {fmtTime(end)}
@@ -63,14 +98,35 @@ function BlockRow({ block }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1 }}>{block.title}</div>
       </div>
+      <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />
       <span style={{ flex: 'none', fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t2,
         background: t.tagBg, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{badge}</span>
     </div>
   )
 }
 
-export function AgendaScreen() {
+function DaySection({ iso, blocks, onOpen }) {
   const { t, f } = useApp()
+  const m = dayMeta(iso)
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, padding: '0 2px' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 700, color: m.isToday ? t.t1 : t.t2 }}>
+          {m.isToday ? 'Today' : m.weekday}
+        </span>
+        <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>
+          {m.isToday ? `${m.weekday}, ${m.label}` : m.label}
+        </span>
+      </div>
+      <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
+        {blocks.map((b) => <BlockRow key={b.id} block={b} onOpen={onOpen} />)}
+      </Card>
+    </div>
+  )
+}
+
+export function AgendaScreen() {
+  const { t, f, go } = useApp()
   const [blocks, setBlocks] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
@@ -78,10 +134,15 @@ export function AgendaScreen() {
   useEffect(() => {
     let cancelled = false
     setStatus('loading')
+    const start = weekStart()
+    const startISO = isoLocal(start)
+    const endISO = isoLocal(addDays(start, WEEK_DAYS - 1))
     supabase
       .from('placed_blocks')
       .select('*')
-      .eq('date', todayISO())
+      .gte('date', startISO)
+      .lte('date', endISO)
+      .order('date', { ascending: true })
       .order('hour', { ascending: true })
       .then(({ data, error }) => {
         if (cancelled) return
@@ -92,6 +153,14 @@ export function AgendaScreen() {
     return () => { cancelled = true }
   }, [])
 
+  // open the meeting composer with this block's title pre-filled
+  const openMeeting = (block) => go({ screen: 'meeting', title: (block.title || '').trim() })
+
+  const days = groupByDay(blocks)
+  const start = weekStart()
+  const end = addDays(start, WEEK_DAYS - 1)
+  const rangeLabel = `${MONTHS[start.getMonth()]} ${start.getDate()} – ${MONTHS[end.getMonth()]} ${end.getDate()}`
+
   return (
     <div data-screen-label="Agenda" style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
@@ -99,17 +168,17 @@ export function AgendaScreen() {
           <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>Agenda</div>
           <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 4 }}>
             {status === 'ready'
-              ? `${blocks.length} block${blocks.length === 1 ? '' : 's'} scheduled today`
-              : 'Your time-blocked day'}
+              ? `${blocks.length} block${blocks.length === 1 ? '' : 's'} this week · tap one to start a meeting`
+              : 'Your week ahead'}
           </div>
         </div>
-        <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{todayLabel()}</span>
+        <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{rangeLabel}</span>
       </div>
 
       {status === 'loading' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '60px 0', justifyContent: 'center',
           fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
-          <Icon n="loader-2" s={16} c={t.t2} />Loading your day…
+          <Icon n="loader-2" s={16} c={t.t2} />Loading your week…
         </div>
       )}
 
@@ -119,19 +188,17 @@ export function AgendaScreen() {
         </Card>
       )}
 
-      {status === 'ready' && blocks.length === 0 && (
+      {status === 'ready' && days.length === 0 && (
         <Card style={{ padding: '40px 16px', textAlign: 'center' }}>
           <Icon n="calendar" s={24} c={t.t3} />
-          <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t2, marginTop: 10 }}>No blocks scheduled today</div>
-          <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, marginTop: 4 }}>Plan your day in Today and it shows up here.</div>
+          <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t2, marginTop: 10 }}>Nothing scheduled this week</div>
+          <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, marginTop: 4 }}>Plan your week in Today and it shows up here.</div>
         </Card>
       )}
 
-      {status === 'ready' && blocks.length > 0 && (
-        <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-          {blocks.map((b) => <BlockRow key={b.id} block={b} />)}
-        </Card>
-      )}
+      {status === 'ready' && days.map((d) => (
+        <DaySection key={d.iso} iso={d.iso} blocks={d.blocks} onOpen={openMeeting} />
+      ))}
     </div>
   )
 }

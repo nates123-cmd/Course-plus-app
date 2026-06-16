@@ -23,6 +23,7 @@ import {
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
+import { handleCsvPaste } from '../lib/tablePaste'
 
 // ── relative-ish time from an ISO/at string ─────────────────────
 function timeAgo(at) {
@@ -629,7 +630,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
         : <>
             <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Document title…"
               style={{ width: '100%', marginBottom: 6, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }} />
-            <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} placeholder="Paste the current document here…"
+            <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} onPaste={(e) => handleCsvPaste(e, docBody, setDocBody)} placeholder="Paste the current document here…"
               style={{ width: '100%', minHeight: 110, marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
           </>}
       {/* meeting source */}
@@ -654,7 +655,8 @@ function Artifacts({ project, notes, meetings = [], reload }) {
         style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 17, fontWeight: f.titleW, color: t.t1, marginBottom: 8 }} />
       <textarea value={mBody} onChange={(e) => setMBody(e.target.value)} className="selectable"
         onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false) }}
-        placeholder="Paste raw content — CSV, copy-paste, anything. Stored verbatim."
+        onPaste={(e) => handleCsvPaste(e, mBody, setMBody)}
+        placeholder="Paste raw content — paste a table from Excel/Sheets and it becomes CSV. Stored verbatim."
         style={{ width: '100%', minHeight: 120, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>

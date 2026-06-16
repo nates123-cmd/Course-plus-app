@@ -9,6 +9,26 @@ import { deleteArtifact, updateArtifact } from '../lib/db'
 import { DocChat } from '../components/DocChat'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
+import { parseDelimited, handleCsvPaste } from '../lib/tablePaste'
+
+// Render a saved CSV/TSV "file" artifact as a real table (first row = header).
+function CsvTable({ grid }) {
+  const { t, f } = useApp()
+  const cell = { border: '1px solid ' + t.line2, padding: '7px 11px', fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre-wrap' }
+  const cols = grid[0].length
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 12, background: t.card }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <thead><tr>{grid[0].map((c, i) => (
+          <th key={i} style={{ ...cell, fontFamily: f.ui, fontWeight: 700, fontSize: 12, background: t.sel, color: t.t2 }}>{c}</th>
+        ))}</tr></thead>
+        <tbody>{grid.slice(1).map((r, ri) => (
+          <tr key={ri}>{Array.from({ length: cols }).map((_, ci) => <td key={ci} style={cell}>{r[ci] ?? ''}</td>)}</tr>
+        ))}</tbody>
+      </table>
+    </div>
+  )
+}
 
 const ART_KIND = {
   'update-guide': { icon: 'file-diff', label: 'Edit guide' },
@@ -36,6 +56,7 @@ export function ArtifactScreen() {
   const [eTitle, setETitle] = useState('')
   const [eBody, setEBody] = useState('')
   const [saving, setSaving] = useState(false)
+  const [rawView, setRawView] = useState(false)
   const a = artifactById(route.id)
 
   if (!a) return <div style={{ padding: 40, fontFamily: f.body, color: t.t3 }}>Artifact not found.</div>
@@ -97,14 +118,25 @@ export function ArtifactScreen() {
     <div style={{ marginTop: 22 }}>
       {editing
         ? (isFile
-            ? <textarea value={eBody} onChange={(e) => setEBody(e.target.value)} autoFocus
+            ? <textarea value={eBody} onChange={(e) => setEBody(e.target.value)} onPaste={(e) => handleCsvPaste(e, eBody, setEBody)} autoFocus
                 style={{ width: '100%', minHeight: '52vh', boxSizing: 'border-box', resize: 'vertical', background: t.card, border: '1px solid ' + t.line2,
                   borderRadius: 12, padding: '16px 18px', outline: 'none', color: t.t1, fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6 }}
                 onFocus={(e) => e.currentTarget.style.borderColor = t.accent} onBlur={(e) => e.currentTarget.style.borderColor = t.line2} />
             : <MdEditor value={eBody} onChange={setEBody} minHeight={460} />)
         : isFile
-          ? <pre className="selectable" style={{ margin: 0, overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 12,
-              padding: '16px 18px', fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>
+          ? (() => {
+              const grid = rawView ? null : parseDelimited(a.body)
+              return <>
+                {(grid || rawView) && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 8, fontFamily: f.ui, fontSize: 12, color: t.t3 }}>
+                  <span onClick={() => setRawView(false)} style={{ cursor: 'pointer', fontWeight: !rawView ? 700 : 500, color: !rawView ? t.accent : t.t3 }}>Table</span>
+                  <span onClick={() => setRawView(true)} style={{ cursor: 'pointer', fontWeight: rawView ? 700 : 500, color: rawView ? t.accent : t.t3 }}>Raw</span>
+                </div>}
+                {grid
+                  ? <CsvTable grid={grid} />
+                  : <pre className="selectable" style={{ margin: 0, overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 12,
+                      padding: '16px 18px', fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>}
+              </>
+            })()
           : <Card style={{ padding: '20px 22px' }} className="selectable"><RichText text={a.body || ''} /></Card>}
     </div>
 
