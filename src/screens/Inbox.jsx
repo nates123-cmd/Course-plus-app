@@ -9,8 +9,9 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, Card, AreaDot, Tag, Popover, PopRow, MONTHS, TODAY,
+  holdDue, holdView, addDays, fmtDate,
 } from '../kit'
-import { createNote, deleteInbox } from '../lib/db'
+import { createNote, deleteInbox, updateProject, createUpdate } from '../lib/db'
 
 // Today as the prototype's "Mon D, YYYY" string (e.g. "Jun 9, 2026").
 const todayStr = () => `${MONTHS[TODAY.m]} ${TODAY.d}, ${TODAY.y}`
@@ -33,6 +34,100 @@ function AssignPopover({ projects, onPick, onClose }) {
           onClick={() => onPick(p)} icon={undefined} />
       ))}
     </Popover>
+  )
+}
+
+// ── Project nudges — derived "pending decisions" alerts (ported from /course
+// triage.jsx). Two kinds, pooled into one card above the captures:
+//   stall   — an active project with no update logged in 14+ days
+//   checkin — an on-hold project whose resurface date has arrived
+// "No work logged" reads the project's update log (cp_updates); a project with
+// no updates yet can't be aged, so it's left out (no false "archive this").
+const STALL_DAYS = 14
+const MS_DAY = 86400000
+
+function buildNudges(projects) {
+  const out = []
+  for (const p of projects) {
+    if (p.status === 'on-hold' && holdDue(p.hold)) {
+      const hv = holdView(p.hold)
+      out.push({
+        kind: 'checkin', proj: p,
+        text: hv?.reason ? `Check-in due — ${hv.reason}` : `Check-in due${hv?.resurfaceText ? ` (set for ${hv.resurfaceText})` : ''}.`,
+      })
+    } else if (p.status === 'active') {
+      const latest = (p.updates || [])[0]      // updates are sorted newest-first
+      if (!latest) continue
+      const days = Math.floor((Date.now() - new Date(latest.at).getTime()) / MS_DAY)
+      if (days >= STALL_DAYS) out.push({ kind: 'stall', proj: p, days, text: `No work logged in ${days} days.` })
+    }
+  }
+  // most-overdue first: stalls by age desc, then check-ins
+  return out.sort((a, b) => (a.kind === b.kind ? (b.days || 0) - (a.days || 0) : a.kind === 'stall' ? -1 : 1))
+}
+
+function ProjectNudges() {
+  const { t, f, go } = useApp()
+  const { allProjects, reload } = useData()
+  const [busy, setBusy] = useState(null)
+  const [dismissed, setDismissed] = useState(() => new Set())
+
+  const nudges = buildNudges(allProjects()).filter((n) => !dismissed.has(n.proj.id))
+  if (!nudges.length) return null
+
+  // Run an action, hide the row immediately, then reload from the spine.
+  const act = async (proj, fn) => {
+    setBusy(proj.id)
+    try {
+      await fn()
+      setDismissed((s) => new Set(s).add(proj.id))
+      await reload()
+    } finally { setBusy(null) }
+  }
+
+  const stallActions = (p, days) => [
+    { label: 'Archive', icon: 'archive', kind: 'primary', run: () => act(p, async () => {
+        await updateProject(p.id, { status: 'archived' }); await createUpdate(p.id, `Archived — inactive ${days} days`) }) },
+    { label: 'On hold', icon: 'player-pause', kind: 'outline', run: () => act(p, async () => {
+        await updateProject(p.id, { status: 'on-hold', hold: { reason: 'Set down — was inactive', resurfaceOn: addDays(TODAY, 14), setAt: new Date().toISOString() } }) }) },
+    { label: 'Keep active', icon: 'check', kind: 'ghost', run: () => act(p, () => createUpdate(p.id, 'Checked in — keeping active')) },
+  ]
+  const checkinActions = (p) => [
+    { label: 'Reactivate', icon: 'player-play', kind: 'primary', run: () => act(p, async () => {
+        await updateProject(p.id, { status: 'active', hold: null }); await createUpdate(p.id, 'Reactivated from hold') }) },
+    { label: '+1 wk', icon: 'alarm', kind: 'ghost', run: () => act(p, () => updateProject(p.id, { hold: { ...p.hold, resurfaceOn: addDays(TODAY, 7), reason: holdView(p.hold)?.reason || '' } })) },
+    { label: 'Keep on hold', icon: 'player-pause', kind: 'ghost', run: () => act(p, () => updateProject(p.id, { hold: { ...p.hold, resurfaceOn: addDays(TODAY, 30), reason: holdView(p.hold)?.reason || '' } })) },
+  ]
+
+  return (
+    <Card style={{ padding: '15px 18px', marginBottom: 20, border: '1px solid ' + t.riskLine, background: t.riskBg }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Icon n="bell" s={15} c={t.risk} />
+        <span style={{ fontFamily: f.label, fontSize: 11, fontWeight: 700, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.risk }}>
+          Pending decisions · {nudges.length}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {nudges.map((n) => {
+          const p = n.proj
+          const actions = n.kind === 'stall' ? stallActions(p, n.days) : checkinActions(p)
+          return (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <span onClick={() => go({ screen: 'project', id: p.id })}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.body, fontSize: 14, fontWeight: 600, color: t.t1, cursor: 'pointer' }}>
+                  <AreaDot areaId={p.area} s={7} />{p.name}
+                </span>
+                <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 7, flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
+                {actions.map((a) => <Btn key={a.label} kind={a.kind} size="sm" icon={a.icon} onClick={a.run}>{a.label}</Btn>)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
   )
 }
 
@@ -104,7 +199,9 @@ export function InboxScreen() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
+      <div style={{ marginTop: 24 }}><ProjectNudges /></div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {live.map((it) => {
           const sp = it.suggest ? projectById(it.suggest.project) : null
           const m = it.suggestMulti
