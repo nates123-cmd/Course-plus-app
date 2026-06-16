@@ -343,19 +343,6 @@ export function RecordScreen() {
       </div>
     </div>
 
-    {/* agenda / prep */}
-    <div style={{ marginTop: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-        <Label style={{ margin: 0 }}>Agenda · prep</Label>
-        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you want to cover / say</span>
-      </div>
-      <div style={editorBox}>
-        <textarea value={agenda} onChange={(e) => rec.setMeta({ agenda: e.target.value })} className="selectable"
-          placeholder="Points to raise, questions, goals for this meeting…"
-          style={{ width: '100%', minHeight: 70, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14, lineHeight: 1.6, color: t.t1, padding: '12px 16px' }} />
-      </div>
-    </div>
-
     {/* live notes — highest signal. Full markdown editor (headings, tables,
         bold, lists) — same formatting as every other notes section. */}
     <div style={{ marginTop: 22 }}>
@@ -363,7 +350,7 @@ export function RecordScreen() {
         <Label style={{ margin: 0 }}>My notes</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you write down — weighted above the transcript</span>
       </div>
-      <MdEditor value={notes} onChange={(v) => rec.setMeta({ notes: v })} minHeight={200} />
+      <MdEditor value={notes} onChange={(v) => rec.setMeta({ notes: v })} minHeight={420} />
     </div>
 
     {/* action items — yours; Claude appends your action items on synthesize */}
@@ -502,6 +489,7 @@ export function RecordScreen() {
         })}
       </div>
       <Btn kind="primary" size="sm" icon={synthBusy ? 'loader-2' : 'wand'} onClick={() => !synthBusy && canSynth && rec.synthesize()}>{synthBusy ? 'Synthesizing…' : 'Synthesize'}</Btn>
+      <Btn kind="outline" size="sm" icon={saving ? 'loader-2' : 'check'} onClick={() => !saving && !synthBusy && save()}>{saving ? 'Saving…' : `Save to ${destLabel}`}</Btn>
     </Card>}
 
     {/* synthesized result */}
