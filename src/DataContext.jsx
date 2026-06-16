@@ -145,7 +145,11 @@ export function DataProvider({ children }) {
       }).join('\n'))
 
       const arts = (p.artifacts || [])
-      if (arts.length) lines.push('\nARTIFACTS:\n' + arts.map((a) => `- ${a.title || 'Untitled'} (${a.artType || 'artifact'})`).join('\n'))
+      if (arts.length) lines.push('\nARTIFACTS:\n' + arts.map((a) => {
+        const txt = (typeof a.body === 'string' ? a.body : blocksToText(a.body || [])).replace(/\s+/g, ' ').trim()
+        const gist = txt.length > 1200 ? txt.slice(0, 1200) + '…' : txt
+        return `- ${a.title || 'Untitled'} (${a.artType || 'artifact'})${gist ? ':\n  ' + gist : ''}`
+      }).join('\n'))
 
       return lines.join('\n')
     }
@@ -168,7 +172,11 @@ export function DataProvider({ children }) {
         const docs = [...ownedNotes(p.id), ...linkedMeetings(p.id)]
         if (docs.length) seg.push('Docs: ' + docs.map((n) => n.title).slice(0, 12).join('; '))
         const arts = (p.artifacts || [])
-        if (arts.length) seg.push('Artifacts: ' + arts.map((x) => x.title || 'Untitled').slice(0, 8).join('; '))
+        if (arts.length) seg.push('Artifacts:\n' + arts.slice(0, 8).map((x) => {
+          const txt = (typeof x.body === 'string' ? x.body : blocksToText(x.body || [])).replace(/\s+/g, ' ').trim()
+          const gist = txt.length > 400 ? txt.slice(0, 400) + '…' : txt
+          return `- ${x.title || 'Untitled'}${gist ? ': ' + gist : ''}`
+        }).join('\n'))
         lines.push(seg.join('\n'))
       }
       return lines.join('\n')
