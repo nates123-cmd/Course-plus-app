@@ -195,8 +195,15 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
           {rows.map((x, i) => <OpenTaskRow key={x.projectId + x.id} x={x} first={i === 0} onToggle={toggle}
             onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
         </Card>}
-    {sheetTask && <TaskSheet task={sheetTask.task} projectId={sheetTask.projectId}
-      onPatch={patch} onDelete={remove} onClose={() => setSheetTask(null)} />}
+    {sheetTask && (() => {
+      // Re-derive the live task from reloaded projects each render so patches
+      // (status / due date) reflect in the open sheet — don't render the frozen
+      // open-time snapshot (mirrors Project.jsx's `live` lookup).
+      let live = sheetTask.task
+      for (const p of projects) { const hit = (p.tasks || []).find((x) => x.id === sheetTask.task.id); if (hit) { live = { ...hit, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }; break } }
+      return <TaskSheet task={live} projectId={sheetTask.projectId}
+        onPatch={patch} onDelete={remove} onClose={() => setSheetTask(null)} />
+    })()}
   </div>
 }
 
