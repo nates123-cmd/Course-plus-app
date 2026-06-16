@@ -1,7 +1,7 @@
 {
-  "name": "Scribe",
-  "short_name": "Scribe",
-  "description": "Claude-connected notes & reference.",
+  "name": "Course+",
+  "short_name": "Course+",
+  "description": "Claude-connected project & meeting workspace.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
