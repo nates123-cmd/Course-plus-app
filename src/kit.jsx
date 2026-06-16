@@ -312,7 +312,7 @@ export function MiniCal({ value, onPick, onClear }) {
   const selOn = value && (value.y || TODAY.y) === view.y && value.m === view.m ? value.d : null
   const isToday = (d) => view.y === TODAY.y && view.m === TODAY.m && d === TODAY.d
   const shift = (n) => setView((vw) => { let m = vw.m + n, y = vw.y; if (m < 0) { m = 11; y-- } if (m > 11) { m = 0; y++ } return { y, m } })
-  return <div style={{ width: 250 }}>
+  return <div style={{ width: 250, maxWidth: 'calc(100vw - 24px)' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 2px 8px' }}>
       <IconBtn n="chevron-left" s={16} onClick={() => shift(-1)} />
       <span style={{ flex: 1, textAlign: 'center', fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>{MONTHS[view.m]} {view.y}</span>

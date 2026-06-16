@@ -162,6 +162,12 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
   outline: 0;
 }
 .auth-input:focus { border-color: var(--accent); }
+/* Mobile hardening: iOS auto-zooms on focus of any field under 16px. Most
+   fields set font-size inline, so override globally with !important under the
+   900px mobile breakpoint. Kills focus-zoom across every input/textarea/select. */
+@media (max-width: 900px) {
+  input, textarea, select { font-size: 16px !important; }
+}
 .auth-btn {
   margin-top: 4px;
   border: 0;
