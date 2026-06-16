@@ -99,7 +99,18 @@ const NATE_STYLE_BRIEF =
 // Compose a paste-ready deliverable from the FULL material — note bodies AND
 // meeting transcripts, not just summaries (a transcript is far richer source for
 // building an artifact than a lossy summary). Escalates to Sonnet for big inputs.
-export async function composeDeliverable(typeId, instructions, sourceLabel, notes, onUsage) {
+//
+// `opts` widens what the model sees beyond the note corpus:
+//   contextText  — a structured digest of the whole project (status, where-it-
+//                  stands, milestones, tasks, artifacts) and, at pillar scope,
+//                  every sibling project in the area. Authoritative background.
+//   contextLabel — name of the project / pillar the context describes.
+//   scope        — 'project' (default) | 'pillar'. Only changes the framing word.
+//   onUsage      — usage callback (token/cost accounting).
+export async function composeDeliverable(typeId, instructions, sourceLabel, notes, opts = {}) {
+  // Back-compat: old callers passed the usage callback as the 5th positional arg.
+  const { contextText = '', contextLabel = '', scope = 'project', onUsage } =
+    typeof opts === 'function' ? { onUsage: opts } : opts
   const corpus = notes.map((n) => {
     const body = (n.body || []).map((b) => b.p
       || (b.ul ? b.ul.map((i) => '- ' + i).join('\n')
@@ -107,15 +118,25 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
     const tx = n.transcript ? `\nTranscript:\n${n.transcript}` : ''
     return `## ${n.title}${n.summary ? '\nSummary: ' + n.summary : ''}${body ? '\n' + body : ''}${tx}`
   }).join('\n\n---\n\n')
-  const big = corpus.length > 12000 || notes.length > 6
+  const ctx = contextText && contextText.trim()
+  const scopeWord = scope === 'pillar' ? 'pillar / area' : 'project'
+  // Escalate to the heavy model for big inputs OR whenever the whole pillar is in scope.
+  const big = (corpus.length + (ctx ? ctx.length : 0)) > 12000 || notes.length > 6 || scope === 'pillar'
   const model = pickModel(big ? 'heavy' : 'light')
   const system =
     'You compose clean, paste-ready business deliverables. Work from the FULL source material ' +
     '(note bodies and meeting transcripts) — use the detail, not just the summaries. ' +
+    (ctx
+      ? `The ${scopeWord.toUpperCase()} CONTEXT below is the authoritative picture of ${scope === 'pillar' ? 'the whole pillar' : 'this project'} — ` +
+        'its status, where it stands, milestones, tasks, and related work. Treat it as ground truth and draw on ANY of it the deliverable needs. '
+      : '') +
     'Output ONLY the deliverable content in plain markdown — no preamble, no "here is".' +
     // For email/Teams messages, write in Nate's own voice (applies to Claude + Deepseek).
     (typeId === 'message' ? NATE_STYLE_BRIEF : '')
+  // Context FIRST (background), source material SECOND, instruction LAST so the
+  // model anchors on the task, not the longest block.
   const user =
+    (ctx ? `${scope === 'pillar' ? 'PILLAR' : 'PROJECT'} CONTEXT — "${contextLabel}":\n${ctx}\n\n---\n\n` : '') +
     `Source: ${sourceLabel}\nMaterial:\n${corpus}\n\n` +
     `Produce ${TYPE_BRIEF[typeId] || 'a brief'}.` +
     (instructions ? ` Instructions: ${instructions}` : '')

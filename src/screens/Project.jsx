@@ -516,7 +516,11 @@ function DocSection({ label, notes, kind, project }) {
 // ── Artifacts — project deliverables + Claude composer ──────────
 function Artifacts({ project, notes, meetings = [], reload }) {
   const { t, f, go, aiName } = useApp()
+  const { projectDigest, areaDigest } = useData()
   const rows = project.artifacts || []
+  // Generation scope: 'project' (full project context) | 'pillar' (whole area).
+  const hasPillar = !!project.area
+  const [genScope, setGenScope] = useState('project')
   const [composing, setComposing] = useState(false)
   const [adding, setAdding] = useState(false)
   const [updating, setUpdating] = useState(false)
@@ -573,12 +577,21 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     try {
       const type = COMPOSE_TYPES.find((c) => c.id === typeId) || COMPOSE_TYPES[0]
       let usage = null
-      const body = await composeDeliverable(typeId, prompt.trim(), project.name, notes, (u) => { usage = u })
+      // Always give the model the full project picture. At pillar scope, append
+      // the whole-area digest so it can reach across sibling projects.
+      const pillar = hasPillar && genScope === 'pillar'
+      const projCtx = projectDigest(project.id)
+      const contextText = pillar ? `${projCtx}\n\n=== WIDER PILLAR ===\n${areaDigest(project.area)}` : projCtx
+      const contextLabel = pillar ? (project.areaName || 'pillar') : project.name
+      const body = await composeDeliverable(typeId, prompt.trim(), project.name, notes, {
+        contextText, contextLabel, scope: pillar ? 'pillar' : 'project', onUsage: (u) => { usage = u },
+      })
       const n = notes.length
       const title = `${project.name} — ${type.name}`
       const cost = usdRough(usage)
+      const scopeTag = pillar ? `${project.areaName || 'pillar'} pillar` : 'project'
       const id = await createArtifact(project.id, {
-        title, artType: typeId, body, provenance: `✦ ${aiName} · from ${n} notes${cost ? ' · ' + cost : ''}`, fromCount: n,
+        title, artType: typeId, body, provenance: `✦ ${aiName} · ${scopeTag} context · from ${n} notes${cost ? ' · ' + cost : ''}`, fromCount: n,
       })
       await reload(); setPrompt(''); go({ screen: 'artifact', id })
     } catch (e) {
@@ -654,8 +667,22 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
         <Icon n="sparkles" s={14} c={t.accent} />
         <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask {aiName}</span>
-        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>reads this project's {notes.length} notes, drops the result here</span>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
+          {genScope === 'pillar'
+            ? `full context of this project + the whole ${project.areaName || 'pillar'} pillar`
+            : `full context of this project — ${notes.length} note${notes.length === 1 ? '' : 's'}, status, tasks & milestones`}
+        </span>
       </div>
+      {/* Context scope — how far past this project the model may reach */}
+      {hasPillar && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Context</span>
+        {[['project', 'This project'], ['pillar', `Whole ${project.areaName || 'pillar'} pillar`]].map(([id, label]) => {
+          const on = genScope === id
+          return <span key={id} onClick={() => setGenScope(id)} title={id === 'pillar' ? 'Also feed every sibling project in the pillar (summary level)' : 'Everything in this project'}
+            style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
+              background: on ? t.accent : t.sel, borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+        })}
+      </div>}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
         {COMPOSE_TYPES.map((c) => {
           const on = c.id === typeId
@@ -681,7 +708,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       <Icon n="loader-2" s={20} c={t.accent} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>{aiName} is working…</div>
-        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 1 }}>Reading {notes.length} notes in {project.name} · composing</div>
+        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 1 }}>{genScope === 'pillar' ? `Reading the whole ${project.areaName || 'pillar'} pillar` : `Reading all of ${project.name}`} · composing</div>
       </div>
     </Card>}
 
