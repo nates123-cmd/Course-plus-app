@@ -149,12 +149,15 @@ function SidebarContent({ onClose }) {
           placeholder="New area name…" style={addInputStyle} /></div>}
       {areas.map((a) => {
         const areaActive = route.screen === 'area' && route.id === a.id
-        // live = anything not idea or archived; sort active first, on-hold last
-        const liveRank = { active: 0, sent: 1, 'on-hold': 2 }
-        const live = a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
+        // live = anything not idea, on-hold, or archived; sort active first, sent last.
+        // on-hold + idea projects each pull out into their own collapsible subfolder.
+        const liveRank = { active: 0, sent: 1 }
+        const live = a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived' && p.status !== 'on-hold')
           .map((p, i) => [p, i]).sort((x, y) => ((liveRank[x[0].status] ?? 3) - (liveRank[y[0].status] ?? 3)) || (x[1] - y[1])).map((x) => x[0])
         const ideas = a.projects.filter((p) => p.status === 'idea')
         const ideasKey = a.id + '::ideas'
+        const onHold = a.projects.filter((p) => p.status === 'on-hold')
+        const onHoldKey = a.id + '::onhold'
         return <div key={a.id}>
           <div onClick={() => { go({ screen: 'area', id: a.id }); onClose && onClose() }}
             style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600,
@@ -184,6 +187,10 @@ function SidebarContent({ onClose }) {
             {ideas.length > 0 && <>
               {folderRow(ideasKey, 'Ideas', ideas.length, 28)}
               {open[ideasKey] && ideas.map((p) => projRow(p, 40))}
+            </>}
+            {onHold.length > 0 && <>
+              {folderRow(onHoldKey, 'On hold', onHold.length, 28)}
+              {open[onHoldKey] && onHold.map((p) => projRow(p, 40))}
             </>}
             {adding === a.id
               ? <div style={{ padding: '2px 10px 4px 28px' }}>

@@ -2,12 +2,36 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty } from './lib/db'
+import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox } from './lib/db'
 import { blocksToText } from './lib/blocks'
-import { holdView } from './kit'
+import { holdView, holdDue } from './kit'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'On hold: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
+
+// Auto-reactivate on-hold projects whose resurface date has arrived: flip to
+// active + clear hold, log a where-it-stands update, and drop a notification
+// into the inbox. Idempotent — the same pass clears `on-hold`, so a project is
+// never reactivated twice. Returns true if anything changed (caller re-fetches).
+async function autoReactivateDue(areas) {
+  const due = areas.flatMap((a) => a.projects
+    .filter((p) => p.status === 'on-hold' && holdDue(p.hold))
+    .map((p) => ({ ...p, areaName: a.name })))
+  if (!due.length) return false
+  for (const p of due) {
+    const hv = holdView(p.hold)
+    await updateProject(p.id, { status: 'active', hold: null })
+    await createUpdate(p.id, 'Reactivated from hold — resurface date reached')
+    await createInbox({
+      title: `Reactivated: ${p.name}`,
+      src: 'Auto-reactivate', srcIcon: 'player-play',
+      snippet: `Resurface date reached${hv?.reason ? ` — ${hv.reason}` : ''}. ${p.name} is active again${p.areaName ? ' in ' + p.areaName : ''}.`,
+      suggest: { project: p.id, confidence: 1 },
+      tags: ['reactivated'],
+    })
+  }
+  return true
+}
 
 const DataCtx = createContext(null)
 export function useData() { return useContext(DataCtx) }
@@ -26,7 +50,9 @@ export function DataProvider({ children }) {
     try {
       if (!silent) setStatus('loading')
       await seedIfEmpty()
-      const data = await loadAll()
+      let data = await loadAll()
+      // Resurface anything whose hold date has come due, then re-read once.
+      if (await autoReactivateDue(data.areas)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox)
       setStatus('ready')
     } catch (e) {
