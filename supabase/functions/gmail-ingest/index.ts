@@ -122,10 +122,44 @@ function routeFromSubject(subject: string, projects: { id: string; name: string 
   return { project: hit.id, cleanTitle: rest || subject }
 }
 
+type Proj = { id: string; name: string }
+type WordIndex = { df: Map<string, number>; perProject: Map<string, Set<string>> }
+
+// Index name-words (len>=5) and how many projects each appears in. Words unique
+// to ONE project (df===1) are the reliable routing keys (e.g. "maggetti");
+// shared words ("release", "course", "sgs") are ignored as ambiguous.
+function buildWordIndex(projects: Proj[]): WordIndex {
+  const df = new Map<string, number>()
+  const perProject = new Map<string, Set<string>>()
+  for (const p of projects) {
+    const words = new Set((p.name || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 5))
+    perProject.set(p.id, words)
+    for (const w of words) df.set(w, (df.get(w) || 0) + 1)
+  }
+  return { df, perProject }
+}
+
+// Rule-based match — NO AI. Score each project by how many of its distinctive
+// words appear in the email's from/subject/body; best scorer wins. Confidence
+// is below an explicit subject [token]. Returns null if nothing distinctive hits.
+function routeFromContent(haystackRaw: string, projects: Proj[], idx: WordIndex) {
+  const hay = norm(haystackRaw)
+  let best: Proj | null = null, bestScore = 0
+  for (const p of projects) {
+    const words = idx.perProject.get(p.id)
+    if (!words) continue
+    let score = 0
+    for (const w of words) if (idx.df.get(w) === 1 && hay.includes(w)) score++
+    if (score > bestScore) { bestScore = score; best = p }
+  }
+  if (!best || bestScore < 1) return null
+  return { project: best.id, confidence: Math.min(0.9, 0.6 + 0.1 * bestScore) }
+}
+
 // ── ingest one account ────────────────────────────────────────────────
 // acct prefixes the dedup/inbox keys so two accounts can never collide on a
 // shared Gmail message id (ids are unique per-mailbox, not globally).
-async function ingestAccount(refresh: string, acct: number, projList: { id: string; name: string }[]) {
+async function ingestAccount(refresh: string, acct: number, projList: Proj[], wordIndex: WordIndex) {
   const token = await googleToken(refresh)
 
   // Resolve trigger label id (needed to strip it after ingest).
@@ -160,8 +194,14 @@ async function ingestAccount(refresh: string, acct: number, projList: { id: stri
     const body = extractBody(payload)
 
     const route = routeFromSubject(subject, projList)
-    const suggest = route ? { project: route.project, confidence: 0.99 } : null
     const title = route ? route.cleanTitle : subject
+    // Explicit subject [token] wins; else deterministic content match on from/subject/body.
+    let suggest: { project: string; confidence: number } | null =
+      route ? { project: route.project, confidence: 0.99 } : null
+    if (!suggest) {
+      const c = routeFromContent(`${from} ${subject} ${body.slice(0, 800)}`, projList, wordIndex)
+      if (c) suggest = c
+    }
 
     const fromName = from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || from
     const snippet = (fromName ? `From: ${fromName}\n\n` : '') + body
@@ -207,14 +247,15 @@ Deno.serve(async (req) => {
 
     // Projects for subject-prefix routing (fetched once, shared across accounts).
     const { data: projects } = await admin.from('cp_projects').select('id,name').eq('user_id', OWNER_ID)
-    const projList = (projects || []) as { id: string; name: string }[]
+    const projList = (projects || []) as Proj[]
+    const wordIndex = buildWordIndex(projList)
 
     let scanned = 0
     const items: any[] = []
     const errors: string[] = []
     for (let i = 0; i < G_REFRESH_TOKENS.length; i++) {
       try {
-        const r = await ingestAccount(G_REFRESH_TOKENS[i], i, projList)
+        const r = await ingestAccount(G_REFRESH_TOKENS[i], i, projList, wordIndex)
         scanned += r.scanned
         items.push(...r.items)
       } catch (e) {
