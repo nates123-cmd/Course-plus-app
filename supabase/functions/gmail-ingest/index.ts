@@ -181,10 +181,11 @@ async function ingestAccount(refresh: string, acct: number, projList: { id: stri
 
     await admin.from('cp_email_seen').upsert({ message_id: key, user_id: OWNER_ID }, { onConflict: 'message_id' })
 
-    // Strip the trigger label so it never re-ingests (also mark read).
+    // Strip only the trigger label so it never re-ingests. Leave INBOX + UNREAD
+    // alone — the message stays in Gmail, unread, exactly where it was.
     await gFetch(token, `/messages/${id}/modify`, {
       method: 'POST',
-      body: JSON.stringify({ removeLabelIds: [labelId, 'UNREAD'] }),
+      body: JSON.stringify({ removeLabelIds: [labelId] }),
     }).catch(() => {}) // label-strip best-effort; cp_email_seen still dedupes
 
     items.push({ acct, id, title, project: route?.project || null })
