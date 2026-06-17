@@ -142,6 +142,29 @@ export async function claudeComplete(prompt, opts = {}) {
   return text
 }
 
+// Vision / document extraction — send raw content blocks (image / document)
+// straight through the proxy, which forwards `messages` VERBATIM to Anthropic.
+// HARD-PINS a Claude model and ignores the deepseek toggle: the deepseek path
+// can't take content blocks and would 400. `blocks` is the user-turn content
+// array, e.g. [{type:'image',source:{…}}, {type:'text',text:'…'}]. Returns text.
+export async function claudeVision(blocks, opts = {}) {
+  const {
+    system = 'You transcribe and interpret images and documents into clean markdown. Return only the transcription / interpretation - no preamble, no commentary.' + HOUSE_STYLE,
+    max_tokens = 4096,
+    model = 'claude-sonnet-4-6',
+    onUsage,
+  } = opts
+  const data = await postClaude({ system, messages: [{ role: 'user', content: blocks }], model, max_tokens })
+  const text = responseText(data)
+  if (onUsage) {
+    const u = data && typeof data === 'object' ? data.usage : null
+    if (u && (u.input_tokens != null || u.output_tokens != null)) {
+      onUsage({ model, input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, estimated: false })
+    }
+  }
+  return text
+}
+
 // Strip ```json fences and return the first JSON value found. Returns null on
 // failure — caller decides whether to fall back.
 export function extractJSON(raw) {

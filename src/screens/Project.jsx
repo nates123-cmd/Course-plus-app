@@ -24,6 +24,7 @@ import {
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
 import { handleCsvPaste } from '../lib/tablePaste'
+import { Assets } from '../components/Assets'
 
 // ── relative-ish time from an ISO/at string ─────────────────────
 function timeAgo(at) {
@@ -907,10 +908,12 @@ function Related({ project, owned, linked }) {
 // ── Screen ───────────────────────────────────────────────────────
 export function ProjectScreen() {
   const { route, isMobile } = useApp()
-  const { projectById, allProjects, ownedNotes, linkedMeetings, reload } = useData()
+  const { projectById, allProjects, ownedNotes, linkedMeetings, reload, assetsForProject } = useData()
   const project = projectById(route.id) || allProjects()[0]
 
   if (!project) return null
+
+  const assetCount = assetsForProject(project.id).length
 
   const owned = ownedNotes(project.id)
   const linked = linkedMeetings(project.id)
@@ -925,6 +928,10 @@ export function ProjectScreen() {
     <ActionItems project={project} reload={reload} />
     <DocSection label="Meetings" notes={meetings} kind="meeting" project={project} />
     <DocSection label="Notes" notes={docNotes} kind="note" project={project} />
+    <div>
+      <SectionHead label={assetCount ? 'Files · ' + assetCount : 'Files'} />
+      <Assets projectId={project.id} />
+    </div>
     <Artifacts project={project} notes={briefingNotes} meetings={meetings} reload={reload} />
   </div>
 

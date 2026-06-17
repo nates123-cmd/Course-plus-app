@@ -12,6 +12,7 @@ import { updateNote, createTask, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks, markdownToBlocks } from '../lib/blocks'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
+import { Assets } from '../components/Assets'
 import { summarizeNote, extractActions, suggestTags, rewriteNote, noteContext } from '../lib/ai'
 import { useRecorderCtx } from '../RecorderContext'
 import { DocChat } from '../components/DocChat'
@@ -346,6 +347,12 @@ export function NoteScreen() {
           </>
         : <RichText text={blocksToText(n.body || [])} />}
     </div>
+
+    {/* files / attachments */}
+    {!editing && <div style={{ marginTop: 26, paddingTop: 18, borderTop: '1px solid ' + t.line }}>
+      <Label style={{ marginBottom: 11 }}>Files</Label>
+      <Assets noteId={n.id} />
+    </div>}
 
     {/* tags */}
     {!editing && (n.tags || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 26,

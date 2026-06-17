@@ -40,6 +40,7 @@ export function DataProvider({ children }) {
   const [areas, setAreas] = useState([])
   const [notes, setNotes] = useState([])
   const [inbox, setInbox] = useState([])
+  const [assets, setAssets] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
@@ -53,7 +54,7 @@ export function DataProvider({ children }) {
       let data = await loadAll()
       // Resurface anything whose hold date has come due, then re-read once.
       if (await autoReactivateDue(data.areas)) data = await loadAll()
-      setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox)
+      setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || [])
       setStatus('ready')
     } catch (e) {
       if (!silent) { setError(e); setStatus('error') }
@@ -97,6 +98,14 @@ export function DataProvider({ children }) {
     const ownedNotes = (id) => notes.filter((n) => n.project === id)
     const linkedMeetings = (id) => notes.filter((n) => n.project !== id && (n.projects || []).includes(id))
     const notesInArea = (areaId) => notes.filter((n) => n.area === areaId)
+    const assetsForProject = (id) => assets.filter((a) => a.projectId === id)
+    const assetsForNote = (id) => assets.filter((a) => a.noteId === id)
+    // Every asset that belongs to a project either directly or via one of its
+    // notes — used to inline the once-extracted markdown into project digests.
+    const assetsInProject = (id) => {
+      const noteIds = new Set([...ownedNotes(id), ...linkedMeetings(id)].map((n) => n.id))
+      return assets.filter((a) => a.projectId === id || (a.noteId && noteIds.has(a.noteId)))
+    }
     const actionsForProject = (id) => {
       const out = []
       notes.forEach((n) => {
@@ -151,6 +160,15 @@ export function DataProvider({ children }) {
         return `- ${a.title || 'Untitled'} (${a.artType || 'artifact'})${gist ? ':\n  ' + gist : ''}`
       }).join('\n'))
 
+      // Hosted files (screenshots / PDFs) — inline the markdown Claude already
+      // extracted so Generate-with-AI + Ask + Deepseek can "read" them as text.
+      const files = assetsInProject(projectId).filter((a) => a.extractedMd && a.extractStatus === 'done')
+      if (files.length) lines.push('\nATTACHED FILES (interpreted):\n' + files.map((a) => {
+        const md = a.extractedMd.replace(/\s+$/g, '')
+        const gist = md.length > 1800 ? md.slice(0, 1800) + '…' : md
+        return `--- ${a.filename} (${a.kind}) ---\n${gist}`
+      }).join('\n\n'))
+
       return lines.join('\n')
     }
 
@@ -176,6 +194,12 @@ export function DataProvider({ children }) {
           const txt = (typeof x.body === 'string' ? x.body : blocksToText(x.body || [])).replace(/\s+/g, ' ').trim()
           const gist = txt.length > 400 ? txt.slice(0, 400) + '…' : txt
           return `- ${x.title || 'Untitled'}${gist ? ': ' + gist : ''}`
+        }).join('\n'))
+        const files = assetsInProject(p.id).filter((a) => a.extractedMd && a.extractStatus === 'done')
+        if (files.length) seg.push('Files:\n' + files.slice(0, 6).map((a) => {
+          const md = a.extractedMd.replace(/\s+/g, ' ').trim()
+          const gist = md.length > 400 ? md.slice(0, 400) + '…' : md
+          return `- ${a.filename}: ${gist}`
         }).join('\n'))
         lines.push(seg.join('\n'))
       }
@@ -214,11 +238,12 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, status, error, reload, recordUndo, canUndo,
+      areas, notes, inbox, assets, status, error, reload, recordUndo, canUndo,
       allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
+      assetsForProject, assetsForNote, assetsInProject,
     }
-  }, [areas, notes, inbox, status, error, canUndo])
+  }, [areas, notes, inbox, assets, status, error, canUndo])
 
   return <DataCtx.Provider value={value}>{children}</DataCtx.Provider>
 }

@@ -3,6 +3,7 @@
 // inbox from Supabase (per-user RLS, cp_* tables), seed demo fixtures on first
 // run, and read/write every entity. Mirrors Scribe's db.js patterns.
 import { supabase } from './supabase'
+import { mapAsset } from './assets'
 import { SEED_AREAS, SEED_NOTES, SEED_INBOX } from '../data'
 
 const uuid = () => (crypto?.randomUUID?.() || 'id-' + Date.now() + '-' + Math.round(Math.random() * 1e6))
@@ -69,7 +70,7 @@ function groupBy(arr, key) {
 
 // ── load everything ────────────────────────────────────────────────
 export async function loadAll() {
-  const [areas, projects, tasks, ms, upd, art, notes, inbox] = await Promise.all([
+  const [areas, projects, tasks, ms, upd, art, notes, inbox, assets] = await Promise.all([
     supabase.from('cp_areas').select('*'),
     supabase.from('cp_projects').select('*'),
     supabase.from('cp_tasks').select('*'),
@@ -78,13 +79,15 @@ export async function loadAll() {
     supabase.from('cp_artifacts').select('*'),
     supabase.from('cp_notes').select('*').order('updated_at', { ascending: false }),
     supabase.from('cp_inbox').select('*').order('created_at', { ascending: false }),
+    supabase.from('cp_assets').select('*').order('created_at', { ascending: false }),
   ])
-  const err = areas.error || projects.error || tasks.error || ms.error || upd.error || art.error || notes.error || inbox.error
+  const err = areas.error || projects.error || tasks.error || ms.error || upd.error || art.error || notes.error || inbox.error || assets.error
   if (err) throw err
   return {
     areas: assemble(areas.data || [], projects.data || [], tasks.data || [], ms.data || [], upd.data || [], art.data || []),
     notes: (notes.data || []).map(mapNote),
     inbox: (inbox.data || []).map(mapInbox),
+    assets: (assets.data || []).map(mapAsset),
   }
 }
 

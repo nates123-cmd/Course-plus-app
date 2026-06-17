@@ -21,6 +21,10 @@ Forked from Scribe, repointed to `cp_*` tables.
 - `cp_artifacts` — Claude-composed deliverables / update guides.
 - `cp_updates` — "where it stands" project log.
 - `cp_inbox` — untriaged captures.
+- `cp_assets` — hosted files (screenshots/PDFs) in the private `cp-assets`
+  Storage bucket, attachable to a project or note. `extracted_md` holds the
+  once-only Claude vision transcription ("interpret once, markdown forever").
+  `project_id`/`note_id` are TEXT (suite uses text ids, not uuids).
 - Migrations in `supabase/migrations/`. `src/lib/db.js` = loadAll, seedIfEmpty,
   createNote/Project/Task, updateNote, complete/delete, triage, etc.
   `src/DataContext.jsx` loads on login + exposes data + helpers (silent
@@ -36,6 +40,15 @@ Ask (retrieval over notes), Record (meeting capture + transcribe), TaskSheet.
   note rail actions (Summarize / Extract / Suggest tags / Rewrite), DocChat
   (whole-project context), "Update doc from meeting" hybrid edit guide.
 - Optimistic task chip updates, task undo, back button.
+- **Asset hosting + AI interpretation:** upload screenshots/PDFs (drag/drop) on a
+  Project ("Files" section) or Note. On upload the file is interpreted ONCE by a
+  Claude vision model (`claudeVision` in `claude.js`, hard-pinned `claude-sonnet-4-6`,
+  bypasses the deepseek toggle) into `extracted_md`. Every AI surface then reads
+  that markdown via `projectDigest`/`areaDigest` (no vision needed at read time).
+  `src/lib/assets.js` (upload/extract/list/signedUrl/delete/reExtract),
+  `src/components/Assets.jsx` (uploader + list + inline view + status pill).
+  **Needs migration `20260617000001_cp_assets.sql` applied + the `cp-assets`
+  bucket** (the migration creates the bucket + storage RLS).
 - **MCP server Phase 1 (local stdio):** `mcp/server.js` + `mcp/login.mjs`
   (OTP → `mcp/.session.json`). Wire into `claude_desktop_config.json`.
 - **MCP server Phase 2 (remote, DEPLOYED):** edge fn `supabase/functions/mcp/index.ts`
