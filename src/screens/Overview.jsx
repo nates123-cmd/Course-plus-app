@@ -12,6 +12,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
+import { AddTaskInline } from './AddTask'
 import { updateTask, deleteTask, updateProject, createUpdate } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -90,7 +91,7 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
   const due = dueText(x)
   const stop = {
     onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(),
-    onClick: (e) => { e.stopPropagation(); go({ screen: 'project', id: x.projectId }) },
+    onClick: (e) => { e.stopPropagation(); go(x.projectId ? { screen: 'project', id: x.projectId } : { screen: 'area', id: x.area }) },
   }
   return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
     borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
@@ -139,19 +140,28 @@ const FILTERS = [
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const { t, f } = useApp()
-  const { reload } = useData()
+  const { reload, looseTasks } = useData()
   const [filter, setFilter] = usePersisted('course.openTasksFilter.v2', 'focus')
 
   const all = []
   const seen = new Set()
+  const surfaced = (x) => x.next || x.due || x.dueDate || x.waiting
   projects.forEach((p) => (p.tasks || []).forEach((x) => {
-    if (x.done) return
-    if (!(x.next || x.due || x.dueDate || x.waiting)) return
-    if (seen.has(x.id)) return
+    if (x.done || !surfaced(x) || seen.has(x.id)) return
     seen.add(x.id)
     all.push({ ...x, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status })
   }))
-  if (!all.length) return null
+  // Pillar-only tasks (no project) — surfaced into the same roll-up, treated as active.
+  looseTasks().forEach((x) => {
+    if (x.done || !surfaced(x) || seen.has(x.id)) return
+    seen.add(x.id)
+    all.push({ ...x, projectId: null, projectName: x.areaName, projStatus: 'active' })
+  })
+  if (!all.length) {
+    return <div style={{ marginTop: 30 }}>
+      <AddTaskInline surfaceOnAdd onAdded={reload} />
+    </div>
+  }
 
   const counts = Object.fromEntries(FILTERS.map((fl) => [fl.id, all.filter(fl.match).length]))
   const active = FILTERS.find((fl) => fl.id === filter) || FILTERS[0]
@@ -163,6 +173,12 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
   const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
   const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  // target = { project: id } | { area: id } — moving to one clears the other.
+  const reassign = async (target) => {
+    if (!sheetTask || !target) return
+    await updateTask(sheetTask.task.id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
+    setSheetTask(null); await reload()
+  }
 
   const chip = (fl) => {
     const on = filter === fl.id
@@ -192,17 +208,20 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
       ? <Card style={{ padding: '22px 16px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
           Nothing {active.label.toLowerCase() === 'all' ? 'open' : 'in ' + active.label.toLowerCase()} right now.</Card>
       : <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-          {rows.map((x, i) => <OpenTaskRow key={x.projectId + x.id} x={x} first={i === 0} onToggle={toggle}
+          {rows.map((x, i) => <OpenTaskRow key={(x.projectId || x.area) + x.id} x={x} first={i === 0} onToggle={toggle}
             onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
         </Card>}
+    <div style={{ marginTop: 8 }}><AddTaskInline surfaceOnAdd onAdded={reload} /></div>
     {sheetTask && (() => {
-      // Re-derive the live task from reloaded projects each render so patches
-      // (status / due date) reflect in the open sheet — don't render the frozen
-      // open-time snapshot (mirrors Project.jsx's `live` lookup).
+      // Re-derive the live task from reloaded data each render so patches (status
+      // / due date) reflect in the open sheet — check project tasks, then the
+      // pillar-only roll-up (mirrors Project.jsx's `live` lookup).
       let live = sheetTask.task
-      for (const p of projects) { const hit = (p.tasks || []).find((x) => x.id === sheetTask.task.id); if (hit) { live = { ...hit, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }; break } }
+      let found = false
+      for (const p of projects) { const hit = (p.tasks || []).find((x) => x.id === sheetTask.task.id); if (hit) { live = { ...hit, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }; found = true; break } }
+      if (!found) { const hit = looseTasks().find((x) => x.id === sheetTask.task.id); if (hit) live = { ...hit, projectId: null, projectName: hit.areaName, projStatus: 'active' } }
       return <TaskSheet task={live} projectId={sheetTask.projectId}
-        onPatch={patch} onDelete={remove} onClose={() => setSheetTask(null)} />
+        onPatch={patch} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} />
     })()}
   </div>
 }
@@ -315,6 +334,43 @@ export function OverviewScreen() {
 }
 
 // ── Single Area ─────────────────────────────────────────────────
+// Pillar-only tasks for an Area — same long-press/open behavior as Open tasks.
+function PillarTasks({ area }) {
+  const { t, f } = useApp()
+  const { reload, looseTasksInArea } = useData()
+  const [sheetTask, setSheetTask] = useState(null)
+  const tasks = looseTasksInArea(area.id)
+  const open = tasks.filter((x) => !x.done)
+
+  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
+  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
+  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  const reassign = async (target) => {
+    if (!sheetTask || !target) return
+    await updateTask(sheetTask.task.id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
+    setSheetTask(null); await reload()
+  }
+  const row = (x) => ({ ...x, projectId: null, projectName: area.name, area: area.id, projStatus: 'active' })
+
+  return <div style={{ marginTop: 28 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+      <span style={{ fontFamily: f.title, fontSize: 15, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>Tasks</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{open.length} open · no project</span>
+      <div style={{ flex: 1, height: 1, background: t.line }} />
+    </div>
+    {open.length > 0 && <Card style={{ padding: '4px 0', overflow: 'hidden', marginBottom: 8 }}>
+      {open.map((x, i) => <OpenTaskRow key={x.id} x={row(x)} first={i === 0} onToggle={toggle}
+        onOpen={(r) => setSheetTask({ task: r, projectId: null })} />)}
+    </Card>}
+    <AddTaskInline defaultTarget={{ area: area.id }} lockTarget onAdded={reload} />
+    {sheetTask && (() => {
+      const hit = looseTasksInArea(area.id).find((x) => x.id === sheetTask.task.id)
+      const live = hit ? row(hit) : sheetTask.task
+      return <TaskSheet task={live} projectId={null} onPatch={patch} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} />
+    })()}
+  </div>
+}
+
 export function AreaScreen() {
   const { t, f, go, route } = useApp()
   const { areas } = useData()
@@ -354,7 +410,8 @@ export function AreaScreen() {
     {group('Active', active)}
     {group('On hold', hold)}
     {group('Ideas', ideas)}
-    {shown === 0 && <div style={{ textAlign: 'center', padding: '70px 0', fontFamily: f.body, fontSize: 15,
+    <PillarTasks area={a} />
+    {shown === 0 && <div style={{ textAlign: 'center', padding: '40px 0 10px', fontFamily: f.body, fontSize: 15,
       color: t.t3, fontStyle: 'italic' }}>No projects in {a.name} yet.</div>}
   </div>
 }

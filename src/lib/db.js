@@ -28,7 +28,7 @@ function mapInbox(r) {
 }
 function mapTask(r) {
   return {
-    id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next,
+    id: r.id, project: r.project_id || undefined, area: r.area_id || undefined, label: r.label, done: !!r.done, next: !!r.next,
     waiting: r.waiting || undefined, due: r.due || undefined, dueDate: r.due_date || undefined,
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, sort: r.sort ?? 0,
@@ -45,12 +45,17 @@ function mapArtifact(r) {
 }
 
 function assemble(areaRows, projRows, taskRows, msRows, updRows, artRows) {
-  const tasksByProj = groupBy(taskRows.map(mapTask), 'project')
+  const allTasks = taskRows.map(mapTask)
+  const tasksByProj = groupBy(allTasks.filter((t) => t.project), 'project')
+  // Pillar-only tasks (no project) hang off their area directly.
+  const looseByArea = groupBy(allTasks.filter((t) => !t.project && t.area), 'area')
   const msByProj = groupBy(msRows.map(mapMilestone), 'project')
   const updByProj = groupBy(updRows.map(mapUpdate), 'project')
   const artByProj = groupBy(artRows.map(mapArtifact), 'project')
   return [...areaRows].sort((a, b) => a.sort - b.sort).map((a) => ({
     id: a.id, name: a.name, open: a.open_default,
+    // tasks assigned to this pillar with no project — surfaced in Open tasks + the Area screen
+    areaTasks: (looseByArea[a.id] || []).sort((x, y) => x.sort - y.sort),
     projects: projRows.filter((p) => p.area_id === a.id).sort((x, y) => x.sort - y.sort).map((p) => ({
       id: p.id, name: p.name, status: p.status, priority: p.priority ?? null,
       due: p.due || undefined, blurb: p.blurb || undefined, hold: p.hold || undefined,
@@ -182,11 +187,13 @@ export async function createInbox(item) {
 const TASK_COLS = {
   label: 'label', done: 'done', next: 'next', waiting: 'waiting', due: 'due',
   dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status',
-  notes: 'notes', srcMeeting: 'src_meeting', project: 'project_id', sort: 'sort',
+  notes: 'notes', srcMeeting: 'src_meeting', project: 'project_id', area: 'area_id', sort: 'sort',
 }
+// projectId may be null for a pillar-only task — pass the pillar via task.area.
 export async function createTask(projectId, task = {}) {
   const id = task.id || uuid()
-  const row = { id, project_id: projectId, label: task.label || '', done: !!task.done, next: !!task.next,
+  const row = { id, project_id: projectId ?? null, area_id: task.area ?? null,
+    label: task.label || '', done: !!task.done, next: !!task.next,
     waiting: task.waiting ?? null, due: task.due ?? null, due_date: task.dueDate ?? null,
     work_type: task.workType ?? null, task_status: task.taskStatus ?? null, notes: task.notes ?? null,
     src_meeting: task.srcMeeting ?? null, sort: task.sort ?? 0 }

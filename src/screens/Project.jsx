@@ -335,11 +335,18 @@ function Tasks({ project, reload }) {
     setSheetTask(null); await deleteTask(id); await reload()
     if (prev) recordUndo(async () => { await createTask(prev.project || project.id, prev); await reload() })
   }
-  const reassign = async (newPid) => {
-    if (!sheetTask || newPid === project.id) return
-    const id = sheetTask.id; const oldPid = sheetTask.project || project.id; setSheetTask(null)
-    await updateTask(id, { project: newPid }); await reload()
-    recordUndo(async () => { await updateTask(id, { project: oldPid }); await reload() })
+  // target = { project: id } | { area: id }. Moving to a pillar clears the
+  // project (and vice-versa) so a task lives in exactly one place.
+  const reassign = async (target) => {
+    if (!sheetTask || !target) return
+    const id = sheetTask.id
+    const prevProject = sheetTask.project || project.id, prevArea = sheetTask.area || null
+    if (target.project && target.project === prevProject) return
+    if (target.area && target.area === prevArea && !sheetTask.project) return
+    setSheetTask(null)
+    await updateTask(id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
+    await reload()
+    recordUndo(async () => { await updateTask(id, { project: prevProject, area: prevArea }); await reload() })
   }
   const commit = async () => {
     const v = text.trim(); setText(''); setAdding(false)

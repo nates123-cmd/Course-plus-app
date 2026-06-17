@@ -83,6 +83,9 @@ export function DataProvider({ children }) {
 
   const value = useMemo(() => {
     const allProjects = () => areas.flatMap((a) => a.projects.map((p) => ({ ...p, area: a.id, areaName: a.name })))
+    // Tasks assigned to a pillar with no project. Tagged with areaName for display.
+    const looseTasks = () => areas.flatMap((a) => (a.areaTasks || []).map((tk) => ({ ...tk, area: a.id, areaName: a.name })))
+    const looseTasksInArea = (areaId) => { const a = areaById(areaId); return a ? (a.areaTasks || []) : [] }
     const projectById = (id) => allProjects().find((p) => p.id === id) || null
     const areaById = (id) => areas.find((a) => a.id === id) || null
     const noteById = (id) => notes.find((n) => n.id === id)
@@ -215,7 +218,7 @@ export function DataProvider({ children }) {
 
     return {
       areas, notes, inbox, status, error, reload, recordUndo, canUndo,
-      allProjects, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
+      allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
     }
   }, [areas, notes, inbox, status, error, canUndo])
