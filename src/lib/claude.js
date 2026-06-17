@@ -32,30 +32,26 @@ export function houseStyle(text) {
 }
 
 // Per-model price, USD per 1M tokens (input, output). Update if pricing changes.
-// Deepseek prices are the standard (cache-miss) rates — approximate.
+// Gemini prices are the standard (cache-miss) rates — approximate.
 export const MODEL_PRICING = {
   'claude-haiku-4-5':  { in: 1, out: 5 },
   'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-opus-4-8':   { in: 15, out: 75 },
-  'deepseek-chat':     { in: 0.27, out: 1.1 },
-  'deepseek-reasoner': { in: 0.55, out: 2.19 },
   'gemini-2.0-flash':  { in: 0.10, out: 0.40 },
   'gemini-2.5-flash':  { in: 0.30, out: 2.50 },
 }
 
 // AI engine preference (set by the TopBar toggle, read at call time so flipping
-// the switch re-routes the very next AI call). 'claude' | 'deepseek'.
+// the switch re-routes the very next AI call). 'claude' | 'gemini'.
 export function aiProvider() {
-  try { const v = localStorage.getItem('course.ai'); return v === 'deepseek' || v === 'gemini' ? v : 'claude' } catch { return 'claude' }
+  try { return localStorage.getItem('course.ai') === 'gemini' ? 'gemini' : 'claude' } catch { return 'claude' }
 }
 
 // Resolve a capability tier ('light' | 'heavy') to a concrete model id for the
 // currently-selected engine. Callers ask for a tier, not a vendor model, so the
 // same call works on either engine. The shared `claude` proxy routes by id.
 export function pickModel(tier = 'light') {
-  const p = aiProvider()
-  if (p === 'deepseek') return tier === 'heavy' ? 'deepseek-reasoner' : 'deepseek-chat'
-  if (p === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.0-flash'
+  if (aiProvider() === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.0-flash'
   return tier === 'heavy' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
 }
 
@@ -148,7 +144,7 @@ export async function claudeComplete(prompt, opts = {}) {
 
 // Vision / document extraction — send raw content blocks (image / document)
 // straight through the proxy, which forwards `messages` VERBATIM to Anthropic.
-// HARD-PINS a Claude model and ignores the deepseek toggle: the deepseek path
+// HARD-PINS a Claude model and ignores the gemini toggle: the gemini path
 // can't take content blocks and would 400. `blocks` is the user-turn content
 // array, e.g. [{type:'image',source:{…}}, {type:'text',text:'…'}]. Returns text.
 export async function claudeVision(blocks, opts = {}) {

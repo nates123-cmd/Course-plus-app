@@ -164,7 +164,7 @@ export function DataProvider({ children }) {
       }).join('\n'))
 
       // Hosted files (screenshots / PDFs) — inline the markdown Claude already
-      // extracted so Generate-with-AI + Ask + Deepseek can "read" them as text.
+      // extracted so Generate-with-AI + Ask + Gemini can "read" them as text.
       const files = assetsInProject(projectId).filter((a) => a.extractedMd && a.extractStatus === 'done')
       if (files.length) lines.push('\nATTACHED FILES (interpreted):\n' + files.map((a) => {
         const md = a.extractedMd.replace(/\s+$/g, '')

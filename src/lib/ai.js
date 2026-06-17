@@ -86,7 +86,7 @@ const TYPE_BRIEF = {
 // Nate's personal writing voice. Appended to the system prompt whenever the
 // deliverable is a 'message' (email/Teams), so drafts sound like him. Lives in
 // the prompt (not provider code) so it applies under BOTH AI engines — Claude
-// and Deepseek route through the same pickModel/claudeComplete path.
+// and Gemini route through the same pickModel/claudeComplete path.
 const NATE_STYLE_BRIEF =
   '\n\nWRITING VOICE — write this message as Nate would write it himself:\n' +
   '- Greeting: "Hi [Name]," (groups: "Hi team," / "Hi all,"). Never "Dear" or a bare "Hello,".\n' +
@@ -131,7 +131,7 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
         'its status, where it stands, milestones, tasks, and related work. Treat it as ground truth and draw on ANY of it the deliverable needs. '
       : '') +
     'Output ONLY the deliverable content in plain markdown — no preamble, no "here is".' +
-    // For email/Teams messages, write in Nate's own voice (applies to Claude + Deepseek).
+    // For email/Teams messages, write in Nate's own voice (applies to Claude + Gemini).
     (typeId === 'message' ? NATE_STYLE_BRIEF : '')
   // Context FIRST (background), source material SECOND, instruction LAST so the
   // model anchors on the task, not the longest block.

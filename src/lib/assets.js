@@ -1,7 +1,7 @@
 // Asset hosting + "interpret once, markdown forever". Upload a screenshot / PDF /
 // file to the private `cp-assets` bucket, record it in cp_assets, and interpret
 // it ONCE with a Claude vision model into extracted_md. After that every AI
-// surface (Claude + Deepseek) reads the markdown as plain text — see DataContext
+// surface (Claude + Gemini) reads the markdown as plain text — see DataContext
 // digest builders. The original bytes are only fetched for viewing / re-extract.
 import { supabase } from './supabase'
 import { claudeVision } from './claude'
