@@ -41,6 +41,12 @@ GMAIL_CLIENT_ID='…' GMAIL_CLIENT_SECRET='…' node scripts/gmail-login.mjs
 Approve in the browser (pick the account you forward from). It prints a
 `supabase secrets set …` command — run it.
 
+**Multiple accounts** (e.g. personal + work): run `gmail-login.mjs` once per account,
+then set `GMAIL_REFRESH_TOKEN` to all the tokens **comma-separated** (no spaces):
+`GMAIL_REFRESH_TOKEN='token_a,token_b'`. The fn loops every account; one account
+failing (missing label, revoked token) does not block the others. Dedup/inbox keys are
+namespaced per account, so a shared Gmail message id can never collide.
+
 ### 3. Set the remaining secrets
 ```bash
 supabase secrets set \

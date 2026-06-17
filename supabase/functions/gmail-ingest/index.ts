@@ -22,7 +22,9 @@ const INGEST_SECRET = Deno.env.get('INGEST_SECRET') || '' // shared secret guard
 
 const G_CLIENT_ID = Deno.env.get('GMAIL_CLIENT_ID')!
 const G_CLIENT_SECRET = Deno.env.get('GMAIL_CLIENT_SECRET')!
-const G_REFRESH = Deno.env.get('GMAIL_REFRESH_TOKEN')!
+// One or more refresh tokens, comma-separated — one per forwarding account.
+const G_REFRESH_TOKENS = (Deno.env.get('GMAIL_REFRESH_TOKEN') || '')
+  .split(',').map((t) => t.trim()).filter(Boolean)
 const LABEL = Deno.env.get('GMAIL_LABEL') || 'course-plus'
 const MAX = Number(Deno.env.get('GMAIL_MAX') || '25')
 
@@ -38,13 +40,13 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'content-type': 'application/json' } })
 
 // ── Google: refresh token → access token ──────────────────────────────
-async function googleToken(): Promise<string> {
+async function googleToken(refresh: string): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: G_CLIENT_ID, client_secret: G_CLIENT_SECRET,
-      refresh_token: G_REFRESH, grant_type: 'refresh_token',
+      refresh_token: refresh, grant_type: 'refresh_token',
     }),
   })
   const data = await res.json()
@@ -120,6 +122,77 @@ function routeFromSubject(subject: string, projects: { id: string; name: string 
   return { project: hit.id, cleanTitle: rest || subject }
 }
 
+// ── ingest one account ────────────────────────────────────────────────
+// acct prefixes the dedup/inbox keys so two accounts can never collide on a
+// shared Gmail message id (ids are unique per-mailbox, not globally).
+async function ingestAccount(refresh: string, acct: number, projList: { id: string; name: string }[]) {
+  const token = await googleToken(refresh)
+
+  // Resolve trigger label id (needed to strip it after ingest).
+  const labels = await gFetch(token, '/labels')
+  const want = norm(LABEL) // tolerate "Course Plus" / "course-plus" / "Course+"
+  const labelObj = (labels.labels || []).find((l: any) => l.name === LABEL)
+    || (labels.labels || []).find((l: any) => norm(l.name) === want)
+  if (!labelObj) {
+    const names = (labels.labels || []).map((l: any) => l.name).join(', ')
+    throw new Error(`Gmail label "${LABEL}" not found. Labels present: ${names}`)
+  }
+  const labelId = labelObj.id
+
+  // List messages carrying the trigger label.
+  const list = await gFetch(token, `/messages?maxResults=${MAX}&q=${encodeURIComponent('label:' + LABEL)}`)
+  const ids: string[] = (list.messages || []).map((m: any) => m.id)
+  if (!ids.length) return { scanned: 0, items: [] as any[] }
+
+  // Which have we already filed? (keys are namespaced per account)
+  const keys = ids.map((id) => `${acct}:${id}`)
+  const { data: seenRows } = await admin.from('cp_email_seen').select('message_id').in('message_id', keys)
+  const seen = new Set((seenRows || []).map((r: any) => r.message_id))
+
+  const items: any[] = []
+  for (const id of ids) {
+    const key = `${acct}:${id}`
+    if (seen.has(key)) continue
+    const msg = await gFetch(token, `/messages/${id}?format=full`)
+    const payload = msg.payload || {}
+    const subject = header(payload, 'Subject') || '(no subject)'
+    const from = header(payload, 'From')
+    const body = extractBody(payload)
+
+    const route = routeFromSubject(subject, projList)
+    const suggest = route ? { project: route.project, confidence: 0.99 } : null
+    const title = route ? route.cleanTitle : subject
+
+    const fromName = from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || from
+    const snippet = (fromName ? `From: ${fromName}\n\n` : '') + body
+
+    const row = {
+      id: `email-${acct}-${id}`,
+      user_id: OWNER_ID,
+      title,
+      src: 'Email',
+      src_icon: '📧',
+      snippet,
+      suggest,
+      tags: ['email'],
+    }
+    const { error: insErr } = await admin.from('cp_inbox').upsert(row, { onConflict: 'user_id,id' })
+    if (insErr) throw new Error('cp_inbox insert: ' + insErr.message)
+
+    await admin.from('cp_email_seen').upsert({ message_id: key, user_id: OWNER_ID }, { onConflict: 'message_id' })
+
+    // Strip the trigger label so it never re-ingests (also mark read).
+    await gFetch(token, `/messages/${id}/modify`, {
+      method: 'POST',
+      body: JSON.stringify({ removeLabelIds: [labelId, 'UNREAD'] }),
+    }).catch(() => {}) // label-strip best-effort; cp_email_seen still dedupes
+
+    items.push({ acct, id, title, project: route?.project || null })
+  }
+
+  return { scanned: ids.length, items }
+}
+
 // ── handler ───────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
@@ -129,68 +202,27 @@ Deno.serve(async (req) => {
   if (INGEST_SECRET && presented !== INGEST_SECRET) return json({ error: 'unauthorized' }, 401)
 
   try {
-    const token = await googleToken()
+    if (!G_REFRESH_TOKENS.length) return json({ error: 'no GMAIL_REFRESH_TOKEN set' }, 500)
 
-    // Resolve trigger label id (needed to strip it after ingest).
-    const labels = await gFetch(token, '/labels')
-    const labelObj = (labels.labels || []).find((l: any) => l.name === LABEL)
-    if (!labelObj) return json({ error: `Gmail label "${LABEL}" not found — create it and a filter.` }, 400)
-    const labelId = labelObj.id
-
-    // List messages carrying the trigger label.
-    const list = await gFetch(token, `/messages?maxResults=${MAX}&q=${encodeURIComponent('label:' + LABEL)}`)
-    const ids: string[] = (list.messages || []).map((m: any) => m.id)
-    if (!ids.length) return json({ ingested: 0, scanned: 0, items: [] })
-
-    // Which have we already filed?
-    const { data: seenRows } = await admin.from('cp_email_seen').select('message_id').in('message_id', ids)
-    const seen = new Set((seenRows || []).map((r: any) => r.message_id))
-
-    // Projects for subject-prefix routing.
+    // Projects for subject-prefix routing (fetched once, shared across accounts).
     const { data: projects } = await admin.from('cp_projects').select('id,name').eq('user_id', OWNER_ID)
     const projList = (projects || []) as { id: string; name: string }[]
 
+    let scanned = 0
     const items: any[] = []
-    for (const id of ids) {
-      if (seen.has(id)) continue
-      const msg = await gFetch(token, `/messages/${id}?format=full`)
-      const payload = msg.payload || {}
-      const subject = header(payload, 'Subject') || '(no subject)'
-      const from = header(payload, 'From')
-      const body = extractBody(payload)
-
-      const route = routeFromSubject(subject, projList)
-      const suggest = route ? { project: route.project, confidence: 0.99 } : null
-      const title = route ? route.cleanTitle : subject
-
-      const fromName = from.replace(/<[^>]+>/, '').replace(/"/g, '').trim() || from
-      const snippet = (fromName ? `From: ${fromName}\n\n` : '') + body
-
-      const row = {
-        id: 'email-' + id,
-        user_id: OWNER_ID,
-        title,
-        src: 'Email',
-        src_icon: '📧',
-        snippet,
-        suggest,
-        tags: ['email'],
+    const errors: string[] = []
+    for (let i = 0; i < G_REFRESH_TOKENS.length; i++) {
+      try {
+        const r = await ingestAccount(G_REFRESH_TOKENS[i], i, projList)
+        scanned += r.scanned
+        items.push(...r.items)
+      } catch (e) {
+        // One bad account (e.g. missing label) must not sink the others.
+        errors.push(`account ${i}: ${(e as Error)?.message || String(e)}`)
       }
-      const { error: insErr } = await admin.from('cp_inbox').upsert(row, { onConflict: 'user_id,id' })
-      if (insErr) throw new Error('cp_inbox insert: ' + insErr.message)
-
-      await admin.from('cp_email_seen').upsert({ message_id: id, user_id: OWNER_ID }, { onConflict: 'message_id' })
-
-      // Strip the trigger label so it never re-ingests (also mark read).
-      await gFetch(token, `/messages/${id}/modify`, {
-        method: 'POST',
-        body: JSON.stringify({ removeLabelIds: [labelId, 'UNREAD'] }),
-      }).catch(() => {}) // label-strip best-effort; cp_email_seen still dedupes
-
-      items.push({ id, title, project: route?.project || null })
     }
 
-    return json({ ingested: items.length, scanned: ids.length, items })
+    return json({ ingested: items.length, scanned, items, ...(errors.length ? { errors } : {}) })
   } catch (e) {
     return json({ error: (e as Error)?.message || String(e) }, 500)
   }
