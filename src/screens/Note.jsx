@@ -6,7 +6,7 @@ import { Fragment, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
-  Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, Markish, inlineMd,
+  Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, inlineMd,
 } from '../kit'
 import { updateNote, createTask, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks, markdownToBlocks } from '../lib/blocks'
@@ -56,6 +56,50 @@ function Body({ blocks }) {
       </div>
       return null
     })}
+  </div>
+}
+
+// ── Transcript turns ─────────────────────────────────────────────
+// A saved transcript is "Name: text" lines. Parse it back into attributed
+// speaker turns so a viewed meeting reads like the recorder/composer, not a
+// raw monospace blob.
+const TX_SPEAKER_KEYS = ['accent', 'area_arrow', 'area_brain', 'area_sds', 'good']
+function txSpeakerColor(t, sp) {
+  let h = 0; const s = String(sp || '')
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return t[TX_SPEAKER_KEYS[h % TX_SPEAKER_KEYS.length]] || t.t2
+}
+function parseTranscriptTurns(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n')
+  const turns = []
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    // "Name: text" — speaker label up to ~40 chars before the first colon.
+    const m = line.match(/^([A-Za-z0-9][^:]{0,40}):\s*(.*)$/)
+    if (m) {
+      const sp = m[1].trim()
+      if (turns.length && turns[turns.length - 1].sp === sp) turns[turns.length - 1].text += (m[2] ? ' ' + m[2] : '')
+      else turns.push({ sp, text: m[2] || '' })
+    } else if (turns.length) {
+      turns[turns.length - 1].text += ' ' + line // continuation of the prior turn
+    } else {
+      turns.push({ sp: null, text: line })
+    }
+  }
+  return turns.filter((x) => (x.text || '').trim() || x.sp)
+}
+function MeetingTranscript({ text }) {
+  const { t, f } = useApp()
+  const turns = parseTranscriptTurns(text)
+  if (!turns.length) return null
+  const hasSpeakers = turns.some((x) => x.sp)
+  return <div className="selectable" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+    {turns.map((tn, i) => <div key={i} style={{ display: 'flex', gap: 12 }}>
+      {hasSpeakers && <span style={{ flex: 'none', width: 88, textAlign: 'right', fontFamily: f.ui, fontSize: 12,
+        fontWeight: 700, color: tn.sp ? txSpeakerColor(t, tn.sp) : t.t3, lineHeight: 1.6, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tn.sp || '—'}</span>}
+      <span style={{ flex: 1, fontFamily: f.body, fontSize: 14, lineHeight: 1.62, color: t.t1 }}>{tn.text}</span>
+    </div>)}
   </div>
 }
 
@@ -180,6 +224,8 @@ export function NoteScreen() {
   const [editing, setEditing] = useState(false)
   const [eTitle, setETitle] = useState('')
   const [eBody, setEBody] = useState('')
+  const [eSummary, setESummary] = useState('') // meeting summary (inline edit)
+  const [eNext, setENext] = useState('')       // meeting next steps (inline edit)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -209,14 +255,14 @@ export function NoteScreen() {
     catch (e) { window.alert('Could not remove: ' + (e?.message || e)) }
   }
 
-  // Meetings carry far more than a body — folder, agenda, people, transcript,
-  // transcript options. Editing those lives in the composer, so a meeting's
-  // "Edit" reopens the full composer (synthesis is preserved). Plain notes get
-  // the inline body editor.
+  // Meetings edit INLINE here (title, notes/body, summary, next steps). The
+  // recording/transcript/re-synthesis machinery still lives in the composer —
+  // reachable via "Composer" — but the everyday text edits happen in place.
   const resumeMeeting = () => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }
   const startEdit = () => {
-    if (isMeeting) return resumeMeeting()
-    setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null); setEditing(true)
+    setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null)
+    if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || '') }
+    setEditing(true)
   }
   const deleteThis = async () => {
     if (!window.confirm(`Delete “${n.title || 'this item'}”? This can’t be undone.`)) return
@@ -225,8 +271,11 @@ export function NoteScreen() {
   }
   const saveEdit = async () => {
     setSaving(true); setErr(null)
-    try { await updateNote(n.id, { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }); await reload(); setEditing(false) }
-    catch (e) { setErr(e) } finally { setSaving(false) }
+    try {
+      const patch = { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }
+      if (isMeeting) { patch.summary = eSummary; patch.nextSteps = eNext }
+      await updateNote(n.id, patch); await reload(); setEditing(false)
+    } catch (e) { setErr(e) } finally { setSaving(false) }
   }
 
   const main = <div className="selectable">
@@ -248,9 +297,10 @@ export function NoteScreen() {
             <Btn kind="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Btn>
             <Btn kind="primary" size="sm" icon={saving ? 'loader-2' : 'circle-check'} onClick={saveEdit}>{saving ? 'Saving…' : 'Save'}</Btn>
           </span>
-        : <span style={{ display: 'flex', gap: 8 }}>
+        : <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <IconBtn n="trash" s={17} title="Delete" onClick={deleteThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
+            {isMeeting && <Btn kind="outline" size="sm" icon="microphone" onClick={resumeMeeting} title="Open the recorder/composer — transcript, re-record, re-synthesize">Composer</Btn>}
             <Btn kind="outline" size="sm" icon="message-circle" onClick={() => setChatOpen(true)}>Ask</Btn>
             <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>{aiName}</Btn>
           </span>}
@@ -286,7 +336,7 @@ export function NoteScreen() {
     {isMeeting && !editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
       {n.summary && <Card style={{ padding: '16px 18px', background: t.accentBg, borderColor: t.accentLine }}>
         <Label style={{ color: t.accent, marginBottom: 10 }}>Summary</Label>
-        <Markish text={n.summary} />
+        <RichText text={n.summary} />
       </Card>}
       {(n.actions || []).length > 0 && <div>
         <Label style={{ marginBottom: 9 }}>Action items · {n.actions.length}</Label>
@@ -324,7 +374,7 @@ export function NoteScreen() {
         <Icon n={nextOpen ? 'chevron-down' : 'chevron-right'} s={14} c={t.t3} />
         <Icon n="bulb" s={14} c={t.accent} />Suggested next steps</div>
       {nextOpen && <div style={{ padding: '14px 16px', background: t.card, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px' }}>
-        <Markish text={n.nextSteps} /></div>}
+        <RichText text={n.nextSteps} /></div>}
     </div>}
 
     {/* agenda / prep — collapsible */}
@@ -337,12 +387,24 @@ export function NoteScreen() {
         background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px', whiteSpace: 'pre-wrap' }}>{n.agenda}</div>}
     </div>}
 
+    {/* inline meeting editors — summary + next steps (composer owns transcript) */}
+    {editing && isMeeting && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div>
+        <Label style={{ marginBottom: 8, color: t.accent }}>Summary</Label>
+        <MdEditor value={eSummary} onChange={setESummary} minHeight={220} />
+      </div>
+      <div>
+        <Label style={{ marginBottom: 8 }}>Suggested next steps</Label>
+        <MdEditor value={eNext} onChange={setENext} minHeight={160} />
+      </div>
+    </div>}
+
     {/* body */}
     <div style={{ marginTop: 24 }}>
       {editing
         ? <>
-            <Label style={{ marginBottom: 8 }}>Body</Label>
-            <MdEditor value={eBody} onChange={setEBody} minHeight={360} />
+            <Label style={{ marginBottom: 8 }}>{isMeeting ? 'My notes' : 'Body'}</Label>
+            <MdEditor value={eBody} onChange={setEBody} minHeight={isMeeting ? 240 : 360} />
             {err && <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 10 }}>Couldn’t save - {String(err?.message || err)}.</div>}
           </>
         : <RichText text={blocksToText(n.body || [])} />}
@@ -365,10 +427,10 @@ export function NoteScreen() {
       <div onClick={() => setRawOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
         borderRadius: 10, cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
         <Icon n={rawOpen ? 'chevron-down' : 'chevron-right'} s={14} />
-        <Icon n="file-text" s={14} c={t.t3} />Raw transcript
+        <Icon n="file-text" s={14} c={t.t3} />Transcript
         <span style={{ color: t.t3 }}>· {words ? words + ' words · ' : ''}source material</span></div>
-      {rawOpen && <div className="selectable" style={{ padding: '14px 16px', fontFamily: f.meta, fontSize: 12.5, lineHeight: 1.7, color: t.t3,
-        background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px', whiteSpace: 'pre-wrap' }}>{n.transcript}</div>}
+      {rawOpen && <div style={{ padding: '16px 18px', background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px' }}>
+        <MeetingTranscript text={n.transcript} /></div>}
     </div>}
   </div>
 

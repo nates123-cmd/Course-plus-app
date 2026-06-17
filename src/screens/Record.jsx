@@ -5,7 +5,7 @@
 // (Copilot/Teams — better speakers, no cost). Synthesis → bullet summary +
 // action items + smart tags, weighting your notes above the transcript.
 // Session state lives in RecorderContext (above the router) so it survives nav.
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
@@ -74,14 +74,39 @@ function SpeakerLabeler({ speakers, people, onRename }) {
   </div>
 }
 
-// Animated input-level meter — bars only animate while live
-function Levels({ live, color, faint, bars = 36, h = 44 }) {
+// Real input-level meter — reads the live AnalyserNode (mic + tab audio) each
+// frame and drives the bar heights directly via refs (no React re-render at
+// 60fps). Falls back to a flat resting state when not recording / no analyser.
+function Levels({ live, getAnalyser, color, faint, bars = 36, h = 44 }) {
+  const refs = useRef([])
+  const raf = useRef(0)
+  useEffect(() => {
+    const rest = () => refs.current.forEach((el) => { if (el) { el.style.height = '6px'; el.style.opacity = '0.5'; el.style.background = faint } })
+    if (!live) { rest(); return }
+    const data = new Uint8Array(128)
+    const draw = () => {
+      const an = getAnalyser?.()
+      if (an) {
+        an.getByteFrequencyData(data)
+        const n = refs.current.length
+        for (let i = 0; i < n; i++) {
+          const el = refs.current[i]; if (!el) continue
+          // Speech energy sits in the lower spectrum — sample the bottom half.
+          const v = data[Math.floor((i / n) * 64)] / 255
+          const pct = Math.max(0.08, Math.min(1, v * 1.5))
+          el.style.height = (pct * 100) + '%'
+          el.style.opacity = String(0.45 + pct * 0.55)
+          el.style.background = color
+        }
+      }
+      raf.current = requestAnimationFrame(draw)
+    }
+    raf.current = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf.current)
+  }, [live, getAnalyser, color, faint, bars])
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: h }}>
-    {Array.from({ length: bars }).map((_, i) => <span key={i} style={{
-      width: 3, borderRadius: 3, flex: 'none', background: live ? color : faint,
-      height: live ? '100%' : 6, transformOrigin: 'center',
-      animation: live ? `wave 1s ease-in-out ${(i % 9) * 0.08 + (i * 0.013)}s infinite` : 'none',
-      opacity: live ? 0.9 : 0.5 }} />)}
+    {Array.from({ length: bars }).map((_, i) => <span key={i} ref={(el) => { refs.current[i] = el }} style={{
+      width: 3, borderRadius: 3, flex: 'none', background: faint, height: 6, transformOrigin: 'center', opacity: 0.5 }} />)}
   </div>
 }
 
@@ -135,7 +160,7 @@ export function RecordScreen() {
   const [showNext, setShowNext] = useState(false)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
-  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct } = rec
+  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
@@ -410,6 +435,17 @@ export function RecordScreen() {
               </div>
               {engine === 'browser' && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>first use downloads a ~40MB model, then it's offline &amp; free</span>}
             </div>}
+            {/* tab/system-audio capture — Pindrop-style; choose BEFORE recording */}
+            {tabAudioSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+              {(() => {
+                const locked = phase !== 'idle'
+                return <span onClick={() => { if (!locked) rec.setMeta({ tabAudio: !tabAudio }) }}
+                  title="Also record a browser tab's audio (Teams/Zoom/Meet) — you'll pick the tab and tick &quot;Share tab audio&quot; when recording starts"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: tabAudio ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1 }}>
+                  <Icon n="device-desktop" s={13} c={tabAudio ? t.accent : t.t3} />Capture call audio {tabAudio ? 'on' : 'off'}</span>
+              })()}
+              {tabAudio && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>records both sides — pick the meeting tab &amp; tick &ldquo;Share tab audio&rdquo;</span>}
+            </div>}
             {/* recorder card */}
             <Card style={{ padding: '22px 24px', background: t.panel }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -428,14 +464,28 @@ export function RecordScreen() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 500, color: live ? t.risk : t.t2 }}>
                       {live && <span style={{ width: 7, height: 7, borderRadius: 4, background: t.risk }} />}{statusText}</span>
                   </div>
-                  <div style={{ marginTop: 6 }}><Levels live={live} color={t.accent} faint={t.line2} /></div>
+                  <div style={{ marginTop: 6 }}><Levels live={live} getAnalyser={rec.getAnalyser} color={t.accent} faint={t.line2} /></div>
+                  {tabMixed && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent }}>
+                    <Icon n="device-desktop" s={12} c={t.accent} />Capturing call audio — mic + shared tab</div>}
                 </div>
-                {(phase === 'recording' || phase === 'paused') && <div style={{ flex: 'none' }}>
+                {(phase === 'recording' || phase === 'paused') && <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Btn kind="outline" size="sm" icon="pin" onClick={() => rec.addPin()} title="Mark this moment — flagged for the summary">Pin</Btn>
                   {phase === 'recording' ? <Btn kind="outline" size="sm" icon="player-pause" onClick={() => rec.pause()}>Pause</Btn>
                     : <Btn kind="outline" size="sm" icon="player-play" onClick={() => rec.resume()}>Resume</Btn>}
                 </div>}
               </div>
             </Card>
+            {/* storage-full warning — recording continues in memory, but a reload
+                mid-recording would no longer be recoverable */}
+            {storageWarn && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 8, padding: '7px 11px' }}>
+              <Icon n="alert-triangle" s={14} c={t.risk} />Device storage is full — crash recovery is off. Don't reload until you've stopped &amp; transcribed.</div>}
+            {/* pinned moments — flagged times, removable */}
+            {pins.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t3 }}><Icon n="pin" s={12} c={t.t3} />Pinned</span>
+              {pins.map((p) => <span key={p.at} onClick={() => rec.removePin(p.at)} title="Remove pin"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.meta, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '3px 8px', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
+                {fmtClock(p.at)}<Icon n="x" s={11} c={t.accent} /></span>)}
+            </div>}
             {/* tuning — speaker labels only exist on the cloud engine */}
             {engine === 'cloud' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"

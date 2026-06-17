@@ -8,7 +8,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useApp } from './ctx'
 import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
-import { useRecorder, fmtClock, getRecovered, clearRecovered } from './lib/recorder'
+import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
 import { transcribeInBrowser, browserWhisperSupported } from './lib/whisper'
 import { synthesizeMeeting } from './lib/ai'
@@ -34,7 +34,11 @@ const emptySynth = { summary: '', actions: [], terms: [], people: [], tags: [], 
 
 export function RecorderProvider({ go, children }) {
   const recorder = useRecorder()
-  const { status, seconds, interrupted } = recorder
+  const { status, seconds, interrupted, tabMixed, storageWarn, getAnalyser } = recorder
+
+  // Pin the current moment (dedupe within the same second). Works live + paused.
+  const addPin = () => setPins((p) => p.some((x) => x.at === seconds) ? p : [...p, { at: seconds, label: '' }].sort((a, b) => a.at - b.at))
+  const removePin = (at) => setPins((p) => p.filter((x) => x.at !== at))
   const { areaOfProject, reload } = useData()
 
   // post-recording processing phase (idle when not in a processing stage)
@@ -58,6 +62,11 @@ export function RecorderProvider({ go, children }) {
   // engine: 'cloud' = AssemblyAI edge fn (speaker labels). 'browser' = on-device
   // Whisper (private, free, no speaker labels). Falls back to cloud if unsupported.
   const [engine, setEngine] = useState('cloud')
+  // tabAudio: also capture tab/system audio (browser calls) when supported.
+  const [tabAudio, setTabAudio] = useState(false)
+  // pins: timestamps (seconds) the user flagged mid-recording as "this matters".
+  // Feed the synthesis as anchors + render as jump chips on the transcript.
+  const [pins, setPins] = useState([]) // [{ at: seconds, label: '' }]
   const [tStatus, setTStatus] = useState('') // browser-engine sub-status: ''|'loading-model'|'transcribing'
   const [modelPct, setModelPct] = useState(0) // on-device model download %
   const [lines, setLines] = useState([]) // [{ sp, text, at }]
@@ -85,6 +94,7 @@ export function RecorderProvider({ go, children }) {
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
     if ('engine' in patch) setEngine(browserWhisperSupported ? patch.engine : 'cloud')
+    if ('tabAudio' in patch) setTabAudio(tabAudioSupported ? !!patch.tabAudio : false)
   }
 
   // Run the chosen transcription engine on a blob → plain transcript text.
@@ -127,6 +137,7 @@ export function RecorderProvider({ go, children }) {
           setNotes(d.notes || ''); setSource(d.source || 'paste')
           if (d.engine) setEngine(browserWhisperSupported ? d.engine : 'cloud')
           setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
+          setPins(Array.isArray(d.pins) ? d.pins : [])
           draftIdRef.current = d.draftNoteId || null
           draftSavedRef.current = !!d.draftNoteId
           setProc(d.transcriptText ? 'ready' : PROC_IDLE)
@@ -143,11 +154,11 @@ export function RecorderProvider({ go, children }) {
     const has = meaningful() || people.length || projects.length
     if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
     const id = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, draftNoteId: draftIdRef.current })) } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth])
+  }, [title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, pins])
 
   // The note fields shared by autosave + finalize.
   const noteFields = (incomplete) => ({
@@ -253,7 +264,7 @@ export function RecorderProvider({ go, children }) {
     setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
     setTStatus(''); setModelPct(0)
     setProc(PROC_IDLE)
-    await recorder.start()
+    await recorder.start({ tabAudio })
   }
   const pause = () => recorder.pause()
   const resume = () => recorder.resume()
@@ -379,7 +390,8 @@ export function RecorderProvider({ go, children }) {
     setProc('synth')
     try {
       const speakerLabels = [...new Set(lines.map((l) => l.sp))]
-      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels, detail })
+      const pinStamps = pins.map((p) => fmtClock(p.at))
+      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels, detail, pins: pinStamps })
       setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [], nextSteps: s.nextSteps || '' })
       // Apply Claude's speaker-name guesses (leads with the People list; else inferred).
       if (s.speakers && typeof s.speakers === 'object') {
@@ -401,7 +413,7 @@ export function RecorderProvider({ go, children }) {
   const reset = () => {
     setProc(PROC_IDLE)
     setError(null)
-    setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
+    setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null); setPins([])
     setProjects([]); setPeople([]); setAgenda(''); setNotes(''); setPillar(null); setWarn(null); setSource('paste')
   }
 
@@ -420,10 +432,12 @@ export function RecorderProvider({ go, children }) {
     title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
     engine, browserWhisperSupported, tStatus, modelPct,
+    tabAudio, tabAudioSupported, tabMixed, storageWarn, getAnalyser,
+    pins, addPin, removePin,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
@@ -479,6 +493,7 @@ export function FloatingRecorder() {
     </div>
     {(phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7,
       padding: '9px 13px', borderTop: '1px solid ' + t.line }}>
+      <Btn kind="outline" size="sm" icon="pin" onClick={(e) => { e.stopPropagation(); rec.addPin() }} title="Mark this moment">Pin</Btn>
       {live ? <Btn kind="outline" size="sm" icon="player-pause" onClick={(e) => { e.stopPropagation(); rec.pause() }}>Pause</Btn>
         : <Btn kind="outline" size="sm" icon="player-play" onClick={(e) => { e.stopPropagation(); rec.resume() }}>Resume</Btn>}
       <div style={{ flex: 1 }} />

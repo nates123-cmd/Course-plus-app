@@ -180,7 +180,7 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
 // The user's OWN live notes are the highest-signal input — they wrote those down
 // because they mattered — so they're weighted above the transcript. Long
 // transcripts escalate to Sonnet for whole-meeting recall.
-export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low' } = {}) {
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low', pins = [] } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
   const model = pickModel((detail === 'high' || long) ? 'heavy' : 'light')
@@ -202,6 +202,7 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
   else parts.push('No participant list was given — infer speaker names from the conversation (who they address, self-introductions, sign-offs). One speaker is always Nate.')
   if (agenda.trim()) parts.push(`Pre-meeting agenda / what I wanted to cover:\n${agenda.trim()}`)
   if (liveNotes.trim()) parts.push(`MY LIVE NOTES (highest priority — these are what I judged worth writing):\n${liveNotes.trim()}`)
+  if (pins.length) parts.push(`MOMENTS I FLAGGED as important while recording (timestamps ${pins.join(', ')}): make sure the summary and next steps explicitly address whatever was being discussed around each of these — I marked them because they matter.`)
   if (tx.trim()) parts.push(`Transcript (${tx.length} chars, supporting context):\n${tx.trim()}`)
   const labelList = (speakerLabels || []).filter(Boolean)
   const speakerAsk = labelList.length

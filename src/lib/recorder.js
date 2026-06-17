@@ -10,6 +10,11 @@ function pickMime() {
   return '' // let the browser default
 }
 
+// Tab/system-audio capture (Pindrop-style) — Chrome/Edge desktop only. Lets a
+// browser Teams/Zoom/Meet call record BOTH sides, not just the mic.
+export const tabAudioSupported = typeof navigator !== 'undefined'
+  && !!navigator.mediaDevices?.getDisplayMedia
+
 // ── tiny IndexedDB chunk store (crash recovery) ──────────────────────
 const DB = 'scribe-rec', STORE = 'chunks'
 function idb() {
@@ -51,7 +56,18 @@ export function useRecorder() {
   // interrupted = the tab went background while recording → browser may have
   // suspended audio capture, so the transcript can be incomplete. Surfaced to UI.
   const [interrupted, setInterrupted] = useState(false)
+  // tabMixed = the recording is actually capturing tab/system audio (user shared
+  // a tab WITH audio), not just the mic. Drives the "capturing call audio" UI.
+  const [tabMixed, setTabMixed] = useState(false)
+  // storageWarn = a crash-recovery chunk failed to persist (usually the device's
+  // storage quota is full). The recording itself continues in memory, but a
+  // reload mid-recording would no longer be recoverable — surface it.
+  const [storageWarn, setStorageWarn] = useState(false)
   const mr = useRef(null), stream = useRef(null), chunks = useRef([]), timer = useRef(null), wakeLock = useRef(null)
+  // Web Audio graph: mic (+ optional tab) → analyser (live waveform) + a
+  // MediaStreamDestination that MediaRecorder actually records.
+  const audioCtx = useRef(null), analyser = useRef(null)
+  const micStream = useRef(null), tabStream = useRef(null)
 
   const tick = () => { timer.current = setInterval(() => setSeconds((s) => {
     if (s + 1 >= MAX_SECONDS) { try { mr.current?.stop() } catch {} }
@@ -77,20 +93,80 @@ export function useRecorder() {
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [])
 
-  const start = async () => {
+  // Tear down every capture source + the audio graph. Safe to call repeatedly.
+  const teardown = () => {
+    try { micStream.current?.getTracks().forEach((t) => t.stop()) } catch {}
+    try { tabStream.current?.getTracks().forEach((t) => t.stop()) } catch {}
+    try { stream.current?.getTracks().forEach((t) => t.stop()) } catch {}
+    try { audioCtx.current?.close() } catch {}
+    micStream.current = tabStream.current = audioCtx.current = analyser.current = stream.current = null
+  }
+
+  // Build the stream MediaRecorder records. Always routes through an
+  // AudioContext so we get a live AnalyserNode for the waveform; if opts.tabAudio
+  // and the user shares a tab WITH audio, mic + tab are mixed into one track.
+  const buildStream = async (opts) => {
+    // Request the display picker FIRST — getDisplayMedia is the stricter call for
+    // user-activation, so prompt for it before the mic to keep the gesture valid.
+    let tab = null
+    if (opts?.tabAudio && tabAudioSupported) {
+      try {
+        // getDisplayMedia needs a video request to surface the audio checkbox;
+        // we drop the video track immediately and keep only the audio.
+        tab = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        tab.getVideoTracks().forEach((t) => t.stop())
+        if (!tab.getAudioTracks().length) { tab.getTracks().forEach((t) => t.stop()); tab = null }
+      } catch { tab = null } // user cancelled the picker / shared without audio → mic-only
+    }
+    tabStream.current = tab
+    setTabMixed(!!tab)
+    // Clean capture → better transcripts: cancel room echo (also stops feedback
+    // when tab audio plays through speakers), suppress hum, auto-level volume,
+    // mono (no stereo gain for speech, half the bytes).
+    const mic = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+    })
+    micStream.current = mic
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      const ctx = new AC(); audioCtx.current = ctx
+      const an = ctx.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = 0.7
+      analyser.current = an
+      const dest = ctx.createMediaStreamDestination()
+      ctx.createMediaStreamSource(mic).connect(an)   // mic → analyser
+      ctx.createMediaStreamSource(mic).connect(dest)  // mic → recording
+      if (tab) {
+        const tsrc = ctx.createMediaStreamSource(tab)
+        tsrc.connect(an); tsrc.connect(dest)          // tab → analyser + recording
+      }
+      return dest.stream
+    } catch {
+      // AudioContext unavailable → record the raw mic, no waveform.
+      analyser.current = null; audioCtx.current = null
+      return mic
+    }
+  }
+
+  const start = async (opts) => {
     setError(null)
     try {
       await idbClear()
-      const s = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const s = await buildStream(opts)
       stream.current = s
       const mime = pickMime()
       const rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined)
       chunks.current = []
-      rec.ondataavailable = (e) => { if (e.data && e.data.size) { chunks.current.push(e.data); idbAppend(e.data).catch(() => {}) } }
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size) {
+          chunks.current.push(e.data)
+          // Persist for crash recovery; flag (don't throw) if storage is full.
+          idbAppend(e.data).catch((err) => { if (/quota/i.test(String(err?.name || err))) setStorageWarn(true) })
+        }
+      }
       mr.current = rec
       rec.start(5000) // flush a chunk every 5s
-      setSeconds(0); setInterrupted(false); setStatus('recording'); tick(); acquireWake()
-    } catch (e) { setError(e); setStatus('idle') }
+      setSeconds(0); setInterrupted(false); setStorageWarn(false); setStatus('recording'); tick(); acquireWake()
+    } catch (e) { teardown(); setError(e); setStatus('idle') }
   }
 
   const pause = () => { if (mr.current?.state === 'recording') { mr.current.pause(); stopTick(); releaseWake(); setStatus('paused') } }
@@ -99,19 +175,23 @@ export function useRecorder() {
   const stop = () => new Promise((resolve) => {
     const rec = mr.current
     stopTick(); releaseWake()
-    if (!rec || rec.state === 'inactive') { setStatus('idle'); return resolve(null) }
+    if (!rec || rec.state === 'inactive') { teardown(); setStatus('idle'); setTabMixed(false); return resolve(null) }
     rec.onstop = () => {
       const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' })
-      stream.current?.getTracks().forEach((t) => t.stop())
-      setStatus('idle'); resolve(blob)
+      teardown()
+      setStatus('idle'); setTabMixed(false); resolve(blob)
     }
     rec.stop()
   })
 
-  // Stop tracks if the component unmounts mid-recording.
-  useEffect(() => () => { stopTick(); releaseWake(); stream.current?.getTracks().forEach((t) => t.stop()) }, [])
+  // The live AnalyserNode (or null) — the waveform reads it directly via rAF so
+  // the 60fps amplitude updates never churn React state.
+  const getAnalyser = () => analyser.current
 
-  return { status, seconds, error, interrupted, start, pause, resume, stop }
+  // Stop tracks if the component unmounts mid-recording.
+  useEffect(() => () => { stopTick(); releaseWake(); teardown() }, [])
+
+  return { status, seconds, error, interrupted, tabMixed, storageWarn, start, pause, resume, stop, getAnalyser }
 }
 
 export const fmtClock = (s) => {

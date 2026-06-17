@@ -167,6 +167,18 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
    900px mobile breakpoint. Kills focus-zoom across every input/textarea/select. */
 @media (max-width: 900px) {
   input, textarea, select { font-size: 16px !important; }
+  /* The MD editor is a transparent <textarea> caret-layer over a visible <pre>
+     render-layer. The rule above bumps ONLY the textarea to 16px, leaving the
+     <pre> at 14px → the caret advances on 16px metrics while text renders at
+     14px, so the caret drifts ahead of the text ("5-6 spaces in front"). Bump
+     BOTH layers together so they stay aligned (iOS still won't focus-zoom). */
+  .w-md-editor-text,
+  .w-md-editor-text-pre,
+  .w-md-editor-text-pre > code,
+  .w-md-editor-text-input {
+    font-size: 16px !important;
+    line-height: 22px !important;
+  }
 }
 .auth-btn {
   margin-top: 4px;
