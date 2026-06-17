@@ -37,7 +37,7 @@ export const MODEL_PRICING = {
   'claude-haiku-4-5':  { in: 1, out: 5 },
   'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-opus-4-8':   { in: 15, out: 75 },
-  'gemini-2.0-flash':  { in: 0.10, out: 0.40 },
+  'gemini-2.5-flash-lite':  { in: 0.10, out: 0.40 },
   'gemini-2.5-flash':  { in: 0.30, out: 2.50 },
 }
 
@@ -51,7 +51,7 @@ export function aiProvider() {
 // currently-selected engine. Callers ask for a tier, not a vendor model, so the
 // same call works on either engine. The shared `claude` proxy routes by id.
 export function pickModel(tier = 'light') {
-  if (aiProvider() === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.0-flash'
+  if (aiProvider() === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.5-flash-lite'
   return tier === 'heavy' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
 }
 
