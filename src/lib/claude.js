@@ -151,7 +151,7 @@ export async function claudeVision(blocks, opts = {}) {
   const {
     system = 'You transcribe and interpret images and documents into clean markdown. Return only the transcription / interpretation - no preamble, no commentary.' + HOUSE_STYLE,
     max_tokens = 4096,
-    model = 'claude-sonnet-4-6',
+    model = 'claude-haiku-4-5',
     onUsage,
   } = opts
   const data = await postClaude({ system, messages: [{ role: 'user', content: blocks }], model, max_tokens })
