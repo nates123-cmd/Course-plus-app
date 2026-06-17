@@ -333,7 +333,8 @@ function TopBar({ onMenu, onCapture, isMobile }) {
   // AI engine toggle (Claude <-> Deepseek). State lives in app context so every
   // "Generate with <engine>" label across the app hot-switches with it; the same
   // localStorage key drives lib/claude.js#aiProvider routing.
-  const dsOn = ai === 'deepseek'
+  const NEXT = { claude: 'deepseek', deepseek: 'gemini', gemini: 'claude' }
+  const altOn = ai !== 'claude'
   return <div style={{ display: 'flex', alignItems: 'center', gap: 12,
     paddingTop: 'calc(11px + env(safe-area-inset-top))', paddingBottom: 11,
     paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))',
@@ -342,11 +343,11 @@ function TopBar({ onMenu, onCapture, isMobile }) {
     {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
     <div style={{ flex: 1 }} />
-    <button onClick={() => setAi(dsOn ? 'claude' : 'deepseek')} title={`AI engine: ${aiName} — tap to switch`}
+    <button onClick={() => setAi(NEXT[ai] || 'claude')} title={`AI engine: ${aiName} — tap to switch`}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
-        fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: dsOn ? t.accent : t.t3,
-        background: dsOn ? t.accentBg : 'transparent', border: '1px solid ' + (dsOn ? t.accentLine : t.line2), borderRadius: 8 }}>
-      <Icon n="sparkles" s={14} c={dsOn ? t.accent : t.t3} />{aiName}
+        fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: altOn ? t.accent : t.t3,
+        background: altOn ? t.accentBg : 'transparent', border: '1px solid ' + (altOn ? t.accentLine : t.line2), borderRadius: 8 }}>
+      <Icon n="sparkles" s={14} c={altOn ? t.accent : t.t3} />{aiName}
     </button>
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
     <Btn kind="primary" icon="plus" onClick={onCapture}>New</Btn>
@@ -529,7 +530,7 @@ export default function App() {
   // AI engine ('claude' | 'deepseek'). Lives here (not TopBar-local) so the whole
   // tree re-renders on toggle and every "Generate with X" label hot-switches.
   // lib/claude.js#aiProvider reads the same localStorage key for actual routing.
-  const [ai, setAiRaw] = useState(() => { try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' } })
+  const [ai, setAiRaw] = useState(() => { try { const v = localStorage.getItem('course.ai'); return v === 'deepseek' || v === 'gemini' ? v : 'claude' } catch { return 'claude' } })
   const [route, setRoute] = useState(() => { try { return JSON.parse(localStorage.getItem('course.route')) || { screen: 'overview' } } catch { return { screen: 'overview' } } })
   const [hist, setHist] = useState([])
 
@@ -542,7 +543,7 @@ export default function App() {
   useEffect(() => { document.documentElement.setAttribute('data-theme', mode) }, [mode])
   useEffect(() => { if (!isMobile) setDrawer(false) }, [isMobile])
 
-  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'deepseek' ? 'Deepseek' : 'Claude', route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, route, isMobile, hist])
+  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'deepseek' ? 'Deepseek' : ai === 'gemini' ? 'Gemini' : 'Claude', route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, route, isMobile, hist])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>

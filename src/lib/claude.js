@@ -39,19 +39,23 @@ export const MODEL_PRICING = {
   'claude-opus-4-8':   { in: 15, out: 75 },
   'deepseek-chat':     { in: 0.27, out: 1.1 },
   'deepseek-reasoner': { in: 0.55, out: 2.19 },
+  'gemini-2.0-flash':  { in: 0.10, out: 0.40 },
+  'gemini-2.5-flash':  { in: 0.30, out: 2.50 },
 }
 
 // AI engine preference (set by the TopBar toggle, read at call time so flipping
 // the switch re-routes the very next AI call). 'claude' | 'deepseek'.
 export function aiProvider() {
-  try { return localStorage.getItem('course.ai') === 'deepseek' ? 'deepseek' : 'claude' } catch { return 'claude' }
+  try { const v = localStorage.getItem('course.ai'); return v === 'deepseek' || v === 'gemini' ? v : 'claude' } catch { return 'claude' }
 }
 
 // Resolve a capability tier ('light' | 'heavy') to a concrete model id for the
 // currently-selected engine. Callers ask for a tier, not a vendor model, so the
 // same call works on either engine. The shared `claude` proxy routes by id.
 export function pickModel(tier = 'light') {
-  if (aiProvider() === 'deepseek') return tier === 'heavy' ? 'deepseek-reasoner' : 'deepseek-chat'
+  const p = aiProvider()
+  if (p === 'deepseek') return tier === 'heavy' ? 'deepseek-reasoner' : 'deepseek-chat'
+  if (p === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.0-flash'
   return tier === 'heavy' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
 }
 
