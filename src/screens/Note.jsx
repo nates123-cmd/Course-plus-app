@@ -449,8 +449,8 @@ export function NoteScreen() {
   </div> : null
 
   return <div data-screen-label={'Note · ' + n.title} style={{ maxWidth: 980, margin: '0 auto', padding: isMobile ? '24px 18px 80px' : '30px 36px 90px' }}>
-    <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: rail ? 'minmax(0,1fr) 250px' : '1fr', gap: 40 }}>
-      {main}{rail && <div style={{ marginTop: isMobile ? 28 : 56 }}>{rail}</div>}
+    <div style={{ display: isMobile ? 'block' : 'grid', gridTemplateColumns: rail ? 'minmax(0,1fr) 250px' : 'minmax(0,1fr)', gap: 40 }}>
+      <div style={{ minWidth: 0 }}>{main}</div>{rail && <div style={{ marginTop: isMobile ? 28 : 56 }}>{rail}</div>}
     </div>
     {railOpen && <div onClick={() => setRailOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 310, background: 'rgba(0,0,0,0.35)' }}>
       <div onClick={(e) => e.stopPropagation()}><ClaudeRail note={n} onClose={() => setRailOpen(false)} onReload={reload} /></div></div>}
