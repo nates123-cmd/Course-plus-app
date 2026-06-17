@@ -140,7 +140,7 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
     `Source: ${sourceLabel}\nMaterial:\n${corpus}\n\n` +
     `Produce ${TYPE_BRIEF[typeId] || 'a brief'}.` +
     (instructions ? ` Instructions: ${instructions}` : '')
-  return (await claudeComplete(user, { system, model, max_tokens: 2000, onUsage })).trim()
+  return (await claudeComplete(user, { system, model, max_tokens: 8000, onUsage })).trim()
 }
 
 // "Update Document" guide. Given an existing document + a meeting, produce a
