@@ -72,8 +72,11 @@ function Chip({ active, onClick, children, tone }) {
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
   const { t, f, go, isMobile } = useApp()
-  const { projectById, allProjects } = useData()
+  const { projectById, allProjects, areas, areaName } = useData()
   const project = projectById(projectId)
+  // Pillar-only task (no project): show its pillar instead of "No project".
+  const pillarId = !project ? (task.area || null) : null
+  const pillarName = pillarId ? areaName(pillarId) : null
   const [mounted, setMounted] = useState(false)
   const [projOpen, setProjOpen] = useState(false)
   const [title, setTitle] = useState(task.label || '')
@@ -127,13 +130,19 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 16px', flexWrap: 'wrap' }}>
           <span style={{ position: 'relative', display: 'inline-flex' }}>
-            <span onClick={() => onReassign && setProjOpen((o) => !o)} title={onReassign ? 'Change project' : undefined}
+            <span onClick={() => onReassign && setProjOpen((o) => !o)} title={onReassign ? 'Change project or pillar' : undefined}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: onReassign ? 'pointer' : 'default' }}>
-              {project ? <><AreaDot areaId={project.area} s={7} />{project.name}</> : <span style={{ color: t.t3, fontWeight: 500 }}>No project</span>}
+              {project ? <><AreaDot areaId={project.area} s={7} />{project.name}</>
+                : pillarName ? <><AreaDot areaId={pillarId} s={7} />{pillarName} <span style={{ color: t.t3, fontWeight: 500 }}>· pillar</span></>
+                : <span style={{ color: t.t3, fontWeight: 500 }}>No project</span>}
               {onReassign && <Icon n="chevron-down" s={13} c={t.t3} />}</span>
-            {projOpen && <Popover onClose={() => setProjOpen(false)} width={244} maxHeight={300}>
-              {allProjects().map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={p.id === projectId}
-                onClick={() => { setProjOpen(false); if (p.id !== projectId) onReassign(p.id) }} />)}</Popover>}
+            {projOpen && <Popover onClose={() => setProjOpen(false)} width={252} maxHeight={340}>
+              <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '7px 12px 4px' }}>Pillar only</div>
+              {(areas || []).map((a) => <PopRow key={'a-' + a.id} dot={areaColor(t, a.id)} label={a.name} hint="pillar" on={!project && pillarId === a.id}
+                onClick={() => { setProjOpen(false); onReassign({ area: a.id }) }} />)}
+              <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px', borderTop: '1px solid ' + t.line, marginTop: 4 }}>Projects</div>
+              {allProjects().map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={!!project && p.id === projectId}
+                onClick={() => { setProjOpen(false); onReassign({ project: p.id }) }} />)}</Popover>}
           </span>
           {project && <span onClick={() => { go({ screen: 'project', id: projectId }); onClose() }} title="Open project"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11.5, color: t.t3, cursor: 'pointer' }}
