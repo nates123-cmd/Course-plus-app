@@ -35,7 +35,12 @@ async function getPipeline(onProgress) {
   return _pipePromise
 }
 
-// Blob -> mono Float32Array @ 16kHz that Whisper expects.
+export const SR_16K = SAMPLE_RATE
+
+// Blob -> mono Float32Array @ 16kHz that Whisper expects. Exported so the
+// diarizer can decode an enrollment clip through the exact same pipeline.
+export async function decodeMono16k(blob) { return blobToMono16k(blob) }
+
 async function blobToMono16k(blob) {
   const buf = await blob.arrayBuffer()
   const AC = window.AudioContext || window.webkitAudioContext
@@ -71,7 +76,16 @@ export const browserWhisperSupported =
 // blob -> transcript text. Mirrors transcribeAudio's onStatus contract so the
 // recorder can reuse the same UI states. onStatus('loading-model'|'transcribing'),
 // onModelProgress({ file, progress }) for the download bar. No speaker labels.
-export async function transcribeInBrowser(blob, { onStatus, onModelProgress } = {}) {
+export async function transcribeInBrowser(blob, opts = {}) {
+  const { text } = await transcribeInBrowserDetailed(blob, opts)
+  return text
+}
+
+// Like transcribeInBrowser but also returns the decoded mono-16k audio and the
+// chunk-level timestamps (return_timestamps) so the diarizer can slice each
+// segment out of the audio and label it by speaker. Shape:
+//   { text, audio: Float32Array@16k, chunks: [{ timestamp:[start,end], text }] }
+export async function transcribeInBrowserDetailed(blob, { onStatus, onModelProgress } = {}) {
   if (!blob || !blob.size) throw new Error('empty recording')
   onStatus?.('loading-model')
   const transcriber = await getPipeline((p) => {
@@ -79,6 +93,7 @@ export async function transcribeInBrowser(blob, { onStatus, onModelProgress } = 
   })
   onStatus?.('transcribing')
   const audio = await blobToMono16k(blob)
-  const out = await transcriber(audio, { chunk_length_s: 30, stride_length_s: 5 })
-  return (out?.text || '').trim()
+  const out = await transcriber(audio, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true })
+  const chunks = (out?.chunks || []).map((c) => ({ timestamp: c.timestamp, text: (c.text || '').trim() })).filter((c) => c.text)
+  return { text: (out?.text || '').trim(), audio, chunks }
 }
