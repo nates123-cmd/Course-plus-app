@@ -120,11 +120,17 @@ export function useRecorder() {
     }
     tabStream.current = tab
     setTabMixed(!!tab)
-    // Clean capture → better transcripts: cancel room echo (also stops feedback
-    // when tab audio plays through speakers), suppress hum, auto-level volume,
-    // mono (no stereo gain for speech, half the bytes).
+    // Faithful capture > "clean" capture. The common case is recording a Teams
+    // call where the other person comes out the laptop SPEAKER into the mic, so
+    // we DELIBERATELY disable the browser's voice-call DSP:
+    //  - echoCancellation would delete that speaker output (the remote voice we
+    //    actually want to keep),
+    //  - autoGainControl pumps levels and erases the loud-me / quiet-them
+    //    distance cue (useful later for telling the two voices apart),
+    //  - noiseSuppression can eat the band-limited speaker audio as "noise".
+    // Raw mono mic instead — captures both voices honestly.
     const mic = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
     })
     micStream.current = mic
     try {
