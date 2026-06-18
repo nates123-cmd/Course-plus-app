@@ -23,7 +23,7 @@ import { RecorderProvider, FloatingRecorder } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
 function SidebarContent({ onClose }) {
-  const { route, go } = useApp()
+  const { route, go, navOrTab } = useApp()
   const { areas, inbox, reload } = useData()
   const [open, setOpen] = usePersisted('course.areasOpen', () => Object.fromEntries(areas.map((a) => [a.id, a.open])))
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !(o[id] ?? (areas.find((a) => a.id === id) || {}).open) }))
@@ -77,7 +77,7 @@ function SidebarContent({ onClose }) {
   const projRow = (p, indent = 28, drag = null) => {
     const active = route.screen === 'project' && route.id === p.id
     const dragProps = drag ? { draggable: true, onDragStart: drag.onDragStart, onDragOver: drag.onDragOver, onDrop: drag.onDrop, onDragEnd: drag.onDragEnd } : {}
-    return <div key={p.id} {...dragProps} onClick={() => { go({ screen: 'project', id: p.id }); onClose && onClose() }}
+    return <div key={p.id} {...dragProps} onClick={(e) => { navOrTab(e, { screen: 'project', id: p.id }); onClose && onClose() }}
       style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5,
         fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
         padding: `6px 10px 6px ${indent}px`, borderRadius: 7, margin: '1px 0', opacity: drag && drag.dragging ? 0.4 : 1,
@@ -107,7 +107,7 @@ function SidebarContent({ onClose }) {
 
   const nav = (icon, label, screen, badge) => {
     const active = route.screen === screen
-    return <div onClick={() => { go({ screen }); onClose && onClose() }}
+    return <div onClick={(e) => { navOrTab(e, { screen }); onClose && onClose() }}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: F.ui,
         fontSize: 13, fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
         background: active ? t.sel : 'transparent', borderRadius: 8, padding: '8px 10px', marginBottom: 1,
@@ -122,7 +122,7 @@ function SidebarContent({ onClose }) {
 
   return <>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 8px 16px' }}>
-      <span onClick={() => { go({ screen: 'overview' }); onClose && onClose() }} style={{ cursor: 'pointer' }}>
+      <span onClick={(e) => { navOrTab(e, { screen: 'overview' }); onClose && onClose() }} style={{ cursor: 'pointer' }}>
         <span style={{ fontFamily: F.title, fontSize: 22, fontWeight: F.titleW, color: t.t1, letterSpacing: F.titleSpacing }}>Course</span></span>
       {onClose && <IconBtn n="x" s={20} onClick={onClose} />}
     </div>
@@ -159,7 +159,7 @@ function SidebarContent({ onClose }) {
         const onHold = a.projects.filter((p) => p.status === 'on-hold')
         const onHoldKey = a.id + '::onhold'
         return <div key={a.id}>
-          <div onClick={() => { go({ screen: 'area', id: a.id }); onClose && onClose() }}
+          <div onClick={(e) => { navOrTab(e, { screen: 'area', id: a.id }); onClose && onClose() }}
             style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600,
               color: areaActive ? t.t1 : t.t2, cursor: 'pointer', padding: '6px 10px', borderRadius: 7,
               background: areaActive ? t.sel : 'transparent', borderLeft: '2px solid ' + (areaActive ? t.accent : 'transparent') }}
@@ -222,7 +222,7 @@ function SidebarContent({ onClose }) {
     <div style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
       textTransform: 'uppercase', color: t.t3, padding: '20px 10px 8px' }}>Topics</div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 6px' }}>
-      {TOPICS.map((tp) => <span key={tp} onClick={() => { go({ screen: 'library', tag: tp }); onClose && onClose() }}
+      {TOPICS.map((tp) => <span key={tp} onClick={(e) => { navOrTab(e, { screen: 'library', tag: tp }); onClose && onClose() }}
         style={{ fontFamily: F.ui, fontSize: 11, fontWeight: 500, color: t.tagText, background: t.tagBg, borderRadius: 6, padding: '2px 9px', cursor: 'pointer' }}>{tp}</span>)}
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 10.5, color: t.t3,
@@ -240,7 +240,7 @@ function Sidebar() {
 // ── Global search (search-first; Ask is the fall-through) ───────
 const GROUP_META = { project: 'Projects', task: 'Tasks', doc: 'Notes & docs' }
 function GlobalSearch() {
-  const { go } = useApp()
+  const { go, navOrTab } = useApp()
   const { globalSearch } = useData()
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
@@ -256,11 +256,11 @@ function GlobalSearch() {
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [])
 
-  const choose = (item) => {
-    if (!item || item._row === 'ask') go({ screen: 'ask', query: qTrim || 'What did Jon say about novation last week?' })
-    else if (item.type === 'project') go({ screen: 'project', id: item.id })
-    else if (item.type === 'task') go({ screen: 'project', id: item.projectId })
-    else if (item.type === 'doc') go({ screen: 'note', id: item.id })
+  const choose = (item, e) => {
+    if (!item || item._row === 'ask') navOrTab(e, { screen: 'ask', query: qTrim || 'What did Jon say about novation last week?' })
+    else if (item.type === 'project') navOrTab(e, { screen: 'project', id: item.id })
+    else if (item.type === 'task') navOrTab(e, { screen: 'project', id: item.projectId })
+    else if (item.type === 'doc') navOrTab(e, { screen: 'note', id: item.id })
     setOpen(false); setQ(''); inputRef.current && inputRef.current.blur()
   }
   const onKey = (e) => {
@@ -283,7 +283,7 @@ function GlobalSearch() {
     const tag = item.type === 'task' ? (item.next ? 'Next' : item.waiting ? 'Waiting · ' + item.waiting : item.due ? item.due : item.done ? 'Done' : null)
       : item.type === 'doc' ? (item.kind === 'meeting' ? 'Meeting' : item.kind === 'artifact' ? 'Artifact' : 'Note')
       : (STATUS[item.status] ? STATUS[item.status].label : null)
-    return <div onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); choose(item) }}
+    return <div onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); choose(item, e) }}
       style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', background: on ? t.sel : 'transparent' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 7, flex: 'none', background: on ? t.card : t.sel, border: '1px solid ' + (on ? t.line2 : 'transparent') }}>
         {item.type === 'project' ? <AreaDot areaId={item.area} s={9} /> : <Icon n={iconN} s={15} c={item.done ? t.t3 : t.t2} />}</span>
@@ -315,7 +315,7 @@ function GlobalSearch() {
         {qTrim && grouped.length === 0 && <div style={{ fontFamily: F.ui, fontSize: 12.5, color: t.t3, padding: '14px 12px 8px' }}>No titles match “{qTrim}”.</div>}
         {!qTrim && <div style={{ fontFamily: F.ui, fontSize: 12.5, color: t.t3, padding: '14px 12px 6px', lineHeight: 1.5 }}>Search across every project, task, and note by title — or ask a question to search the contents.</div>}
       </div>
-      <div onMouseEnter={() => setActive(askI)} onMouseDown={(e) => { e.preventDefault(); choose(flat[askI]) }}
+      <div onMouseEnter={() => setActive(askI)} onMouseDown={(e) => { e.preventDefault(); choose(flat[askI], e) }}
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', borderTop: '1px solid ' + t.line, background: askOn ? t.accentBg : t.panel }}>
         <Icon n="sparkles" s={16} c={t.accent} />
         <span style={{ flex: 1, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>
@@ -521,6 +521,81 @@ function FullScreenMsg({ children, spin }) {
     {spin && <Icon n="loader-2" s={18} c={t.t1} />}{children}</div>
 }
 
+// ── Tabs ────────────────────────────────────────────────────────
+// A short, live label for a tab from its route (project/note/area names
+// resolve against loaded data; falls back to the screen's generic name).
+function useTabTitle() {
+  const { projectById, areaById, noteById, artifactById } = useData()
+  return (r) => {
+    if (!r) return 'Course'
+    switch (r.screen) {
+      case 'overview': return 'Work'
+      case 'agenda':   return 'Agenda'
+      case 'ask':      return 'Ask'
+      case 'inbox':    return 'Inbox'
+      case 'library':  return r.tag ? '#' + r.tag : 'Library'
+      case 'area':     return areaById(r.id)?.name || 'Area'
+      case 'project':  return projectById(r.id)?.name || 'Project'
+      case 'note':     return noteById(r.id)?.title || 'Note'
+      case 'artifact': return artifactById(r.id)?.title || 'Artifact'
+      case 'meeting':
+      case 'record':   return (r.title && r.title.trim()) || 'Recording'
+      default:         return 'Course'
+    }
+  }
+}
+
+const TAB_ICON = { overview: 'layout-grid', agenda: 'calendar', ask: 'sparkles', inbox: 'inbox',
+  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export',
+  meeting: 'microphone', record: 'microphone' }
+
+function TabBar() {
+  const { tabs, activeId, selectTab, closeTab, newTab } = useApp()
+  const title = useTabTitle()
+  const multi = tabs.length > 1
+  return <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, padding: '6px 10px 0', background: t.panel,
+    borderBottom: '1px solid ' + t.line, flex: 'none', overflowX: 'auto' }}>
+    {tabs.map((tab) => {
+      const on = tab.id === activeId
+      return <div key={tab.id} onClick={() => selectTab(tab.id)}
+        onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); closeTab(tab.id) } }}
+        title={title(tab.route)}
+        style={{ display: 'flex', alignItems: 'center', gap: 7, maxWidth: 196, minWidth: 116, flex: '0 1 auto',
+          padding: '7px 9px 9px', cursor: 'pointer', borderRadius: '9px 9px 0 0',
+          background: on ? t.bg : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'),
+          borderBottom: 'none', marginBottom: -1, color: on ? t.t1 : t.t3,
+          fontFamily: F.ui, fontSize: 12.5, fontWeight: on ? 600 : 500 }}
+        onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.sel }}
+        onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent' }}>
+        <Icon n={TAB_ICON[tab.route?.screen] || 'file-text'} s={14} c={on ? t.t2 : t.t3} />
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title(tab.route)}</span>
+        {multi && <span onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }} title="Close tab (⌘W)"
+          style={{ display: 'inline-flex', borderRadius: 5, padding: 1, color: t.t3, flex: 'none' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t1 }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+          <Icon n="x" s={13} /></span>}
+      </div>
+    })}
+    <span onClick={newTab} title="New tab (⌘T)"
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
+        marginLeft: 2, marginBottom: 4, borderRadius: 7, cursor: 'pointer', color: t.t3, flex: 'none' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t1 }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+      <Icon n="plus" s={16} /></span>
+  </div>
+}
+
+// Tab state seed: prefer the persisted multi-tab store; otherwise migrate the
+// pre-tabs single `course.route` into a one-tab session.
+const newTabId = () => { try { return crypto.randomUUID() } catch { return 't' + Date.now() + Math.round(Math.random() * 1e6) } }
+function seedTabs() {
+  try { const s = JSON.parse(localStorage.getItem('course.tabs')); if (s && Array.isArray(s.tabs) && s.tabs.length && s.tabs.find((x) => x.id === s.activeId)) return s } catch {}
+  let route = { screen: 'overview' }
+  try { route = JSON.parse(localStorage.getItem('course.route')) || route } catch {}
+  const id = newTabId()
+  return { tabs: [{ id, route, hist: [] }], activeId: id }
+}
+
 export default function App() {
   const { status, error, reload } = useData()
   const isMobile = useIsMobile()
@@ -531,19 +606,58 @@ export default function App() {
   // tree re-renders on toggle and every "Generate with X" label hot-switches.
   // lib/claude.js#aiProvider reads the same localStorage key for actual routing.
   const [ai, setAiRaw] = useState(() => { try { return localStorage.getItem('course.ai') === 'gemini' ? 'gemini' : 'claude' } catch { return 'claude' } })
-  const [route, setRoute] = useState(() => { try { return JSON.parse(localStorage.getItem('course.route')) || { screen: 'overview' } } catch { return { screen: 'overview' } } })
-  const [hist, setHist] = useState([])
+  // Multi-tab session: each tab owns its own route + back-history. The active
+  // tab's route drives the Screen + TopBar; the recorder stays app-level so a
+  // live recording survives both navigation and tab switches.
+  const [tabState, setTabState] = useState(seedTabs)
+  const { tabs, activeId } = tabState
+  const activeTab = tabs.find((x) => x.id === activeId) || tabs[0]
+  const route = activeTab.route
 
   const setMode = (m) => { setModeRaw(m); localStorage.setItem('course.mode', m) }
   const setAi = (v) => { setAiRaw(v); try { localStorage.setItem('course.ai', v) } catch {} }
   const sameRoute = (a, b) => a && b && a.screen === b.screen && a.id === b.id
-  const applyRoute = (r) => { setRoute(r); localStorage.setItem('course.route', JSON.stringify(r)); setDrawer(false); const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
-  const go = (r) => { if (!sameRoute(r, route)) setHist((h) => [...h, route].slice(-50)); applyRoute(r) }
-  const back = () => { setHist((h) => { if (!h.length) return h; applyRoute(h[h.length - 1]); return h.slice(0, -1) }) }
+  const resetScroll = () => { const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
+  const go = (r) => {
+    setTabState((s) => ({ ...s, tabs: s.tabs.map((tb) => tb.id !== s.activeId ? tb
+      : sameRoute(r, tb.route) ? tb : { ...tb, route: r, hist: [...tb.hist, tb.route].slice(-50) }) }))
+    setDrawer(false); resetScroll()
+  }
+  const back = () => { setTabState((s) => ({ ...s, tabs: s.tabs.map((tb) => (tb.id !== s.activeId || !tb.hist.length) ? tb
+    : { ...tb, route: tb.hist[tb.hist.length - 1], hist: tb.hist.slice(0, -1) }) })); resetScroll() }
+  const openTab = (r) => setTabState((s) => { const id = newTabId(); return { tabs: [...s.tabs, { id, route: r || { screen: 'overview' }, hist: [] }], activeId: id } })
+  const newTab = () => openTab({ screen: 'overview' })
+  const selectTab = (id) => { setTabState((s) => s.activeId === id ? s : { ...s, activeId: id }); resetScroll() }
+  const closeTab = (id) => setTabState((s) => {
+    const idx = s.tabs.findIndex((x) => x.id === id); if (idx < 0) return s
+    const rest = s.tabs.filter((x) => x.id !== id)
+    if (!rest.length) { const nid = newTabId(); return { tabs: [{ id: nid, route: { screen: 'overview' }, hist: [] }], activeId: nid } }
+    const activeIdNext = id === s.activeId ? (rest[idx] || rest[idx - 1] || rest[0]).id : s.activeId
+    return { tabs: rest, activeId: activeIdNext }
+  })
+  // navigate, or open in a new tab when ⌘/Ctrl is held (Notion-style)
+  const navOrTab = (e, r) => { if (e && (e.metaKey || e.ctrlKey)) openTab(r); else go(r) }
+
+  useEffect(() => { try { localStorage.setItem('course.tabs', JSON.stringify(tabState)) } catch {} }, [tabState])
   useEffect(() => { document.documentElement.setAttribute('data-theme', mode) }, [mode])
   useEffect(() => { if (!isMobile) setDrawer(false) }, [isMobile])
+  // Keyboard: ⌘T new tab, ⌘W close active, ⌘1–9 jump to tab N. (Tauri honors
+  // these; some are reserved by the browser in the plain PWA.)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      if (e.key === 't') { e.preventDefault(); newTab() }
+      else if (e.key === 'w') { e.preventDefault(); closeTab(activeId) }
+      else if (e.key >= '1' && e.key <= '9') { const i = +e.key - 1; if (tabs[i]) { e.preventDefault(); selectTab(tabs[i].id) } }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabs, activeId])
 
-  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'gemini' ? 'Gemini' : 'Claude', route, go, back, canBack: hist.length > 0, isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, route, isMobile, hist])
+  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'gemini' ? 'Gemini' : 'Claude',
+    route, go, back, navOrTab, canBack: activeTab.hist.length > 0,
+    tabs, activeId, openTab, newTab, selectTab, closeTab,
+    isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, tabState, isMobile])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>
@@ -553,8 +667,9 @@ export default function App() {
       <div style={{ display: 'flex', height: '100dvh', maxWidth: '100%', overflowX: 'hidden', background: t.bg, color: t.t1, fontFamily: F.body }}>
         {!isMobile && <Sidebar />}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {!isMobile && <TabBar />}
           <TopBar onMenu={() => setDrawer(true)} onCapture={() => setCapture(true)} isMobile={isMobile} />
-          <div id="course-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}><Screen /></div>
+          <div id="course-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}><Screen key={activeId} /></div>
         </div>
         {isMobile && drawer && <div onClick={() => setDrawer(false)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.45)' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: 288, maxWidth: '86%', height: '100%', background: t.panel, borderRight: '1px solid ' + t.line, display: 'flex', flexDirection: 'column', paddingTop: 'calc(16px + env(safe-area-inset-top))', paddingBottom: 'calc(16px + env(safe-area-inset-bottom))', paddingLeft: 'max(12px, env(safe-area-inset-left))', paddingRight: 12, boxShadow: t.shadow, overflowY: 'auto' }}>
