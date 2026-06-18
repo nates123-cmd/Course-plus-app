@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "build:gh-pages": "BASE_URL=/Course-plus-app/ vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -19,6 +22,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@vitejs/plugin-react": "^6.0.1",
     "vite": "^8.0.12"
   }

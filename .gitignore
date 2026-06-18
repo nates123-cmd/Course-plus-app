@@ -15,3 +15,7 @@ mcp/.session.json
 
 # Supabase CLI temp
 supabase/.temp/
+
+# Tauri desktop build artifacts
+src-tauri/target/
+src-tauri/gen/
