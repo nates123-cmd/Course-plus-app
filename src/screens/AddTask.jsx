@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, Popover, PopRow, AreaDot, areaColor } from '../kit'
+import { Icon, Btn, Popover, PopRow, AreaDot, areaColor, DatePill } from '../kit'
 import { createTask } from '../lib/db'
 
 export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd = false, onAdded }) {
@@ -20,6 +20,7 @@ export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd 
   const [text, setText] = useState('')
   const [target, setTarget] = useState(defaultTarget || null)
   const [pickOpen, setPickOpen] = useState(false)
+  const [due, setDue] = useState(null) // optional {y,m,d}
 
   const targetLabel = () => {
     if (target?.project) { const p = projectById(target.project); return p ? { dot: p.area, name: p.name } : null }
@@ -31,9 +32,9 @@ export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd 
   const commit = async () => {
     const v = text.trim()
     if (!v || !target) return // keep the bar open until there's a label + a target
-    setText(''); setAdding(false)
+    setText(''); setDue(null); setAdding(false)
     await createTask(target.project || null, {
-      label: v, area: target.area || null, sort: 0, next: !!surfaceOnAdd,
+      label: v, area: target.area || null, sort: 0, next: !!surfaceOnAdd, dueDate: due || null,
     })
     onAdded && onAdded()
   }
@@ -67,6 +68,9 @@ export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd 
         {allProjects().map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={target?.project === p.id}
           onClick={() => { setTarget({ project: p.id }); setPickOpen(false) }} />)}</Popover>}
     </span>}
+    <span style={{ flex: 'none' }}>
+      <DatePill value={due} onChange={setDue} label="Due" empty="+ Due date" />
+    </span>
     <Btn kind="primary" size="sm" icon="check" onClick={commit}>Add</Btn>
   </div>
 }
