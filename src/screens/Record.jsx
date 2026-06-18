@@ -142,7 +142,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { allProjects, projectById, areaOfProject, areas, areaById, reload } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
   // Pickers prioritize active → on-hold → ideas (archived last).
@@ -175,9 +175,22 @@ export function RecordScreen() {
   useEffect(() => {
     if (phase !== 'idle') return
     const patch = {}
+    // Launched from a recurring series → prefill defaults (people, links, area)
+    // and bind the series so the saved meeting becomes one of its instances.
+    const s = route.series ? seriesById(route.series) : null
+    if (route.series) {
+      patch.seriesId = route.series
+      if (s) {
+        if (s.project) patch.home = s.project
+        else if (s.area) patch.pillar = s.area
+        patch.projects = s.projects || []
+        patch.people = s.people || []
+        if (route.agenda != null) patch.agenda = route.agenda
+      }
+    }
     if (route.project) patch.home = route.project
     if (route.title != null && !title) patch.title = route.title
-    if (!route.project && !home && !pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
+    if (!route.project && !route.series && !home && !pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
     if (Object.keys(patch).length) rec.setMeta(patch)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -242,7 +255,7 @@ export function RecordScreen() {
       const allLinked = [...new Set([home, ...linked].filter(Boolean))]
       const note = {
         kind: 'meeting', title: (title || '').trim() || 'Untitled meeting',
-        project: home || null, area: destAreaId || null,
+        project: home || null, area: destAreaId || null, seriesId: rec.seriesId || null,
         projects: allLinked, people: people || [], tags: synth.tags || [],
         terms: [], summary: synth.summary || '', transcript: transcriptText || null,
         agenda: (agenda || '').trim() || null, nextSteps: synth.nextSteps || null,
@@ -252,8 +265,9 @@ export function RecordScreen() {
       if ((notes || '').trim()) note.body = markdownToBlocks(notes)
       const noteId = await rec.finalizeNote(note)
       if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
+      const boundSeries = rec.seriesId
       rec.clear(); await reload()
-      go(home ? { screen: 'project', id: home } : { screen: 'note', id: noteId })
+      go(boundSeries ? { screen: 'series', id: boundSeries } : home ? { screen: 'project', id: home } : { screen: 'note', id: noteId })
     } catch (e) { rec.setError(String(e?.message || e)); setSaving(false) }
   }
 
@@ -298,6 +312,10 @@ export function RecordScreen() {
       <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Meeting</span>
       {(title || notes || agenda || transcriptText) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 10.5, color: t.t3 }}>
         <Icon n="cloud-check" s={12} c={t.t3} />Auto-saved · recovers if you leave</span>}
+      {rec.seriesId && seriesById(rec.seriesId) && <span onClick={() => go({ screen: 'series', id: rec.seriesId })} title="Part of a recurring series"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent,
+          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
+        <Icon n="repeat" s={12} c={t.accent} />{seriesById(rec.seriesId).name}</span>}
     </div>
     <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
       style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />

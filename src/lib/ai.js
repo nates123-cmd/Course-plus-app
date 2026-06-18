@@ -247,6 +247,69 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
   }
 }
 
+// ── Meeting Series (recurring meetings) ────────────────────────────
+// Render a list of prior instances as a compact, dated digest for the series
+// AI calls. instances = [{ date, summary, nextSteps, actions? }] newest first.
+function seriesInstanceDigest(instances = [], { withActions = false } = {}) {
+  return (instances || []).map((n) => {
+    const parts = [`### ${n.date || 'Undated'} — ${n.title || 'Meeting'}`]
+    if (n.summary && n.summary.trim()) parts.push(n.summary.trim())
+    if (n.nextSteps && n.nextSteps.trim()) parts.push('Next steps I noted:\n' + n.nextSteps.trim())
+    if (withActions && (n.actions || []).length) parts.push('My action items: ' + n.actions.map((a) => a.text).filter(Boolean).join('; '))
+    return parts.join('\n')
+  }).join('\n\n---\n\n')
+}
+
+// Prep the NEXT meeting in a series: a suggested agenda built from open loops,
+// follow-ups on prior commitments, and recurring topics. Light model. Returns
+// { agenda } (markdown bullets) to pre-fill the composer agenda.
+export async function prepFromSeries({ name = '', standingContext = '', cadence = '', instances = [] } = {}) {
+  const recent = instances.slice(0, 5)
+  const system =
+    'You prep the next meeting in a recurring series for Nate (the note-taker, always a participant). ' +
+    'From the standing context and prior meetings, produce a focused agenda for the UPCOMING meeting: ' +
+    'open loops to close, follow-ups on what was promised, and recurring topics worth checking. ' +
+    'Be specific and reference what actually happened. Return strict JSON only — no preamble.'
+  const parts = [`Recurring meeting: "${name}"${cadence ? ` (${cadence})` : ''}`]
+  if (standingContext.trim()) parts.push(`Standing context (who this is / what we always cover):\n${standingContext.trim()}`)
+  if (recent.length) parts.push(`Recent meetings (newest first):\n\n${seriesInstanceDigest(recent)}`)
+  else parts.push('No prior meetings recorded yet — propose a sensible first-meeting agenda from the standing context.')
+  const user = parts.join('\n\n---\n\n') + '\n\n' +
+    'Return ONLY JSON: {"agenda": string (markdown "- " bullets — the agenda for the next meeting; ' +
+    'group under short "## Heading" sections only if it helps; lead with anything left open)}'
+  const raw = await claudeComplete(user, { system, model: pickModel('light'), max_tokens: 900 })
+  const j = extractJSON(raw) || {}
+  return { agenda: (typeof j.agenda === 'string' && j.agenda) ? j.agenda : (raw || '').trim() }
+}
+
+// Synthesize the whole SERIES across its instances: the arc over time, still-open
+// threads, commitments (mine) and their status, and decisions. Heavy model.
+export async function synthesizeSeries({ name = '', standingContext = '', instances = [] } = {}) {
+  const recent = instances.slice(0, 12)
+  const system =
+    'You synthesize a recurring meeting series for Nate (the note-taker, always a participant). ' +
+    'Read the standing context and the chronological meetings, then surface the THROUGH-LINE: how the ' +
+    'relationship/work has moved, what is still unresolved, what Nate committed to and whether it got done, ' +
+    'and key decisions. Be concrete and cite which meeting things came from by date. Return strict JSON only.'
+  const parts = [`Recurring meeting: "${name}"`]
+  if (standingContext.trim()) parts.push(`Standing context:\n${standingContext.trim()}`)
+  parts.push(`Meetings (newest first):\n\n${seriesInstanceDigest(recent, { withActions: true })}`)
+  const user = parts.join('\n\n---\n\n') + '\n\n' +
+    'Return ONLY JSON (no fences). Use real "\\n" and "- " for bullets. Shape: {' +
+    '"arc": string (markdown — the narrative of this series over time, a few short paragraphs or bullets), ' +
+    '"openThreads": [{"text": string, "sinceDate": string}] (loops still genuinely open — dedupe across meetings, drop anything later resolved), ' +
+    '"commitments": [{"text": string, "done": boolean}] (things NATE committed to — done=true only if a later meeting shows it happened), ' +
+    '"decisions": string[] (concrete decisions reached)}'
+  const raw = await claudeComplete(user, { system, model: pickModel('heavy'), max_tokens: 4000 })
+  const j = extractJSON(raw) || {}
+  return {
+    arc: typeof j.arc === 'string' ? j.arc : '',
+    openThreads: Array.isArray(j.openThreads) ? j.openThreads : [],
+    commitments: Array.isArray(j.commitments) ? j.commitments : [],
+    decisions: Array.isArray(j.decisions) ? j.decisions : [],
+  }
+}
+
 // ── Note Claude-rail actions ───────────────────────────────────────
 export const noteContext = (note) => {
   const body = (note.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, n) => (n + 1) + '. ' + i).join('\n') : ''))).join('\n')

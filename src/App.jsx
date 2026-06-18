@@ -8,7 +8,7 @@ import { useData } from './DataContext'
 import { t, F } from './theme/tokens'
 import { Icon, IconBtn, Btn, StatusPill, AreaDot, areaColor, usePersisted, Popover, PopRow, STATUS, statusSkin } from './kit'
 import { TOPICS } from './data'
-import { createArea, createProject, createNote, createTask, createInbox, reorderProjects } from './lib/db'
+import { createArea, createProject, createNote, createTask, createInbox, reorderProjects, createSeries } from './lib/db'
 
 import { OverviewScreen, AreaScreen } from './screens/Overview'
 import { ProjectScreen } from './screens/Project'
@@ -19,12 +19,13 @@ import { LibraryScreen } from './screens/Library'
 import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
+import { SeriesScreen } from './screens/Series'
 import { RecorderProvider, FloatingRecorder } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
 function SidebarContent({ onClose }) {
   const { route, go, navOrTab } = useApp()
-  const { areas, inbox, reload } = useData()
+  const { areas, inbox, reload, activeSeries, instancesForSeries } = useData()
   const [open, setOpen] = usePersisted('course.areasOpen', () => Object.fromEntries(areas.map((a) => [a.id, a.open])))
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !(o[id] ?? (areas.find((a) => a.id === id) || {}).open) }))
   const isOpen = (a) => open[a.id] ?? a.open
@@ -67,6 +68,12 @@ function SidebarContent({ onClose }) {
     if (!nm) return
     try { const id = await createProject(areaId, nm, { sort: (areas.find((a) => a.id === areaId)?.projects.length) || 0 }); await reload(); setOpen((o) => ({ ...o, [areaId]: true })); go({ screen: 'project', id }); onClose && onClose() }
     catch (e) { window.alert('Could not add project: ' + (e?.message || e)) }
+  }
+  const commitSeries = async () => {
+    const nm = newName.trim(); setNewName(''); setAdding(null)
+    if (!nm) return
+    try { const id = await createSeries({ name: nm }); await reload(); go({ screen: 'series', id }); onClose && onClose() }
+    catch (e) { window.alert('Could not add series: ' + (e?.message || e)) }
   }
   const addInputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 7, outline: 0,
     background: t.card, fontFamily: F.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }
@@ -132,6 +139,34 @@ function SidebarContent({ onClose }) {
     {nav('sparkles', 'Ask', 'ask')}
     {nav('inbox', 'Inbox', 'inbox', inboxCount)}
     {nav('stack-2', 'Library', 'library')}
+
+    {/* Recurring meetings (series) — sibling to Areas; spans projects */}
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '20px 10px 8px' }}>
+        <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
+          textTransform: 'uppercase', color: t.t3, flex: 1 }}>Series</span>
+        <span onClick={() => { setAdding('series'); setNewName('') }} title="New recurring meeting"
+          style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', color: t.t3, borderRadius: 5, padding: 2 }}
+          onMouseEnter={(e) => e.currentTarget.style.color = t.accent} onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
+          <Icon n="plus" s={14} /></span>
+      </div>
+      {adding === 'series' && <div style={{ padding: '0 10px 6px' }}>
+        <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitSeries(); if (e.key === 'Escape') { setNewName(''); setAdding(null) } }}
+          onBlur={() => { if (newName.trim()) commitSeries(); else setAdding(null) }}
+          placeholder="e.g. Jon 1:1…" style={addInputStyle} /></div>}
+      {activeSeries.map((s) => { const sActive = route.screen === 'series' && route.id === s.id
+        return <div key={s.id} onClick={(e) => { navOrTab(e, { screen: 'series', id: s.id }); onClose && onClose() }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5, fontWeight: sActive ? 600 : 500,
+            color: sActive ? t.t1 : t.t2, cursor: 'pointer', padding: '6px 10px', borderRadius: 7, margin: '1px 0',
+            background: sActive ? t.sel : 'transparent', borderLeft: '2px solid ' + (sActive ? t.accent : 'transparent') }}
+          onMouseEnter={(e) => { if (!sActive) e.currentTarget.style.background = t.sel }}
+          onMouseLeave={(e) => { if (!sActive) e.currentTarget.style.background = 'transparent' }}>
+          <Icon n="repeat" s={13} c={t.t3} />
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+          <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{instancesForSeries(s.id).length || ''}</span>
+        </div> })}
+    </>
 
     <div style={{ display: 'flex', alignItems: 'center', padding: '20px 10px 8px' }}>
       <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
@@ -507,6 +542,7 @@ function Screen() {
     case 'project':  return <ProjectScreen key={route.id} />
     case 'note':     return <NoteScreen key={route.id} />
     case 'artifact': return <ArtifactScreen key={route.id} />
+    case 'series':   return <SeriesScreen key={route.id} />
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />
@@ -525,7 +561,7 @@ function FullScreenMsg({ children, spin }) {
 // A short, live label for a tab from its route (project/note/area names
 // resolve against loaded data; falls back to the screen's generic name).
 function useTabTitle() {
-  const { projectById, areaById, noteById, artifactById } = useData()
+  const { projectById, areaById, noteById, artifactById, seriesById } = useData()
   return (r) => {
     if (!r) return 'Course'
     switch (r.screen) {
@@ -538,6 +574,7 @@ function useTabTitle() {
       case 'project':  return projectById(r.id)?.name || 'Project'
       case 'note':     return noteById(r.id)?.title || 'Note'
       case 'artifact': return artifactById(r.id)?.title || 'Artifact'
+      case 'series':   return seriesById(r.id)?.name || 'Series'
       case 'meeting':
       case 'record':   return (r.title && r.title.trim()) || 'Recording'
       default:         return 'Course'
@@ -546,7 +583,7 @@ function useTabTitle() {
 }
 
 const TAB_ICON = { overview: 'layout-grid', agenda: 'calendar', ask: 'sparkles', inbox: 'inbox',
-  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export',
+  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
   meeting: 'microphone', record: 'microphone' }
 
 function TabBar() {

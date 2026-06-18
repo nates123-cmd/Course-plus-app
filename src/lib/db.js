@@ -17,8 +17,15 @@ function mapNote(r) {
     date: r.date, updated: r.updated, indexed: r.indexed, status: r.status,
     rawWords: r.raw_words || undefined, transcript: r.transcript || undefined, summary: r.summary || undefined,
     agenda: r.agenda || undefined, incomplete: typeof r.incomplete === 'boolean' ? r.incomplete : undefined,
-    nextSteps: r.next_steps || undefined,
+    nextSteps: r.next_steps || undefined, seriesId: r.series_id || undefined,
     terms: r.terms || [], actions: r.actions || [], body: r.body || [], related: r.related || [],
+  }
+}
+function mapSeries(r) {
+  return {
+    id: r.id, name: r.name, people: r.people || [], project: r.project || null, area: r.area || null,
+    projects: r.projects || [], standingContext: r.standing_context || '', cadence: r.cadence || '',
+    archived: !!r.archived, created: r.created, updated: r.updated, updatedAt: r.updated_at,
   }
 }
 function mapInbox(r) {
@@ -75,7 +82,7 @@ function groupBy(arr, key) {
 
 // ── load everything ────────────────────────────────────────────────
 export async function loadAll() {
-  const [areas, projects, tasks, ms, upd, art, notes, inbox, assets] = await Promise.all([
+  const [areas, projects, tasks, ms, upd, art, notes, inbox, assets, series] = await Promise.all([
     supabase.from('cp_areas').select('*'),
     supabase.from('cp_projects').select('*'),
     supabase.from('cp_tasks').select('*'),
@@ -85,14 +92,16 @@ export async function loadAll() {
     supabase.from('cp_notes').select('*').order('updated_at', { ascending: false }),
     supabase.from('cp_inbox').select('*').order('created_at', { ascending: false }),
     supabase.from('cp_assets').select('*').order('created_at', { ascending: false }),
+    supabase.from('cp_series').select('*').order('updated_at', { ascending: false }),
   ])
-  const err = areas.error || projects.error || tasks.error || ms.error || upd.error || art.error || notes.error || inbox.error || assets.error
+  const err = areas.error || projects.error || tasks.error || ms.error || upd.error || art.error || notes.error || inbox.error || assets.error || series.error
   if (err) throw err
   return {
     areas: assemble(areas.data || [], projects.data || [], tasks.data || [], ms.data || [], upd.data || [], art.data || []),
     notes: (notes.data || []).map(mapNote),
     inbox: (inbox.data || []).map(mapInbox),
     assets: (assets.data || []).map(mapAsset),
+    series: (series.data || []).map(mapSeries),
   }
 }
 
@@ -105,7 +114,7 @@ function noteRow(n) {
     date: n.date, updated: n.updated, indexed: n.indexed ?? true, status: n.status ?? 2,
     raw_words: n.rawWords ?? null, transcript: n.transcript ?? null, summary: n.summary ?? null, terms: n.terms || [],
     agenda: n.agenda ?? null, incomplete: typeof n.incomplete === 'boolean' ? n.incomplete : null,
-    next_steps: n.nextSteps ?? null,
+    next_steps: n.nextSteps ?? null, series_id: n.seriesId ?? null,
     actions: n.actions || [], body: n.body || [], related: n.related || [],
   }
 }
@@ -163,7 +172,7 @@ const PATCH_COLS = {
   title: 'title', body: 'body', summary: 'summary', tags: 'tags', actions: 'actions',
   people: 'people', terms: 'terms', status: 'status', kind: 'kind', project: 'project',
   area: 'area', indexed: 'indexed', rawWords: 'raw_words', reference: 'reference',
-  related: 'related', transcript: 'transcript', projects: 'projects', agenda: 'agenda', incomplete: 'incomplete', nextSteps: 'next_steps',
+  related: 'related', transcript: 'transcript', projects: 'projects', agenda: 'agenda', incomplete: 'incomplete', nextSteps: 'next_steps', seriesId: 'series_id',
 }
 export async function updateNote(id, patch) {
   const row = { updated: patch.updated ?? 'now', updated_at: new Date().toISOString() }
@@ -184,6 +193,38 @@ export async function createInbox(item) {
   const { error } = await supabase.from('cp_inbox').insert(inboxRow({ ...item, id }))
   if (error) throw error
   return id
+}
+
+// ── series (recurring meetings) ────────────────────────────────────
+function seriesRow(s) {
+  return {
+    id: s.id, name: s.name || 'Untitled series', people: s.people || [],
+    project: s.project ?? null, area: s.area ?? null, projects: s.projects || [],
+    standing_context: s.standingContext ?? null, cadence: s.cadence ?? null,
+    archived: !!s.archived, created: s.created ?? null, updated: s.updated ?? 'now',
+  }
+}
+export async function createSeries(series = {}) {
+  const id = series.id || uuid()
+  const { error } = await supabase.from('cp_series').insert(seriesRow({ ...series, id }))
+  if (error) throw error
+  return id
+}
+const SERIES_COLS = {
+  name: 'name', people: 'people', project: 'project', area: 'area', projects: 'projects',
+  standingContext: 'standing_context', cadence: 'cadence', archived: 'archived',
+}
+export async function updateSeries(id, patch) {
+  const row = { updated: patch.updated ?? 'now', updated_at: new Date().toISOString() }
+  for (const k in patch) if (SERIES_COLS[k]) row[SERIES_COLS[k]] = patch[k]
+  const { error } = await supabase.from('cp_series').update(row).eq('id', id)
+  if (error) throw error
+}
+export async function deleteSeries(id) {
+  // Orphan the instances rather than delete them — null out their series link.
+  await supabase.from('cp_notes').update({ series_id: null }).eq('series_id', id)
+  const { error } = await supabase.from('cp_series').delete().eq('id', id)
+  if (error) throw error
 }
 
 // ── tasks ──────────────────────────────────────────────────────────
