@@ -26,8 +26,9 @@ const dueText = (x) => (x.dueDate ? fmtDate(x.dueDate) : x.due) || null
 const projDueText = (p) => (p.due ? `${MONTHS[p.due.m]} ${p.due.d}` : null)
 
 function taskProgress(p) {
-  const tasks = p.tasks || []
-  return { done: tasks.filter((x) => x.done).length, total: tasks.length }
+  const open = (p.tasks || []).filter((x) => !x.done)
+  const dueToday = open.filter((x) => x.dueDate && x.dueDate.y === TODAY.y && x.dueDate.m === TODAY.m && x.dueDate.d === TODAY.d).length
+  return { open: open.length, dueToday }
 }
 
 // ── ProjectCard ─────────────────────────────────────────────────
@@ -36,7 +37,7 @@ function taskProgress(p) {
 function ProjectCard({ p }) {
   const { t, f, go } = useApp()
   const { actionsForProject } = useData()
-  const { done, total } = taskProgress(p)
+  const { open, dueToday } = taskProgress(p)
   const next = (p.tasks || []).find((x) => x.next && !x.done)
   const onHold = p.status === 'on-hold'
   const hv = onHold ? holdView(p.hold) : null
@@ -60,7 +61,10 @@ function ProjectCard({ p }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7, fontFamily: f.ui,
         fontSize: 12, color: t.t3, flexWrap: 'wrap', whiteSpace: 'nowrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Icon n="square-check" s={13} /><span>{`${done}/${total} tasks`}</span></span>
+          <Icon n="square-check" s={13} /><span>{`${open} open task${open === 1 ? '' : 's'}`}</span></span>
+        {dueToday > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: t.risk, fontWeight: 600,
+          background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>
+          <Icon n="alarm" s={13} c={t.risk} /><span>{`${dueToday} due today`}</span></span>}
         {openActions > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Icon n="checkup-list" s={13} /><span>{`${openActions} open item${openActions === 1 ? '' : 's'}`}</span></span>}
         {dueLabel && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
