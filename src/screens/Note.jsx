@@ -7,6 +7,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, inlineMd,
+  AreaDot, areaColor, Popover, PopRow, STATUS,
 } from '../kit'
 import { updateNote, createTask, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks, markdownToBlocks } from '../lib/blocks'
@@ -208,7 +209,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById } = useData()
+  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
@@ -226,6 +227,10 @@ export function NoteScreen() {
   const [eBody, setEBody] = useState('')
   const [eSummary, setESummary] = useState('') // meeting summary (inline edit)
   const [eNext, setENext] = useState('')       // meeting next steps (inline edit)
+  const [eProject, setEProject] = useState(null) // primary (home) project id
+  const [eProjects, setEProjects] = useState([]) // projects discussed (linked)
+  const [homeOpen, setHomeOpen] = useState(false)
+  const [projOpen, setProjOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState(null)
 
@@ -234,6 +239,14 @@ export function NoteScreen() {
   const isMeeting = n.kind === 'meeting'
   const proj = n.project ? projectName(n.project) : null
   const words = wordCount(n)
+
+  // Project pickers (edit mode) — same shape as the meeting composer.
+  const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
+  const pickerProjects = [...allProjects()].sort((a, b) => (STATUS_RANK[a.status] ?? 5) - (STATUS_RANK[b.status] ?? 5))
+  const eHomeProj = eProject ? projectById(eProject) : null
+  const addProj = (id) => setEProjects((xs) => xs.includes(id) ? xs : [...xs, id])
+  const removeProj = (id) => { setEProjects((xs) => xs.filter((x) => x !== id)); if (eProject === id) setEProject(null) }
+  const setHome = (id) => { setEProject(id); if (id) addProj(id) }
 
   const toggleRef = async (next) => {
     setRefBusy(true)
@@ -262,6 +275,9 @@ export function NoteScreen() {
   const startEdit = () => {
     setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null)
     if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || '') }
+    setEProject(n.project || null)
+    // linked projects always include the primary, like the composer does
+    setEProjects([...new Set([n.project, ...(n.projects || [])].filter(Boolean))])
     setEditing(true)
   }
   const deleteThis = async () => {
@@ -274,6 +290,11 @@ export function NoteScreen() {
     try {
       const patch = { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }
       if (isMeeting) { patch.summary = eSummary; patch.nextSteps = eNext }
+      // project links: primary + the discussed list (primary always included)
+      const linked = [...new Set([eProject, ...eProjects].filter(Boolean))]
+      patch.project = eProject || null
+      patch.projects = linked
+      patch.area = eProject ? (areaOfProject(eProject)?.id || null) : n.area
       await updateNote(n.id, patch); await reload(); setEditing(false)
     } catch (e) { setErr(e) } finally { setSaving(false) }
   }
@@ -325,7 +346,43 @@ export function NoteScreen() {
       {words && <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>· {words} words</span>}
     </div>
 
-    {n.incomplete && !editing && <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 14, padding: '11px 14px',
+    {/* project links (edit mode) — primary project + projects discussed */}
+    {editing && <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Primary project</span>
+        <span style={{ position: 'relative' }}>
+          <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: eHomeProj ? t.t1 : t.t3, background: eHomeProj ? t.sel : 'transparent', border: eHomeProj ? 'none' : '1px solid ' + t.line, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+            {eHomeProj ? <AreaDot areaId={eHomeProj.area} s={7} /> : null}{eHomeProj ? eHomeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
+          {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
+            <PopRow icon="ban" label="No project" on={!eProject} onClick={() => { setHome(null); setHomeOpen(false) }} />
+            {pickerProjects.map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={STATUS[p.status] ? STATUS[p.status].label : ''} on={eProject === p.id}
+              onClick={() => { setHome(p.id); setHomeOpen(false) }} />)}
+          </Popover>}
+        </span>
+      </div>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+          <Label style={{ margin: 0 }}>Projects discussed</Label>
+          <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>tag any this meeting touched — pick several</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          {eProjects.map((id) => { const p = projectById(id); if (!p) return null
+            return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+              <AreaDot areaId={p.area} s={7} />{p.name}
+              <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span> })}
+          <span style={{ position: 'relative' }}>
+            <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+              <Icon n="plus" s={13} />Add project</span>
+            {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
+              {pickerProjects.filter((p) => !eProjects.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
+              {pickerProjects.filter((p) => !eProjects.includes(p.id)).length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>All projects added.</div>}
+            </Popover>}
+          </span>
+        </div>
+      </div>
+    </div>}
+
+    {n.incomplete && !editing &&<div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 14, padding: '11px 14px',
       borderRadius: 11, background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
       <Icon n="player-pause" s={16} c={t.risk} />
       <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>This meeting was interrupted and never finished. Resume it to add a transcript and synthesize.</span>
