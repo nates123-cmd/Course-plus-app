@@ -10,7 +10,8 @@ import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported } from './lib/recorder'
 import { transcribeAudio } from './lib/transcribe'
-import { transcribeInBrowser, browserWhisperSupported } from './lib/whisper'
+import { transcribeInBrowser, transcribeInBrowserDetailed, browserWhisperSupported } from './lib/whisper'
+import { labelChunks, enrollVoiceprint, hasVoiceprint, clearVoiceprint, diarizeSupported } from './lib/diarize'
 import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
 import { createNote, updateNote, deleteNote } from './lib/db'
@@ -64,6 +65,13 @@ export function RecorderProvider({ go, children }) {
   const [engine, setEngine] = useState('cloud')
   // tabAudio: also capture tab/system audio (browser calls) when supported.
   const [tabAudio, setTabAudio] = useState(false)
+  // On-device speaker labeling (Me vs Computer) for the browser engine — needs a
+  // one-time voice enrollment ([[lib/diarize]]). hasVoice tracks the stored
+  // voiceprint; labelSpeakers is the per-session toggle (on once enrolled).
+  const [hasVoice, setHasVoice] = useState(() => hasVoiceprint())
+  const [labelSpeakers, setLabelSpeakers] = useState(() => hasVoiceprint())
+  const [enrollStatus, setEnrollStatus] = useState('') // '' | 'loading-model' | 'embedding'
+  const [labelPct, setLabelPct] = useState(0)           // per-segment labeling progress %
   // pins: timestamps (seconds) the user flagged mid-recording as "this matters".
   // Feed the synthesis as anchors + render as jump chips on the transcript.
   const [pins, setPins] = useState([]) // [{ at: seconds, label: '' }]
@@ -97,19 +105,44 @@ export function RecorderProvider({ go, children }) {
     if ('tabAudio' in patch) setTabAudio(tabAudioSupported ? !!patch.tabAudio : false)
   }
 
-  // Run the chosen transcription engine on a blob → plain transcript text.
-  // Cloud = speaker-labeled (AssemblyAI); browser = on-device Whisper (no labels).
+  // Run the chosen transcription engine on a blob → { text, lines }.
+  // - cloud  : AssemblyAI, speaker-labeled (lines=null → parseLines downstream).
+  // - browser: on-device Whisper. If speaker labeling is on + a voiceprint is
+  //   enrolled, also runs WavLM diarization → labeled turns (Me / Computer).
   const runEngine = async (blob) => {
-    setTStatus(''); setModelPct(0)
+    setTStatus(''); setModelPct(0); setLabelPct(0)
     if (engine === 'browser' && browserWhisperSupported) {
       setTStatus('loading-model')
-      return transcribeInBrowser(blob, {
-        onStatus: setTStatus,
-        onModelProgress: ({ progress }) => setModelPct(Math.round(progress || 0)),
-      })
+      const onModelProgress = ({ progress }) => setModelPct(Math.round(progress || 0))
+      if (labelSpeakers && hasVoiceprint()) {
+        const { text, audio, chunks } = await transcribeInBrowserDetailed(blob, { onStatus: setTStatus, onModelProgress })
+        try {
+          const turns = await labelChunks(audio, chunks, {
+            meLabel: 'Me', themLabel: 'Computer', onStatus: setTStatus,
+            onProgress: (p) => setLabelPct(Math.round(p * 100)),
+          })
+          if (turns && turns.length) {
+            const lines = turns.map((tn, i) => ({ ...tn, at: fmtClock(i * 8 + 2) }))
+            return { text: turns.map((tn) => `${tn.sp}: ${tn.text}`).join('\n\n'), lines }
+          }
+        } catch { /* labeling failed → fall back to the plain transcript */ }
+        return { text, lines: null }
+      }
+      const text = await transcribeInBrowser(blob, { onStatus: setTStatus, onModelProgress })
+      return { text, lines: null }
     }
-    return transcribeAudio(blob, { onStatus: () => setProc('transcribing'), speakersExpected: speakers, diarize })
+    const text = await transcribeAudio(blob, { onStatus: () => setProc('transcribing'), speakersExpected: speakers, diarize })
+    return { text, lines: null }
   }
+
+  // Enroll / clear the user's voiceprint (one-time ~10s clip).
+  const enrollVoice = async (blob) => {
+    try {
+      await enrollVoiceprint(blob, { onStatus: setEnrollStatus, onModelProgress: ({ progress }) => setModelPct(Math.round(progress || 0)) })
+      setHasVoice(true); setLabelSpeakers(true); return true
+    } catch (e) { setEnrollStatus(''); setError(humanize(e)); return false }
+  }
+  const clearVoice = () => { clearVoiceprint(); setHasVoice(false); setLabelSpeakers(false) }
   // On-device output has no diarization — render it as one un-attributed turn.
   const linesFor = (text) => engine === 'browser'
     ? (text ? [{ sp: 'Transcript', text, at: fmtClock(2) }] : [])
@@ -219,9 +252,9 @@ export function RecorderProvider({ go, children }) {
     if (!blob) return
     setSource('record'); setError(null); setProc('transcribing')
     try {
-      const text = await runEngine(blob)
+      const { text, lines: dl } = await runEngine(blob)
       setTranscriptText(text)
-      setLines(linesFor(text))
+      setLines(dl || linesFor(text))
       setProc('ready')
     } catch (e) { setError(humanize(e)); setProc('ready') }
     clearRecovered().catch(() => {})
@@ -348,9 +381,9 @@ export function RecorderProvider({ go, children }) {
     if (!blob || !blob.size) { setError('No audio was captured.'); setProc(PROC_IDLE); return }
     setProc('transcribing')
     try {
-      const text = await runEngine(blob)
-      // attach rough timestamps (we don't get word-level offsets back here)
-      const withAt = linesFor(text)
+      const { text, lines: dl } = await runEngine(blob)
+      // diarized turns when available; else rough evenly-spaced timestamps
+      const withAt = dl || linesFor(text)
       setLines(withAt)
       setTranscriptText(text)
       // Completeness check: ~120 wpm is normal speech. If the transcript is far
@@ -432,12 +465,13 @@ export function RecorderProvider({ go, children }) {
     title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
     engine, browserWhisperSupported, tStatus, modelPct,
+    diarizeSupported, hasVoice, labelSpeakers, setLabelSpeakers, enrollVoice, clearVoice, enrollStatus, labelPct,
     tabAudio, tabAudioSupported, tabMixed, storageWarn, getAnalyser,
     pins, addPin, removePin,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, tabAudio, tabMixed, storageWarn, pins])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

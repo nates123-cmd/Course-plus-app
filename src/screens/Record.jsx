@@ -16,6 +16,62 @@ import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 import { MdEditor } from '../components/MdEditor'
 
+// Voice enrollment — records ~10s of just the user, hands the clip to the
+// diarizer to store a voiceprint (on-device; never uploaded). Used to label
+// "Me" vs "Computer" on the browser engine.
+const ENROLL_MAX = 12
+function VoiceEnroll({ onDone }) {
+  const { t, f } = useApp()
+  const rec = useRecorderCtx()
+  const [status, setStatus] = useState('idle') // idle | recording | saving
+  const [secs, setSecs] = useState(0)
+  const mrRef = useRef(null), chunksRef = useRef([]), streamRef = useRef(null), tickRef = useRef(null)
+
+  const stopTracks = () => { try { streamRef.current?.getTracks().forEach((x) => x.stop()) } catch {} ; streamRef.current = null }
+  useEffect(() => () => { clearInterval(tickRef.current); stopTracks() }, [])
+  function finish() { try { if (mrRef.current && mrRef.current.state !== 'inactive') mrRef.current.stop() } catch {} }
+
+  const begin = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } })
+      streamRef.current = stream
+      const mr = new MediaRecorder(stream); mrRef.current = mr; chunksRef.current = []
+      mr.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data) }
+      mr.onstop = async () => {
+        clearInterval(tickRef.current); stopTracks()
+        setStatus('saving')
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' })
+        const ok = await rec.enrollVoice(blob)
+        setStatus('idle'); setSecs(0)
+        if (ok) onDone?.()
+      }
+      mr.start(); setStatus('recording'); setSecs(0)
+      tickRef.current = setInterval(() => setSecs((s) => { const n = s + 1; if (n >= ENROLL_MAX) finish(); return n }), 1000)
+    } catch { rec.setError?.('Microphone access is needed to set up your voice.'); setStatus('idle') }
+  }
+
+  const saving = status === 'saving'
+  const loadingModel = rec.enrollStatus === 'loading-model'
+  return <div style={{ marginTop: 8, padding: '11px 13px', borderRadius: 10, background: t.accentBg, border: '1px solid ' + t.accentLine }}>
+    {status === 'recording'
+      ? <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 5, background: t.risk, flex: 'none' }} className="rec-pulse" />
+          <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, color: t.t1, fontVariantNumeric: 'tabular-nums' }}>
+            Recording your voice… <b>{secs}s</b> / {ENROLL_MAX}s — keep talking (read anything)</span>
+          <Btn kind="primary" size="sm" icon="player-stop" onClick={finish}>Done</Btn>
+        </div>
+      : saving
+      ? <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
+          <Icon n="loader-2" s={15} c={t.t2} />{loadingModel ? `Downloading voice model (first time only)… ${rec.modelPct > 0 ? rec.modelPct + '%' : ''}` : 'Saving your voiceprint…'}</div>
+      : <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap' }}>
+          <Icon n="user-check" s={16} c={t.accent} />
+          <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
+            Record ~10s of just <b style={{ color: t.t1 }}>you</b> talking so it can tell your voice from the call. Stays on this device.</span>
+          <Btn kind="primary" size="sm" icon="microphone" onClick={begin}>Record my voice</Btn>
+        </div>}
+  </div>
+}
+
 // Stable speaker hue from a fixed palette, keyed by speaker label.
 const SPEAKER_KEYS = ['accent', 'area_arrow', 'area_brain', 'area_sds', 'good']
 function speakerColor(t, sp) {
@@ -158,6 +214,7 @@ export function RecordScreen() {
   const [personDraft, setPersonDraft] = useState('')
   const [actionDraft, setActionDraft] = useState('')
   const [showNext, setShowNext] = useState(false)
+  const [enrollOpen, setEnrollOpen] = useState(false)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
   const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
@@ -227,7 +284,9 @@ export function RecordScreen() {
 
   const transcribingText = engine === 'browser'
     ? (tStatus === 'loading-model'
-        ? 'Downloading Whisper model (first time only)…' + (modelPct > 0 ? ` ${modelPct}%` : '')
+        ? 'Downloading model (first time only)…' + (modelPct > 0 ? ` ${modelPct}%` : '')
+        : tStatus === 'labeling'
+        ? 'Labeling speakers on this device…' + (rec.labelPct > 0 ? ` ${rec.labelPct}%` : '')
         : 'Transcribing on this device…')
     : 'Transcribing…'
   const statusText = phase === 'recording' ? 'Recording — audio captured'
@@ -428,12 +487,28 @@ export function RecordScreen() {
                 {[['cloud', 'Cloud · speaker labels', 'cloud'], ['browser', 'On device · private', 'device-laptop']].map(([id, label, icon]) => {
                   const on = engine === id
                   const locked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
-                  return <span key={id} onClick={() => { if (!locked) rec.setMeta({ engine: id }) }} title={id === 'browser' ? 'Runs in your browser — nothing leaves this device, no cost, no speaker labels' : 'AssemblyAI — identifies who said what'}
+                  return <span key={id} onClick={() => { if (!locked) rec.setMeta({ engine: id }) }} title={id === 'browser' ? 'Runs in your browser — nothing leaves this device, no cost, optional on-device Me vs Computer labels' : 'AssemblyAI — identifies who said what'}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1, color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
                     <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
                 })}
               </div>
               {engine === 'browser' && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>first use downloads a ~40MB model, then it's offline &amp; free</span>}
+            </div>}
+            {/* on-device speaker labeling (Me vs Computer) — browser engine only,
+                needs a one-time voice enrollment */}
+            {engine === 'browser' && browserWhisperSupported && <div style={{ marginBottom: 10 }}>
+              {rec.hasVoice
+                ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span onClick={() => { if (!tuneLocked) rec.setLabelSpeakers(!rec.labelSpeakers) }} title="Tell your voice apart from the person on the call — runs on this device (experimental)"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: rec.labelSpeakers ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+                      <Icon n="users" s={13} c={rec.labelSpeakers ? t.accent : t.t3} />Label Me vs Computer {rec.labelSpeakers ? 'on' : 'off'}</span>
+                    <span onClick={() => setEnrollOpen(true)} style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, cursor: 'pointer', textDecoration: 'underline' }}>re-record voice</span>
+                    <span onClick={() => { rec.clearVoice(); setEnrollOpen(false) }} title="Forget my voiceprint" style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, cursor: 'pointer' }}>remove</span>
+                  </div>
+                : <span onClick={() => setEnrollOpen(true)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+                    <Icon n="users" s={13} c={t.t3} />Label speakers · Me vs Computer…</span>}
+              {enrollOpen && <VoiceEnroll onDone={() => setEnrollOpen(false)} />}
             </div>}
             {/* tab/system-audio capture — Pindrop-style; choose BEFORE recording */}
             {tabAudioSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
