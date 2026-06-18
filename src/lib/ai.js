@@ -184,7 +184,12 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
   const tx = transcript || ''
   const long = tx.length > 18000
   const model = pickModel((detail === 'high' || long) ? 'heavy' : 'light')
-  const maxTok = detail === 'high' ? 4096 : detail === 'low' ? 1100 : 2400
+  // detail='high' is a THOROUGH briefing returned as ONE JSON blob (summary +
+  // actions + next_steps + tags + speakers) — 4096 truncated the JSON mid-summary
+  // (salvaged partial = a cut-off summary). 8000 sits just under the proxy's
+  // 8192 cap. Proxy already runs Gemini with thinking OFF, so the whole budget
+  // is visible output. low/medium stay tight on purpose.
+  const maxTok = detail === 'high' ? 8000 : detail === 'low' ? 1100 : 2400
   const summarySpec = detail === 'high'
     ? 'a THOROUGH, in-depth briefing as markdown bullets — cover every topic, decision, number, ' +
       'commitment, and nuance, with indented sub-bullets where useful. Be detailed enough that I ' +
