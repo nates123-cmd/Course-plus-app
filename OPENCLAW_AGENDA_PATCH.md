@@ -73,17 +73,23 @@ the function).
 
 ---
 
-## 2. Bot skill — add to `/home/openclaw/.openclaw/skills/course-plus/SKILL.md`
+## 2. Bot skill — already staged on the Beelink
 
-Under the `## READ` resource list, add:
+The updated skill is **pre-staged** at
+`/home/openclaw/.openclaw/skills/course-plus/SKILL.md.agenda-staged` (live
+`SKILL.md` is untouched so the bot doesn't call a not-yet-deployed resource).
+After step 1 deploys, apply it — run as the `openclaw` user (see `/openclaw` for
+the sudo/env wrapper):
 
-> - `agenda` — the time-blocked schedule (from `placed_blocks`, what the Course+
->   Agenda screen shows). Defaults to today + next 6 days. Pass `date:"yyyy-mm-dd"`
->   to anchor a day and `days:N` to size the window. For tomorrow:
->   `{"action":"read","resource":"agenda","date":"<tomorrow ISO>","days":1}`.
+```bash
+cd /home/openclaw/.openclaw/skills/course-plus
+mv SKILL.md.agenda-staged SKILL.md          # swap in the agenda entry
+cd /home/openclaw/openclaw && docker compose up -d --no-build   # recreate, re-reads skill
+```
 
-Then recreate the container so it re-reads the skill:
-`docker compose up -d --no-build` (run as the `openclaw` user — see `/openclaw`).
+(The staged entry adds the `agenda` resource: default window today + next 6 days;
+`date:"yyyy-mm-dd"` anchors a start day, `days:N` sizes it; tomorrow =
+`{"action":"read","resource":"agenda","date":"<tomorrow ISO>","days":1}`.)
 
 **Order matters:** deploy the edge function (step 1) *before* adding the skill
 entry (step 2), or the bot will call `resource:"agenda"` and get an error.
