@@ -1,101 +1,65 @@
-# OpenClaw → Course+ Agenda patch (deploy from Mac)
+# OpenClaw → Course+ Agenda fix (deploy from Mac, ~2 min)
 
 **Problem:** OpenClaw can't pull "my schedule for tomorrow." The Course+ **Agenda**
-screen reads the **`placed_blocks`** table (the time-blocked schedule the **Today**
-app writes — see `src/screens/Agenda.jsx`). OpenClaw's `course-plus` edge function
-only reads `cp_*` tables, so it has no path to `placed_blocks`.
+reads `placed_blocks` (the Today app's time-blocked schedule — see
+`src/screens/Agenda.jsx`). OpenClaw's `course-plus` bridge only exposes `cp_*`
+tables, so it has no path to `placed_blocks`.
 
-**Fix:** add an `agenda` read resource to the `course-plus` edge function, then add
-it to the bot skill. Both steps below. Deploy from the Mac (source lives in
-`~/Desktop/openclaw-beelink/`; needs `supabase` CLI — neither is on the Beelink).
+**Why it must be done on the Mac:** the Beelink has no Supabase deploy creds (no
+service-role key, no `sbp_` CLI token) — verified. Deploy from where `supabase`
+CLI is logged in.
 
----
-
-## 1. Edge function — add to the `action:"read"` resource switch
-
-`placed_blocks` columns (from `Agenda.jsx`): `id, date (ISO yyyy-mm-dd), hour
-(decimal, e.g. 9.5), duration_minutes, type, title, pillar, source` + a per-user
-owner column. **CONFIRM the owner column name** — suite `cp_*` tables use
-`user_id`; `placed_blocks` almost certainly does too. Owner uuid =
-`24c79501-4011-46c9-a3d3-a716d732d69c`.
-
-Adapt the client var name (`admin` / `supabase` / `sb`) to whatever the existing
-function uses. The function runs with the **service role**, so it must filter by
-owner explicitly (no RLS auth context).
-
-```ts
-// resource: "agenda" — the time-blocked schedule from placed_blocks (what the
-// Course+ Agenda screen shows). Defaults to today + the next 6 days, matching the
-// app's 7-day window. Pass { date: "yyyy-mm-dd" } to anchor a different start day
-// and { days: N } to widen/narrow. For "tomorrow": { date: <tomorrow>, days: 1 }.
-if (resource === "agenda") {
-  const start = (body.date as string) || new Date().toISOString().slice(0, 10);
-  const span = Math.min(Math.max(Number(body.days) || 7, 1), 31);
-  const end = new Date(start + "T00:00:00");
-  end.setDate(end.getDate() + span - 1);
-  const endISO = end.toISOString().slice(0, 10);
-
-  const { data, error } = await admin
-    .from("placed_blocks")
-    .select("id,date,hour,duration_minutes,type,title,pillar,source")
-    .eq("user_id", OWNER_UUID)            // <-- confirm column name
-    .gte("date", start)
-    .lte("date", endISO)
-    .order("date", { ascending: true })
-    .order("hour", { ascending: true });
-
-  if (error) return json({ ok: false, error: error.message }, 500);
-
-  // group by day for a compact, bot-friendly payload
-  const byDay: Record<string, any[]> = {};
-  for (const b of data ?? []) {
-    (byDay[b.date] ??= []).push({
-      time: fmtHour(b.hour),
-      end: fmtHour(b.hour + b.duration_minutes / 60),
-      title: b.title,
-      kind: b.type,
-      pillar: b.pillar ?? null,
-    });
-  }
-  return json({ ok: true, range: { start, end: endISO }, days: byDay });
-}
-
-// helper (decimal hour -> "9:30am"); place near the other formatters
-function fmtHour(h: number) {
-  const hr = Math.floor(h), m = Math.round((h - hr) * 60);
-  const ap = hr < 12 ? "am" : "pm", h12 = hr % 12 === 0 ? 12 : hr % 12;
-  return `${h12}:${String(m).padStart(2, "0")}${ap}`;
-}
-```
-
-Deploy: `supabase functions deploy course-plus` (from the bundle/project that owns
-the function).
+This uses a **self-contained new function** so there's no existing source to find.
 
 ---
 
-## 2. Bot skill — already staged on the Beelink
+## Step 1 — deploy the function (the only Mac step)
 
-The updated skill is **pre-staged** at
-`/home/openclaw/.openclaw/skills/course-plus/SKILL.md.agenda-staged` (live
-`SKILL.md` is untouched so the bot doesn't call a not-yet-deployed resource).
-After step 1 deploys, apply it — run as the `openclaw` user (see `/openclaw` for
-the sudo/env wrapper):
+The complete function is committed at `supabase/functions/cp-agenda/index.ts`. It
+reuses the bearer `course-plus` already uses (`OPENCLAW_CP_SECRET`, already a
+project secret) and the auto-injected service-role key. From this repo:
 
 ```bash
-cd /home/openclaw/.openclaw/skills/course-plus
-mv SKILL.md.agenda-staged SKILL.md          # swap in the agenda entry
-cd /home/openclaw/openclaw && docker compose up -d --no-build   # recreate, re-reads skill
+supabase functions deploy cp-agenda --no-verify-jwt --project-ref xsmnfcmtbpeaccnyinkr
 ```
 
-(The staged entry adds the `agenda` resource: default window today + next 6 days;
-`date:"yyyy-mm-dd"` anchors a start day, `days:N` sizes it; tomorrow =
-`{"action":"read","resource":"agenda","date":"<tomorrow ISO>","days":1}`.)
+Smoke-test it directly (swap in the real secret — it's in OpenClaw's `.env` as
+`OPENCLAW_CP_SECRET`):
 
-**Order matters:** deploy the edge function (step 1) *before* adding the skill
-entry (step 2), or the bot will call `resource:"agenda"` and get an error.
+```bash
+curl -sS -X POST "https://xsmnfcmtbpeaccnyinkr.supabase.co/functions/v1/cp-agenda" \
+  -H "authorization: Bearer $OPENCLAW_CP_SECRET" -H "content-type: application/json" \
+  -d '{"days":7}'
+```
+
+Expect `{"ok":true,...,"days":{...}}`. If you get `{"ok":false,"error":...}`
+mentioning a column, `placed_blocks` doesn't use `user_id` — edit `OWNER_COL` at
+the top of `index.ts` and redeploy.
+
+## Step 2 — turn the bot skill on (already staged on the Beelink)
+
+The `cp-agenda` skill file is already at
+`/home/openclaw/.openclaw/skills/cp-agenda/SKILL.md`, but **inert** (not in the
+`skills:` array, so it isn't loaded). To activate, add it to `openclaw.json` and
+recreate the container — run as the `openclaw` user (see `/openclaw` for the
+sudo/env wrapper):
+
+```jsonc
+// /home/openclaw/.openclaw/openclaw.json  → agents.defaults.skills
+skills: ["ink-capture", "course-plus", "media-stack", "cp-agenda"],
+```
+```bash
+cd /home/openclaw/openclaw && docker compose up -d --no-build   # recreate, re-reads skills
+```
+
+## Verify
+Telegram the bot: **"what's my schedule tomorrow?"** → it calls `cp-agenda` with
+tomorrow's date and reads back the blocks.
 
 ---
 
-## Verify
-Telegram the bot: *"what's on my schedule tomorrow?"* → it should call
-`agenda` with tomorrow's date and read back the blocks.
+### One-shot prompt for a Mac Claude session
+> Read `OPENCLAW_AGENDA_PATCH.md` in the Course-plus-app repo and execute it:
+> deploy the `cp-agenda` edge function, smoke-test it, then SSH to the Beelink
+> (see the `openclaw` skill) to add `cp-agenda` to `openclaw.json`'s skills array
+> and recreate the container. Confirm the `placed_blocks` owner column first.
