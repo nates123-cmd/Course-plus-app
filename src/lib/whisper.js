@@ -95,5 +95,10 @@ export async function transcribeInBrowserDetailed(blob, { onStatus, onModelProgr
   const audio = await blobToMono16k(blob)
   const out = await transcriber(audio, { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true })
   const chunks = (out?.chunks || []).map((c) => ({ timestamp: c.timestamp, text: (c.text || '').trim() })).filter((c) => c.text)
-  return { text: (out?.text || '').trim(), audio, chunks }
+  // With return_timestamps the chunked path reliably fills `chunks`, but the
+  // aggregate `out.text` can come back empty (WebGPU/some transformers builds) —
+  // which silently dropped the whole transcript on the no-speaker-label path.
+  // Rebuild from the chunks so text is never lost when chunks exist.
+  const text = (out?.text || '').trim() || chunks.map((c) => c.text).join(' ').trim()
+  return { text, audio, chunks }
 }

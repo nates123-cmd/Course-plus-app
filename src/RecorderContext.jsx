@@ -385,11 +385,14 @@ export function RecorderProvider({ go, children }) {
       // diarized turns when available; else rough evenly-spaced timestamps
       const withAt = dl || linesFor(text)
       setLines(withAt)
-      setTranscriptText(text)
+      // Never persist an empty transcript when we actually have labeled turns:
+      // rebuild the text from the lines so the saved note keeps the words.
+      const txt = text || withAt.map((l) => (l.sp ? `${l.sp}: ${l.text}` : l.text)).join('\n\n')
+      setTranscriptText(txt)
       // Completeness check: ~120 wpm is normal speech. If the transcript is far
       // short of what the elapsed time implies (or the tab went background), the
       // audio capture likely paused — warn so the user doesn't trust a partial.
-      const words = (text || '').split(/\s+/).filter(Boolean).length
+      const words = (txt || '').split(/\s+/).filter(Boolean).length
       const expected = (seconds / 60) * 120
       if (seconds > 120 && (interrupted || words < expected * 0.4)) {
         const mins = Math.round(seconds / 60)
