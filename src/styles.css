@@ -171,11 +171,17 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
      render-layer. The rule above bumps ONLY the textarea to 16px, leaving the
      <pre> at 14px → the caret advances on 16px metrics while text renders at
      14px, so the caret drifts ahead of the text ("5-6 spaces in front"). Bump
-     BOTH layers together so they stay aligned (iOS still won't focus-zoom). */
-  .w-md-editor-text,
-  .w-md-editor-text-pre,
-  .w-md-editor-text-pre > code,
-  .w-md-editor-text-input {
+     BOTH layers together so they stay aligned (iOS still won't focus-zoom).
+     Prefixed with .w-md-editor to outrank the library's own
+     `.w-md-editor-text-pre > code { font-size:14px !important }`: same
+     specificity + both !important means SOURCE ORDER decides, and the lib CSS
+     is lazy-loaded AFTER styles.css so it'd otherwise win and keep <pre> at
+     14px while the textarea sits at 16px → caret drifts. The extra class makes
+     these rules higher-specificity, so they win regardless of load order. */
+  .w-md-editor .w-md-editor-text,
+  .w-md-editor .w-md-editor-text-pre,
+  .w-md-editor .w-md-editor-text-pre > code,
+  .w-md-editor .w-md-editor-text-input {
     font-size: 16px !important;
     line-height: 22px !important;
   }
