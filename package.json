@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:gh-pages": "BASE_URL=/Course-plus-app/ vite build",
+    "deploy": "bash scripts/deploy-ghpages.sh",
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
