@@ -10,7 +10,7 @@
 import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays } from '../kit'
+import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
 import { updateTask, deleteTask, updateProject, createUpdate } from '../lib/db'
@@ -144,8 +144,10 @@ const FILTERS = [
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const { t, f } = useApp()
-  const { reload, looseTasks } = useData()
+  const { reload, looseTasks, areas } = useData()
   const [filter, setFilter] = usePersisted('course.openTasksFilter.v2', 'focus')
+  const [pillar, setPillar] = usePersisted('course.openTasksPillar.v1', 'all')
+  const [pillarOpen, setPillarOpen] = useState(false)
 
   const all = []
   const seen = new Set()
@@ -167,9 +169,17 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
     </div>
   }
 
-  const counts = Object.fromEntries(FILTERS.map((fl) => [fl.id, all.filter(fl.match).length]))
+  // Pillars present in the roll-up (only those with surfaced tasks), for the filter dropdown.
+  const pillarIds = [...new Set(all.map((x) => x.area).filter(Boolean))]
+  const pillarsPresent = areas.filter((a) => pillarIds.includes(a.id))
+  // If the selected pillar no longer has any rows, fall back to all.
+  const activePillar = pillar !== 'all' && pillarIds.includes(pillar) ? pillar : 'all'
+  const scoped = activePillar === 'all' ? all : all.filter((x) => x.area === activePillar)
+  const pillarName = activePillar === 'all' ? 'All pillars' : (areas.find((a) => a.id === activePillar)?.name || 'All pillars')
+
+  const counts = Object.fromEntries(FILTERS.map((fl) => [fl.id, scoped.filter(fl.match).length]))
   const active = FILTERS.find((fl) => fl.id === filter) || FILTERS[0]
-  const rows = all.filter(active.match)
+  const rows = scoped.filter(active.match)
   // due first (earliest date), then surfaced Next, then Waiting
   const rank = (x) => (x.dueDate ? 0 : x.due ? 1 : x.next ? 2 : 3)
   rows.sort((a, b) => rank(a) - rank(b) || (dnum(a.dueDate) || 9e8) - (dnum(b.dueDate) || 9e8))
@@ -207,6 +217,22 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
       {FILTERS.map(chip)}
+      {pillarsPresent.length > 1 && <span style={{ position: 'relative', display: 'inline-flex', marginLeft: 'auto' }}>
+        <span onClick={() => setPillarOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+          color: activePillar === 'all' ? t.t2 : t.t1, background: t.sel, border: '1px solid ' + (activePillar === 'all' ? 'transparent' : t.line2),
+          borderRadius: 8, padding: '5px 10px' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = t.tagBg}
+          onMouseLeave={(e) => e.currentTarget.style.background = t.sel}>
+          {activePillar !== 'all' && <AreaDot areaId={activePillar} s={7} />}
+          {pillarName}<Icon n="chevron-down" s={13} c={t.t3} /></span>
+        {pillarOpen && <Popover onClose={() => setPillarOpen(false)} width={220} maxHeight={320}>
+          <PopRow icon={activePillar === 'all' ? 'check' : 'layout-grid'} label="All pillars"
+            onClick={() => { setPillar('all'); setPillarOpen(false) }} />
+          {pillarsPresent.map((a) => <PopRow key={a.id} icon={a.id === activePillar ? 'check' : 'folder'} label={a.name}
+            onClick={() => { setPillar(a.id); setPillarOpen(false) }} />)}
+        </Popover>}
+      </span>}
     </div>
     {rows.length === 0
       ? <Card style={{ padding: '22px 16px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
