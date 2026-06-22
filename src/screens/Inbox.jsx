@@ -156,6 +156,17 @@ export function InboxScreen() {
     // On success the card disappears with the reload — stay on Inbox.
   }
 
+  // Dismiss: drop the item from the inbox without filing it anywhere.
+  const dismiss = async (item) => {
+    setBusy(item.id); setErr(null)
+    try {
+      await deleteInbox(item.id)
+      await reload()
+    } catch (e) {
+      setErr(e); setBusy(null)
+    }
+  }
+
   // Triage all: accept every item that has a confident single suggestion.
   const triageAll = async () => {
     const ready = live.filter((it) => it.suggest?.project)
@@ -263,6 +274,11 @@ export function InboxScreen() {
 
                 <div style={{ display: 'flex', gap: 7, position: 'relative' }}>
                   <Btn kind="ghost" size="sm" onClick={() => { /* Leave — keep untriaged */ }}>Leave</Btn>
+
+                  {/* Dismiss — drop from the inbox without filing */}
+                  <Btn kind="ghost" size="sm" icon={loading ? 'loader-2' : 'trash'} onClick={() => dismiss(it)}>
+                    {loading ? 'Dismissing…' : 'Dismiss'}
+                  </Btn>
 
                   {/* Assign — pick a different home */}
                   <span style={{ position: 'relative', display: 'inline-flex' }}>
