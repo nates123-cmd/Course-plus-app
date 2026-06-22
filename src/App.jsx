@@ -353,7 +353,7 @@ function TopBar({ onMenu, onCapture, isMobile }) {
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
         fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: mcpMode ? t.accent : t.t3,
         background: mcpMode ? t.accentBg : 'transparent', border: '1px solid ' + (mcpMode ? t.accentLine : t.line2), borderRadius: 8 }}>
-      <Icon n={mcpMode ? 'cloud' : 'bolt'} s={14} c={mcpMode ? t.accent : t.t3} />{mcpMode ? 'Claude.ai' : 'Credits'}
+      {mcpMode ? 'Claude.ai' : 'Credits'}
     </button>
     <button onClick={() => !mcpMode && setAi(NEXT[ai] || 'claude')} disabled={mcpMode}
       title={mcpMode ? 'Engine is Claude when running on your subscription' : `AI engine: ${aiName} — tap to switch`}

@@ -88,8 +88,8 @@ export function AskScreen() {
         style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 14.5, color: t.t1 }} />
       <Btn kind="primary" size="sm" type="submit">{state === 'running' ? 'Searching…' : mcpMode ? 'Ask in Claude.ai' : 'Ask'}</Btn>
     </form>
-    {mcpMode && <div style={{ marginTop: 9, fontFamily: f.ui, fontSize: 12, color: t.t3, display: 'flex', alignItems: 'center', gap: 6 }}>
-      <Icon n="cloud" s={13} c={t.t3} />Runs on your Claude.ai subscription via the Course Plus connector — no API credits.
+    {mcpMode && <div style={{ marginTop: 9, fontFamily: f.ui, fontSize: 12, color: t.t3 }}>
+      Runs on your Claude.ai subscription via the Course Plus connector — no API credits.
     </div>}
 
     {/* Suggested questions — before first query */}
@@ -109,10 +109,7 @@ export function AskScreen() {
       <Icon n="loader-2" s={16} c={t.t1} />Retrieving across your notes…</div>}
 
     {state === 'handed' && <Card style={{ marginTop: 26, padding: '20px 22px', borderColor: t.accentLine }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <Icon n="cloud" s={17} c={t.accent} />
-        <Label style={{ color: t.accent, margin: 0 }}>{popup ? 'Opened in Claude.ai' : 'Prompt copied'}</Label>
-      </div>
+      <Label style={{ color: t.accent, marginBottom: 8 }}>{popup ? 'Opened in Claude.ai' : 'Prompt copied'}</Label>
       <div style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1 }}>
         {popup
           ? <>A claude.ai tab is answering on your subscription. If the connector isn’t picked, choose <b>Course Plus</b> there. The prompt is also on your clipboard.</>

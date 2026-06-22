@@ -726,7 +726,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
         style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
-        <Btn kind="primary" size="sm" icon={mcpMode ? 'cloud' : 'sparkles'} onClick={run}>{mcpMode ? 'Generate in Claude.ai' : 'Generate'}</Btn>
+        <Btn kind="primary" size="sm" icon="sparkles" onClick={run}>{mcpMode ? 'Generate in Claude.ai' : 'Generate'}</Btn>
         <Btn kind="ghost" size="sm" onClick={() => setComposing(false)}>Cancel</Btn>
       </div>
     </div>}
