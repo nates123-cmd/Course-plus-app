@@ -74,7 +74,7 @@ function groupByDay(blocks) {
   return [...map.keys()].sort().map((iso) => ({ iso, blocks: map.get(iso) }))
 }
 
-function BlockRow({ block, onOpen }) {
+function BlockRow({ block, onOpen, onDelete }) {
   const { t, f } = useApp()
   const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
@@ -101,11 +101,22 @@ function BlockRow({ block, onOpen }) {
       <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />
       <span style={{ flex: 'none', fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t2,
         background: t.tagBg, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{badge}</span>
+      <span
+        onClick={(e) => { e.stopPropagation(); onDelete(block) }}
+        title="Delete from agenda"
+        style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 24, height: 24, borderRadius: 7, cursor: 'pointer', opacity: hover ? 1 : 0,
+          transition: 'opacity .12s, color .12s', color: t.t3 }}
+        onMouseEnter={(e) => e.currentTarget.style.color = t.risk}
+        onMouseLeave={(e) => e.currentTarget.style.color = t.t3}
+      >
+        <Icon n="trash" s={15} c="currentColor" />
+      </span>
     </div>
   )
 }
 
-function DaySection({ iso, blocks, onOpen }) {
+function DaySection({ iso, blocks, onOpen, onDelete }) {
   const { t, f } = useApp()
   const m = dayMeta(iso)
   return (
@@ -119,7 +130,7 @@ function DaySection({ iso, blocks, onOpen }) {
         </span>
       </div>
       <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-        {blocks.map((b) => <BlockRow key={b.id} block={b} onOpen={onOpen} />)}
+        {blocks.map((b) => <BlockRow key={b.id} block={b} onOpen={onOpen} onDelete={onDelete} />)}
       </Card>
     </div>
   )
@@ -155,6 +166,15 @@ export function AgendaScreen() {
 
   // open the meeting composer with this block's title pre-filled
   const openMeeting = (block) => go({ screen: 'meeting', title: (block.title || '').trim() })
+
+  // delete a scheduled block — removes the placed_blocks row (shared with Today).
+  // Optimistic: drop it locally first, restore on failure.
+  const deleteBlock = async (block) => {
+    const prev = blocks
+    setBlocks((bs) => bs.filter((b) => b.id !== block.id))
+    const { error } = await supabase.from('placed_blocks').delete().eq('id', block.id)
+    if (error) setBlocks(prev) // restore on failure, keep the list visible
+  }
 
   const days = groupByDay(blocks)
   const start = weekStart()
@@ -197,7 +217,7 @@ export function AgendaScreen() {
       )}
 
       {status === 'ready' && days.map((d) => (
-        <DaySection key={d.iso} iso={d.iso} blocks={d.blocks} onOpen={openMeeting} />
+        <DaySection key={d.iso} iso={d.iso} blocks={d.blocks} onOpen={openMeeting} onDelete={deleteBlock} />
       ))}
     </div>
   )
