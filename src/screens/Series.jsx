@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Person, AreaDot, areaColor, Popover, PopRow, STATUS } from '../kit'
-import { createSeries, updateSeries, deleteSeries } from '../lib/db'
+import { createSeries, updateSeries, deleteSeries, updateNote } from '../lib/db'
 import { prepFromSeries, synthesizeSeries } from '../lib/ai'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
@@ -16,7 +16,7 @@ const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
 
 export function SeriesScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { seriesById, instancesForSeries, openThreadsForSeries, projectById, areaOfProject, allProjects, reload } = useData()
+  const { seriesById, instancesForSeries, openThreadsForSeries, projectById, areaOfProject, allProjects, notes, reload } = useData()
   if (!route.id) return <SeriesIndex />
   const s = seriesById(route.id)
 
@@ -37,6 +37,11 @@ export function SeriesScreen() {
   const [syn, setSyn] = useState(null)
   const [synBusy, setSynBusy] = useState(false)
   const [err, setErr] = useState(null)
+
+  const [pickOpen, setPickOpen] = useState(false)
+  const [pickSel, setPickSel] = useState(() => new Set())
+  const [pickQ, setPickQ] = useState('')
+  const [attaching, setAttaching] = useState(false)
 
   if (!s) return <div style={{ maxWidth: 980, margin: '0 auto', padding: isMobile ? '24px 18px 80px' : '30px 36px 90px', fontFamily: f.ui, color: t.t3 }}>
     Series not found. <span onClick={() => go({ screen: 'overview' })} style={{ color: t.accent, cursor: 'pointer' }}>Back to Work</span>
@@ -96,6 +101,26 @@ export function SeriesScreen() {
     go({ screen: 'meeting', series: s.id, agenda })
   }
 
+  // Existing meeting notes not already in THIS series — candidates to attach.
+  const candidates = notes
+    .filter((n) => n.kind === 'meeting' && n.seriesId !== s.id)
+    .filter((n) => { const q = pickQ.trim().toLowerCase(); return !q || (n.title || '').toLowerCase().includes(q) })
+  const togglePick = (id) => setPickSel((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  const openPicker = () => { setPickSel(new Set()); setPickQ(''); setPickOpen(true) }
+  const attachPicked = async () => {
+    if (!pickSel.size || attaching) return
+    setAttaching(true); setErr(null)
+    try {
+      for (const id of pickSel) await updateNote(id, { seriesId: s.id })
+      await reload(); setPickOpen(false); setPickSel(new Set())
+    } catch (e) { setErr(e) } finally { setAttaching(false) }
+  }
+  const detachOne = async (id) => {
+    if (!window.confirm('Remove this meeting from the series? The meeting note is kept.')) return
+    try { await updateNote(id, { seriesId: null }); await reload() }
+    catch (e) { window.alert('Could not detach: ' + (e?.message || e)) }
+  }
+
   const defProj = projectById(s.project)
   const cardP = { padding: '16px 18px' }
 
@@ -105,6 +130,42 @@ export function SeriesScreen() {
       <span onClick={() => go({ screen: 'overview' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
         <Icon n="chevron-left" s={15} />Work</span>
     </div>
+
+    {/* attach-existing picker */}
+    {pickOpen && <div onClick={() => !attaching && setPickOpen(false)}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 24 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: t.bg, border: '1px solid ' + t.line, borderRadius: isMobile ? '16px 16px 0 0' : 14, width: '100%', maxWidth: 560, maxHeight: isMobile ? '85vh' : '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid ' + t.line }}>
+          <Icon n="link" s={18} c={t.accent} />
+          <span style={{ fontFamily: f.title, fontSize: 17, fontWeight: f.titleW, color: t.t1, flex: 1 }}>Add existing meetings</span>
+          <IconBtn n="x" s={20} onClick={() => !attaching && setPickOpen(false)} />
+        </div>
+        <div style={{ padding: '12px 18px 0' }}>
+          <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Search meetings…"
+            style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px 0', minHeight: 0 }}>
+          {candidates.length === 0
+            ? <div style={{ padding: '24px 8px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>No meetings to add.</div>
+            : candidates.map((n) => { const on = pickSel.has(n.id); const other = n.seriesId && n.seriesId !== s.id
+                return <div key={n.id} onClick={() => togglePick(n.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: on ? t.sel : 'transparent' }}
+                  onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.sel }} onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid ' + (on ? t.accent : t.line2), background: on ? t.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {on && <Icon n="check" s={13} c="#fff" />}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</div>
+                    <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{n.date}{other ? ' · in another series' : ''}</div>
+                  </div>
+                </div> })}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 18px', borderTop: '1px solid ' + t.line }}>
+          <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>{pickSel.size} selected</span>
+          <Btn kind="ghost" size="sm" onClick={() => !attaching && setPickOpen(false)}>Cancel</Btn>
+          <Btn kind="primary" size="sm" icon={attaching ? 'loader-2' : 'link'} onClick={attachPicked}>{attaching ? 'Attaching…' : `Attach${pickSel.size ? ' ' + pickSel.size : ''}`}</Btn>
+        </div>
+      </div>
+    </div>}
 
     {/* header */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
@@ -119,6 +180,7 @@ export function SeriesScreen() {
         : <span style={{ display: 'flex', gap: 8 }}>
             <IconBtn n="trash" s={17} title="Delete series" onClick={removeThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
+            <Btn kind="outline" size="sm" icon="link" onClick={openPicker}>Add existing</Btn>
             <Btn kind="primary" size="sm" icon="plus" onClick={newMeeting}>New meeting</Btn>
           </span>}
     </div>
@@ -283,6 +345,8 @@ export function SeriesScreen() {
                   {n.summary && <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{n.summary.replace(/[#*\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}</div>}
                   {n.nextSteps && n.nextSteps.trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 6 }}><Icon n="arrow-right" s={12} c={t.t3} />has next steps</span>}
                 </div>
+                <span onClick={(e) => { e.stopPropagation(); detachOne(n.id) }} title="Remove from series" style={{ marginTop: 1 }}>
+                  <IconBtn n="unlink" s={15} /></span>
                 <Icon n="chevron-right" s={16} c={t.t3} style={{ marginTop: 2 }} />
               </div>)}
             </Card>}
