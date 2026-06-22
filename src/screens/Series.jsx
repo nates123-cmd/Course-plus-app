@@ -8,7 +8,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Person, AreaDot, areaColor, Popover, PopRow, STATUS } from '../kit'
 import { createSeries, updateSeries, deleteSeries, updateNote } from '../lib/db'
-import { prepFromSeries, synthesizeSeries } from '../lib/ai'
+import { prepFromSeries, synthesizeSeries, askAcrossSeries } from '../lib/ai'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
 
@@ -365,6 +365,12 @@ function SeriesIndex() {
   const [busy, setBusy] = useState(false)
   const list = activeSeries || []
 
+  // Ask-AI across ALL series.
+  const [q, setQ] = useState('')
+  const [chat, setChat] = useState([]) // [{ role:'user'|'assistant', content }]
+  const [asking, setAsking] = useState(false)
+  const [askErr, setAskErr] = useState(null)
+
   const commit = async () => {
     const nm = name.trim()
     if (!nm || busy) return
@@ -374,6 +380,25 @@ function SeriesIndex() {
     finally { setBusy(false) }
   }
 
+  // Build the cross-series corpus once per ask.
+  const seriesCtx = () => list.map((s) => ({
+    name: s.name, cadence: s.cadence, standingContext: s.standingContext,
+    instances: instancesForSeries(s.id).map((n) => ({ date: n.date, title: n.title, summary: n.summary || '', nextSteps: n.nextSteps || '', actions: n.actions || [] })),
+    openThreads: openThreadsForSeries(s.id).map((o) => ({ text: o.text, date: o.date })),
+  }))
+  const ask = async (queryArg) => {
+    const query = (typeof queryArg === 'string' ? queryArg : q).trim()
+    if (!query || asking) return
+    const history = chat.map((m) => ({ role: m.role, content: m.content }))
+    setChat((c) => [...c, { role: 'user', content: query }])
+    setQ(''); setAsking(true); setAskErr(null)
+    try {
+      const reply = await askAcrossSeries(seriesCtx(), history, query)
+      setChat((c) => [...c, { role: 'assistant', content: reply }])
+    } catch (e) { setAskErr(e) } finally { setAsking(false) }
+  }
+  const ASK_TRY = ['What’s still open across all my series?', 'Which commitments have I not followed up on?', 'Summarize what’s changed since last week.']
+
   return <div style={{ maxWidth: 980, margin: '0 auto', padding: isMobile ? '24px 18px 80px' : '30px 36px 90px' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
       <Icon n="repeat" s={22} c={t.t1} />
@@ -381,6 +406,43 @@ function SeriesIndex() {
       <Btn icon="plus" onClick={() => { setAdding(true); setName('') }}>New series</Btn>
     </div>
     <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t3, marginBottom: 20 }}>Recurring meetings — standing context, carry-forward next-steps, AI prep across instances.</div>
+
+    {/* Ask AI across all series */}
+    {list.length > 0 && <Card style={{ padding: '16px 18px', marginBottom: 16, borderColor: t.accentLine }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: chat.length || asking ? 12 : 10 }}>
+        <Icon n="sparkles" s={17} c={t.accent} />
+        <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent, flex: 1 }}>Ask across all series</span>
+        {chat.length > 0 && <span onClick={() => { setChat([]); setAskErr(null) }} style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, cursor: 'pointer' }}>Clear</span>}
+      </div>
+
+      {chat.map((m, i) => <div key={i} style={{ marginBottom: 12 }}>
+        {m.role === 'user'
+          ? <div style={{ display: 'flex', gap: 8 }}>
+              <Icon n="user" s={15} c={t.t3} style={{ marginTop: 2, flexShrink: 0 }} />
+              <span style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>{m.content}</span>
+            </div>
+          : <div style={{ display: 'flex', gap: 8 }}>
+              <Icon n="sparkles" s={15} c={t.accent} style={{ marginTop: 3, flexShrink: 0 }} />
+              <div className="selectable" style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.62, color: t.t1, whiteSpace: 'pre-wrap', textWrap: 'pretty' }}>{m.content}</div>
+            </div>}
+      </div>)}
+      {asking && <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: t.t2, fontFamily: f.ui, fontSize: 13, marginBottom: 12 }}>
+        <Icon n="loader-2" s={15} c={t.t1} />Thinking across {list.length} series…</div>}
+      {askErr && <div style={{ color: t.t2, fontFamily: f.ui, fontSize: 13, marginBottom: 12 }}>Couldn’t answer — {String(askErr?.message || askErr)}.</div>}
+
+      <form onSubmit={(e) => { e.preventDefault(); ask() }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.bg, border: '1px solid ' + t.line2, borderRadius: 10, padding: '0 12px', height: 44 }}
+        onFocusCapture={(e) => e.currentTarget.style.borderColor = t.accent} onBlurCapture={(e) => e.currentTarget.style.borderColor = t.line2}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={chat.length ? 'Ask a follow-up…' : 'Ask anything across your recurring meetings…'}
+          style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 14, color: t.t1 }} />
+        <Btn kind="primary" size="sm" type="submit" icon={asking ? 'loader-2' : 'arrow-up'}>{asking ? '' : 'Ask'}</Btn>
+      </form>
+
+      {chat.length === 0 && !asking && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 11 }}>
+        {ASK_TRY.map((s) => <span key={s} onClick={() => ask(s)}
+          style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, background: t.tagBg, borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = t.t1} onMouseLeave={(e) => e.currentTarget.style.color = t.t2}>{s}</span>)}
+      </div>}
+    </Card>}
 
     {adding && <Card style={{ padding: 14, marginBottom: 16 }}>
       <Label>Name</Label>

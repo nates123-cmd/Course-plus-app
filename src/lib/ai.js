@@ -310,6 +310,35 @@ export async function synthesizeSeries({ name = '', standingContext = '', instan
   }
 }
 
+// Ask across ALL recurring series at once — the Series-tab assistant. Builds a
+// corpus of every series (standing context + recent instances + open threads)
+// and answers questions that may span them ("what's open with Jon?", "which
+// 1:1s have stalled commitments?", "who owes me follow-ups?"). Multi-turn.
+// `series` = [{ name, cadence, standingContext, instances:[{date,title,summary,
+// nextSteps,actions}], openThreads:[{text,date}] }]; `history` = prior turns.
+export async function askAcrossSeries(series = [], history, question) {
+  const corpus = (series || []).map((s) => {
+    const head = `## ${s.name}${s.cadence ? ` (${s.cadence})` : ''} — ${(s.instances || []).length} meeting(s)`
+    const parts = [head]
+    if (s.standingContext && s.standingContext.trim()) parts.push('Standing context: ' + s.standingContext.trim())
+    const open = (s.openThreads || []).filter((o) => o && o.text)
+    if (open.length) parts.push('Open threads:\n' + open.map((o) => `- ${o.text}${o.date ? ` (since ${o.date})` : ''}`).join('\n'))
+    const recent = (s.instances || []).slice(0, 5)
+    if (recent.length) parts.push('Recent meetings (newest first):\n\n' + seriesInstanceDigest(recent, { withActions: true }))
+    return parts.join('\n\n')
+  }).join('\n\n═══════════\n\n')
+  const system =
+    'You are the assistant for the Series tab of a personal work app — the home of Nate\'s recurring meetings ' +
+    '(1:1s, standups, weekly syncs). Nate is the note-taker and a participant in every one. ' +
+    'Answer using ONLY the series provided below; you may reason ACROSS series (compare, aggregate, find what is ' +
+    'stalled or owed). Name the series and cite meeting dates when relevant. If the answer is not in the material, ' +
+    'say so plainly. Be concise and specific. Reply in clean markdown, no preamble.'
+  const firstTurn = `ALL RECURRING SERIES:\n\n${corpus || '(no series yet)'}`
+  const model = pickModel(firstTurn.length > 12000 ? 'heavy' : 'light')
+  const messages = [{ role: 'user', content: firstTurn }, ...(history || []), { role: 'user', content: question }]
+  return (await claudeChat(messages, { system, model, max_tokens: 1400 })).trim()
+}
+
 // ── Note Claude-rail actions ───────────────────────────────────────
 export const noteContext = (note) => {
   const body = (note.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, n) => (n + 1) + '. ' + i).join('\n') : ''))).join('\n')
