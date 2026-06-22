@@ -7,7 +7,7 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Person, AreaDot, areaColor, Popover, PopRow, STATUS } from '../kit'
-import { updateSeries, deleteSeries } from '../lib/db'
+import { createSeries, updateSeries, deleteSeries } from '../lib/db'
 import { prepFromSeries, synthesizeSeries } from '../lib/ai'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
@@ -17,6 +17,7 @@ const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
 export function SeriesScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
   const { seriesById, instancesForSeries, openThreadsForSeries, projectById, areaOfProject, allProjects, reload } = useData()
+  if (!route.id) return <SeriesIndex />
   const s = seriesById(route.id)
 
   const [editing, setEditing] = useState(false)
@@ -287,5 +288,72 @@ export function SeriesScreen() {
             </Card>}
       </div>
     </div>}
+  </div>
+}
+
+// SeriesIndex — list of all recurring meetings (the "Series" tab landing).
+// New-series inline add; each row opens the series detail.
+function SeriesIndex() {
+  const { t, f, go, isMobile } = useApp()
+  const { activeSeries, instancesForSeries, openThreadsForSeries, reload } = useData()
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const list = activeSeries || []
+
+  const commit = async () => {
+    const nm = name.trim()
+    if (!nm || busy) return
+    setBusy(true)
+    try { const id = await createSeries({ name: nm }); setName(''); setAdding(false); await reload(); go({ screen: 'series', id }) }
+    catch (e) { window.alert('Could not add series: ' + (e?.message || e)) }
+    finally { setBusy(false) }
+  }
+
+  return <div style={{ maxWidth: 980, margin: '0 auto', padding: isMobile ? '24px 18px 80px' : '30px 36px 90px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
+      <Icon n="repeat" s={22} c={t.t1} />
+      <h1 style={{ fontFamily: f.title, fontSize: 26, fontWeight: f.titleW, color: t.t1, margin: 0, flex: 1, letterSpacing: f.titleSpacing }}>Series</h1>
+      <Btn icon="plus" onClick={() => { setAdding(true); setName('') }}>New series</Btn>
+    </div>
+    <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t3, marginBottom: 20 }}>Recurring meetings — standing context, carry-forward next-steps, AI prep across instances.</div>
+
+    {adding && <Card style={{ padding: 14, marginBottom: 16 }}>
+      <Label>Name</Label>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setName(''); setAdding(false) } }}
+          placeholder="e.g. Jon 1:1…"
+          style={{ flex: 1, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
+        <Btn onClick={commit}>Add</Btn>
+        <Btn kind="ghost" onClick={() => { setName(''); setAdding(false) }}>Cancel</Btn>
+      </div>
+    </Card>}
+
+    {list.length === 0 && !adding
+      ? <Card style={{ padding: 28, textAlign: 'center', fontFamily: f.ui, fontSize: 13.5, color: t.t3 }}>
+          No series yet. Create one for any recurring meeting — a 1:1, a standup, a weekly sync.
+        </Card>
+      : <div style={{ display: 'grid', gap: 10 }}>
+          {list.map((s) => {
+            const n = instancesForSeries(s.id).length
+            const open = openThreadsForSeries(s.id).length
+            return <Card key={s.id} onClick={() => go({ screen: 'series', id: s.id })}
+              style={{ padding: '15px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
+              onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = t.card}>
+              <Icon n="repeat" s={18} c={t.t3} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: f.ui, fontSize: 15, fontWeight: 600, color: t.t1 }}>{s.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 3, fontFamily: f.ui, fontSize: 12, color: t.t3, flexWrap: 'wrap' }}>
+                  <span>{n} meeting{n === 1 ? '' : 's'}</span>
+                  {s.cadence && <span>· {s.cadence}</span>}
+                  {open > 0 && <span style={{ color: t.accent }}>· {open} open thread{open === 1 ? '' : 's'}</span>}
+                  {(s.people || []).length > 0 && <span>· {(s.people || []).join(', ')}</span>}
+                </div>
+              </div>
+              <Icon n="chevron-right" s={16} c={t.t3} />
+            </Card>
+          })}
+        </div>}
   </div>
 }
