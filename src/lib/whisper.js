@@ -29,7 +29,11 @@ async function getPipeline(onProgress) {
     //     headers GitHub Pages can't send → the threaded backend won't register.
     // Single-threaded WASM is the one config that reliably loads on a static host.
     if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
-    return await pipeline('automatic-speech-recognition', MODEL, { device: 'wasm', progress_callback: onProgress })
+    // Pin q8 (standard int8). The v4 default resolves to q4 weights, whose
+    // MatMulNBits op the WASM runtime can't build a session for
+    // ("Missing required scale … TransposeDQWeightsForMatMulNBits"). q8 uses
+    // ordinary int8 matmul that WASM supports, and is ~half the fp32 download.
+    return await pipeline('automatic-speech-recognition', MODEL, { device: 'wasm', dtype: 'q8', progress_callback: onProgress })
   })()
   // Don't cache a failed load — let the next attempt retry.
   _pipePromise.catch(() => { _pipePromise = null })
