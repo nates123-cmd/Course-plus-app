@@ -12,6 +12,7 @@ import {
   Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish,
 } from '../kit'
 import { briefingFor, composeDeliverable, updateGuide } from '../lib/ai'
+import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
 
 // "~$0.04" style rough cost from a usage record (null/0 → '')
@@ -524,8 +525,10 @@ function DocSection({ label, notes, kind, project }) {
 
 // ── Artifacts — project deliverables + Claude composer ──────────
 function Artifacts({ project, notes, meetings = [], reload }) {
-  const { t, f, go, aiName } = useApp()
+  const { t, f, go, aiName, mcpMode } = useApp()
   const { projectDigest, areaDigest } = useData()
+  // Label for the generator: in MCP mode the work runs on claude.ai, not the engine.
+  const genName = mcpMode ? 'Claude.ai' : aiName
   const rows = project.artifacts || []
   // Generation scope: 'project' (full project context) | 'pillar' (whole area).
   const hasPillar = !!project.area
@@ -582,9 +585,24 @@ function Artifacts({ project, notes, meetings = [], reload }) {
   const copyArtifact = (body) => { try { navigator.clipboard.writeText(body || '') } catch {} }
 
   const run = async () => {
+    const type = COMPOSE_TYPES.find((c) => c.id === typeId) || COMPOSE_TYPES[0]
+    const pillarScope = hasPillar && genScope === 'pillar'
+    // MCP mode: hand off to claude.ai on the subscription. Claude reads the project
+    // via the Course Plus connector and saves the artifact back with create_artifact
+    // — nothing composed or billed here.
+    if (mcpMode) {
+      setComposing(false); setPrompt('')
+      const opened = openInClaude(composePrompt({
+        typeName: type.name, typeId, projectId: project.id, projectName: project.name,
+        instructions: prompt.trim(), scope: pillarScope ? 'pillar' : 'project', areaName: project.areaName,
+      }))
+      setToast(opened ? 'Opened Claude.ai — it’ll save the ' + type.name.toLowerCase() + ' back here'
+        : 'Prompt copied — popup blocked, paste it into claude.ai')
+      setTimeout(() => setToast(null), 6000)
+      return
+    }
     setComposing(false); setBusy(true)
     try {
-      const type = COMPOSE_TYPES.find((c) => c.id === typeId) || COMPOSE_TYPES[0]
       let usage = null
       // Always give the model the full project picture. At pillar scope, append
       // the whole-area digest so it can reach across sibling projects.
@@ -614,7 +632,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     {!composing && !adding && !updating && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
       <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false); setUpdating(false) }}>Add file</Btn>
       <Btn kind="outline" size="sm" icon="file-diff" onClick={() => { setUpdating(true); setAdding(false); setComposing(false); setDocArtId(rows[0]?.id || null); setMeetingId(meetings[0]?.id || null) }}>Update doc from meeting</Btn>
-      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with {aiName}</Btn>
+      <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with {genName}</Btn>
     </div>}
 
     {updating && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
@@ -676,7 +694,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
     {composing && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
         <Icon n="sparkles" s={14} c={t.accent} />
-        <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask {aiName}</span>
+        <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask {genName}</span>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
           {genScope === 'pillar'
             ? `full context of this project + the whole ${project.areaName || 'pillar'} pillar`
@@ -708,7 +726,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
         style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
-        <Btn kind="primary" size="sm" icon="sparkles" onClick={run}>Generate</Btn>
+        <Btn kind="primary" size="sm" icon={mcpMode ? 'cloud' : 'sparkles'} onClick={run}>{mcpMode ? 'Generate in Claude.ai' : 'Generate'}</Btn>
         <Btn kind="ghost" size="sm" onClick={() => setComposing(false)}>Cancel</Btn>
       </div>
     </div>}

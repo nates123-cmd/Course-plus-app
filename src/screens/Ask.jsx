@@ -7,10 +7,11 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, KindBadge, AreaDot, areaColor } from '../kit'
 import { askNotes } from '../lib/ai'
+import { askPrompt, openInClaude } from '../lib/claudeBridge'
 import { ASK_SUGGESTIONS } from '../data'
 
 export function AskScreen() {
-  const { t, f, go, route } = useApp()
+  const { t, f, go, route, mcpMode } = useApp()
   const { notes, noteById, projectById, ownedNotes, linkedMeetings } = useData()
 
   const scopeId = route.project || null
@@ -21,15 +22,23 @@ export function AskScreen() {
     : notes
 
   const [q, setQ] = useState(route.query || '')
-  const [state, setState] = useState('empty') // empty | running | answered | error
+  const [state, setState] = useState('empty') // empty | running | answered | error | handed
   const [result, setResult] = useState(null)   // { answer, sources:[{id,label,meta}] }
   const [err, setErr] = useState(null)
+  const [popup, setPopup] = useState(true)      // did the claude.ai tab open (vs blocked)?
   const ranSeed = useRef(false)
 
   const run = async (queryArg) => {
     const query = (typeof queryArg === 'string' ? queryArg : q).trim()
     if (!query) return
-    setQ(query); setState('running'); setErr(null)
+    setQ(query)
+    // MCP mode: hand off to claude.ai on the subscription instead of the metered
+    // proxy. Claude searches the corpus itself via the Course Plus connector.
+    if (mcpMode) {
+      const opened = openInClaude(askPrompt(query, { projectName: scopeProj?.name }))
+      setPopup(opened); setState('handed'); return
+    }
+    setState('running'); setErr(null)
     try {
       const pool = scoped.length ? scoped : notes
       const { answer, sourceIds } = await askNotes(query, pool)
@@ -43,7 +52,8 @@ export function AskScreen() {
 
   // Seed from route.query and auto-run once.
   useEffect(() => {
-    if (route.query && !ranSeed.current && notes.length) { ranSeed.current = true; run(route.query) }
+    // Don't auto-fire in MCP mode — that would pop a claude.ai tab on arrival.
+    if (route.query && !ranSeed.current && notes.length && !mcpMode) { ranSeed.current = true; run(route.query) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.query, notes.length])
 
@@ -76,8 +86,11 @@ export function AskScreen() {
       <Icon n="sparkles" s={17} c={t.accent} />
       <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ask anything across your work…"
         style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 14.5, color: t.t1 }} />
-      <Btn kind="primary" size="sm" type="submit">{state === 'running' ? 'Searching…' : 'Ask'}</Btn>
+      <Btn kind="primary" size="sm" type="submit">{state === 'running' ? 'Searching…' : mcpMode ? 'Ask in Claude.ai' : 'Ask'}</Btn>
     </form>
+    {mcpMode && <div style={{ marginTop: 9, fontFamily: f.ui, fontSize: 12, color: t.t3, display: 'flex', alignItems: 'center', gap: 6 }}>
+      <Icon n="cloud" s={13} c={t.t3} />Runs on your Claude.ai subscription via the Course Plus connector — no API credits.
+    </div>}
 
     {/* Suggested questions — before first query */}
     {state === 'empty' && <div style={{ marginTop: 28 }}>
@@ -94,6 +107,18 @@ export function AskScreen() {
 
     {state === 'running' && <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '34px 4px', color: t.t2, fontFamily: f.ui, fontSize: 14 }}>
       <Icon n="loader-2" s={16} c={t.t1} />Retrieving across your notes…</div>}
+
+    {state === 'handed' && <Card style={{ marginTop: 26, padding: '20px 22px', borderColor: t.accentLine }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Icon n="cloud" s={17} c={t.accent} />
+        <Label style={{ color: t.accent, margin: 0 }}>{popup ? 'Opened in Claude.ai' : 'Prompt copied'}</Label>
+      </div>
+      <div style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.6, color: t.t1 }}>
+        {popup
+          ? <>A claude.ai tab is answering on your subscription. If the connector isn’t picked, choose <b>Course Plus</b> there. The prompt is also on your clipboard.</>
+          : <>Popup was blocked — the prompt is copied to your clipboard. Open <a href="https://claude.ai/new" target="_blank" rel="noopener" style={{ color: t.accent }}>claude.ai</a> and paste it.</>}
+      </div>
+    </Card>}
 
     {state === 'error' && <div style={{ padding: '28px 4px', color: t.t2, fontFamily: f.ui, fontSize: 14 }}>
       Couldn’t retrieve — {String(err?.message || err)}.

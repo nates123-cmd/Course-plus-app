@@ -331,7 +331,7 @@ function GlobalSearch() {
 
 // ── Top bar ─────────────────────────────────────────────────────
 function TopBar({ onMenu, onCapture, isMobile }) {
-  const { mode, setMode, ai, setAi, aiName, back, canBack } = useApp()
+  const { mode, setMode, ai, setAi, aiName, aiDest, setAiDest, mcpMode, back, canBack } = useApp()
   // AI engine toggle (Claude <-> Gemini). State lives in app context so every
   // "Generate with <engine>" label across the app hot-switches with it; the same
   // localStorage key drives lib/claude.js#aiProvider routing.
@@ -345,11 +345,23 @@ function TopBar({ onMenu, onCapture, isMobile }) {
     {canBack && <IconBtn n="arrow-left" s={20} title="Back" onClick={back} />}
     <GlobalSearch />
     <div style={{ flex: 1 }} />
-    <button onClick={() => setAi(NEXT[ai] || 'claude')} title={`AI engine: ${aiName} — tap to switch`}
+    {/* AI destination — 'api' (metered proxy) vs 'mcp' (hand off to claude.ai on
+        the Pro/Max sub, $0 API). When mcp is on the engine pill is moot → dim it. */}
+    <button onClick={() => setAiDest(mcpMode ? 'api' : 'mcp')}
+      title={mcpMode ? 'Running on your Claude.ai subscription (no API credits) — tap for API credits'
+        : 'Running on API credits — tap to hand AI tasks to claude.ai (uses your subscription, $0 API)'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
+        fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: mcpMode ? t.accent : t.t3,
+        background: mcpMode ? t.accentBg : 'transparent', border: '1px solid ' + (mcpMode ? t.accentLine : t.line2), borderRadius: 8 }}>
+      <Icon n={mcpMode ? 'cloud' : 'bolt'} s={14} c={mcpMode ? t.accent : t.t3} />{mcpMode ? 'Claude.ai' : 'Credits'}
+    </button>
+    <button onClick={() => !mcpMode && setAi(NEXT[ai] || 'claude')} disabled={mcpMode}
+      title={mcpMode ? 'Engine is Claude when running on your subscription' : `AI engine: ${aiName} — tap to switch`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: mcpMode ? 'default' : 'pointer',
+        opacity: mcpMode ? 0.4 : 1,
         fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: altOn ? t.accent : t.t3,
         background: altOn ? t.accentBg : 'transparent', border: '1px solid ' + (altOn ? t.accentLine : t.line2), borderRadius: 8 }}>
-      <Icon n="sparkles" s={14} c={altOn ? t.accent : t.t3} />{aiName}
+      <Icon n="sparkles" s={14} c={altOn ? t.accent : t.t3} />{mcpMode ? 'Claude' : aiName}
     </button>
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
     <Btn kind="primary" icon="plus" onClick={onCapture}>New</Btn>
@@ -610,6 +622,11 @@ export default function App() {
   // tree re-renders on toggle and every "Generate with X" label hot-switches.
   // lib/claude.js#aiProvider reads the same localStorage key for actual routing.
   const [ai, setAiRaw] = useState(() => { try { return localStorage.getItem('course.ai') === 'gemini' ? 'gemini' : 'claude' } catch { return 'claude' } })
+  // AI destination ('api' | 'mcp'). 'api' = run inline through the metered claude
+  // proxy (Anthropic credits). 'mcp' = hand the task off to claude.ai with the
+  // "Course Plus" connector, run on the Pro/Max SUBSCRIPTION ($0 API). The engine
+  // pick above only matters in 'api' mode; 'mcp' is always Claude. See lib/claudeBridge.
+  const [aiDest, setAiDestRaw] = useState(() => { try { return localStorage.getItem('course.aiDest') === 'mcp' ? 'mcp' : 'api' } catch { return 'api' } })
   // Multi-tab session: each tab owns its own route + back-history. The active
   // tab's route drives the Screen + TopBar; the recorder stays app-level so a
   // live recording survives both navigation and tab switches.
@@ -620,6 +637,7 @@ export default function App() {
 
   const setMode = (m) => { setModeRaw(m); localStorage.setItem('course.mode', m) }
   const setAi = (v) => { setAiRaw(v); try { localStorage.setItem('course.ai', v) } catch {} }
+  const setAiDest = (v) => { setAiDestRaw(v); try { localStorage.setItem('course.aiDest', v) } catch {} }
   const sameRoute = (a, b) => a && b && a.screen === b.screen && a.id === b.id
   const resetScroll = () => { const sc = document.getElementById('course-scroll'); if (sc) sc.scrollTop = 0 }
   const go = (r) => {
@@ -659,9 +677,10 @@ export default function App() {
   }, [tabs, activeId])
 
   const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'gemini' ? 'Gemini' : 'Claude',
+    aiDest, setAiDest, mcpMode: aiDest === 'mcp',
     route, go, back, navOrTab, canBack: activeTab.hist.length > 0,
     tabs, activeId, openTab, newTab, selectTab, closeTab,
-    isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, tabState, isMobile])
+    isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, aiDest, tabState, isMobile])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>
