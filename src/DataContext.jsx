@@ -41,6 +41,7 @@ export function DataProvider({ children }) {
   const [notes, setNotes] = useState([])
   const [inbox, setInbox] = useState([])
   const [assets, setAssets] = useState([])
+  const [series, setSeries] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
@@ -54,7 +55,7 @@ export function DataProvider({ children }) {
       let data = await loadAll()
       // Resurface anything whose hold date has come due, then re-read once.
       if (await autoReactivateDue(data.areas)) data = await loadAll()
-      setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || [])
+      setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
       setStatus('ready')
     } catch (e) {
       if (!silent) { setError(e); setStatus('error') }
@@ -101,6 +102,17 @@ export function DataProvider({ children }) {
     const ownedNotes = (id) => notes.filter((n) => n.project === id)
     const linkedMeetings = (id) => notes.filter((n) => n.project !== id && (n.projects || []).includes(id))
     const notesInArea = (areaId) => notes.filter((n) => n.area === areaId)
+    // ── series (recurring meetings) ──
+    const seriesById = (id) => series.find((s) => s.id === id) || null
+    const activeSeries = series.filter((s) => !s.archived)
+    // Instances of a series, newest first (updated_at desc from load, but sort by
+    // date text is unreliable — keep load order which is updated_at desc).
+    const instancesForSeries = (id) => notes.filter((n) => n.seriesId === id)
+    // Cheap, no-AI carry-forward: each instance's next-steps with its date,
+    // newest first. Powers the "Open threads" rollup until series synthesis runs.
+    const openThreadsForSeries = (id) => instancesForSeries(id)
+      .filter((n) => n.nextSteps && n.nextSteps.trim())
+      .map((n) => ({ noteId: n.id, title: n.title, date: n.date, text: n.nextSteps.trim() }))
     const assetsForProject = (id) => assets.filter((a) => a.projectId === id)
     const assetsForNote = (id) => assets.filter((a) => a.noteId === id)
     // Every asset that belongs to a project either directly or via one of its
@@ -241,12 +253,13 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, assets, status, error, reload, recordUndo, canUndo,
+      areas, notes, inbox, assets, series, status, error, reload, recordUndo, canUndo,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
       assetsForProject, assetsForNote, assetsInProject,
+      seriesById, activeSeries, instancesForSeries, openThreadsForSeries,
     }
-  }, [areas, notes, inbox, assets, status, error, canUndo])
+  }, [areas, notes, inbox, assets, series, status, error, canUndo])
 
   return <DataCtx.Provider value={value}>{children}</DataCtx.Provider>
 }

@@ -52,6 +52,7 @@ export function RecorderProvider({ go, children }) {
   const [home, setHome] = useState(null)      // home project id, or null (pillar-only)
   const [pillar, setPillar] = useState(null)  // area id when no home project
   const [projects, setProjects] = useState([]) // discussed/linked project ids
+  const [seriesId, setSeriesId] = useState(null) // bound recurring-meeting series, or null
   const [people, setPeople] = useState([])     // attendees + speakers (combined)
   const [agenda, setAgenda] = useState('')     // pre-meeting prep notes
   const [notes, setNotes] = useState('')       // live notes (highest-signal)
@@ -94,6 +95,7 @@ export function RecorderProvider({ go, children }) {
     if ('home' in patch) setHome(patch.home)
     if ('pillar' in patch) setPillar(patch.pillar)
     if ('projects' in patch) setProjects(patch.projects)
+    if ('seriesId' in patch) setSeriesId(patch.seriesId)
     if ('people' in patch) setPeople(patch.people)
     if ('agenda' in patch) setAgenda(patch.agenda)
     if ('notes' in patch) setNotes(patch.notes)
@@ -166,7 +168,7 @@ export function RecorderProvider({ go, children }) {
         const d = JSON.parse(raw)
         if (d && (d.title || d.notes || d.agenda || d.transcriptText)) {
           setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
-          setProjects(d.projects || []); setPeople(d.people || []); setAgenda(d.agenda || '')
+          setProjects(d.projects || []); setSeriesId(d.seriesId ?? null); setPeople(d.people || []); setAgenda(d.agenda || '')
           setNotes(d.notes || ''); setSource(d.source || 'paste')
           if (d.engine) setEngine(browserWhisperSupported ? d.engine : 'cloud')
           setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
@@ -187,7 +189,7 @@ export function RecorderProvider({ go, children }) {
     const has = meaningful() || people.length || projects.length
     if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
     const id = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, seriesId, people, agenda, notes, source, engine, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,6 +201,7 @@ export function RecorderProvider({ go, children }) {
     project: home || null, area: home ? (areaOfProject(home)?.id || null) : (pillar || null),
     projects: [...new Set([home, ...projects].filter(Boolean))],
     people: people || [], agenda: agenda.trim() || null, transcript: transcriptText || null,
+    seriesId: seriesId || null,
     body: notes.trim() ? markdownToBlocks(notes) : [],
     date: (() => { const d = new Date(); const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` })(),
     updated: 'now', status: incomplete ? 0 : 2, incomplete,
@@ -278,7 +281,7 @@ export function RecorderProvider({ go, children }) {
     if (!n) return
     draftIdRef.current = n.id; draftSavedRef.current = true
     setTitle(n.title || ''); setHome(n.project || null); setPillar(n.project ? null : (n.area || null))
-    setProjects(n.projects || []); setPeople(n.people || []); setAgenda(n.agenda || '')
+    setProjects(n.projects || []); setSeriesId(n.seriesId || null); setPeople(n.people || []); setAgenda(n.agenda || '')
     setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
     setTranscriptText(n.transcript || '')
     setLines(n.transcript ? parseLines(n.transcript, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
@@ -456,7 +459,7 @@ export function RecorderProvider({ go, children }) {
   // clear() — full teardown after a save/discard (drops title + the draft copies).
   const clear = () => {
     reset()
-    setTitle('')
+    setTitle(''); setSeriesId(null)
     draftIdRef.current = null; draftSavedRef.current = false
     setRecoveredBlob(null)
     try { localStorage.removeItem(DRAFT_KEY) } catch {}
@@ -465,7 +468,7 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
-    title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
+    title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
     engine, browserWhisperSupported, tStatus, modelPct,
     diarizeSupported, hasVoice, labelSpeakers, setLabelSpeakers, enrollVoice, clearVoice, enrollStatus, labelPct,
@@ -474,7 +477,7 @@ export function RecorderProvider({ go, children }) {
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

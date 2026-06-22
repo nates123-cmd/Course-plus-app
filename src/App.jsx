@@ -19,6 +19,7 @@ import { LibraryScreen } from './screens/Library'
 import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
+import { SeriesScreen } from './screens/Series'
 import { RecorderProvider, FloatingRecorder } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
@@ -131,6 +132,7 @@ function SidebarContent({ onClose }) {
     {nav('calendar', 'Agenda', 'agenda')}
     {nav('sparkles', 'Ask', 'ask')}
     {nav('inbox', 'Inbox', 'inbox', inboxCount)}
+    {nav('repeat', 'Series', 'series')}
     {nav('stack-2', 'Library', 'library')}
 
     <div style={{ display: 'flex', alignItems: 'center', padding: '20px 10px 8px' }}>
@@ -507,6 +509,7 @@ function Screen() {
     case 'project':  return <ProjectScreen key={route.id} />
     case 'note':     return <NoteScreen key={route.id} />
     case 'artifact': return <ArtifactScreen key={route.id} />
+    case 'series':   return <SeriesScreen key={route.id} />
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />
@@ -525,7 +528,7 @@ function FullScreenMsg({ children, spin }) {
 // A short, live label for a tab from its route (project/note/area names
 // resolve against loaded data; falls back to the screen's generic name).
 function useTabTitle() {
-  const { projectById, areaById, noteById, artifactById } = useData()
+  const { projectById, areaById, noteById, artifactById, seriesById } = useData()
   return (r) => {
     if (!r) return 'Course'
     switch (r.screen) {
@@ -538,6 +541,7 @@ function useTabTitle() {
       case 'project':  return projectById(r.id)?.name || 'Project'
       case 'note':     return noteById(r.id)?.title || 'Note'
       case 'artifact': return artifactById(r.id)?.title || 'Artifact'
+      case 'series':   return seriesById(r.id)?.name || 'Series'
       case 'meeting':
       case 'record':   return (r.title && r.title.trim()) || 'Recording'
       default:         return 'Course'
@@ -546,7 +550,7 @@ function useTabTitle() {
 }
 
 const TAB_ICON = { overview: 'layout-grid', agenda: 'calendar', ask: 'sparkles', inbox: 'inbox',
-  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export',
+  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
   meeting: 'microphone', record: 'microphone' }
 
 function TabBar() {
