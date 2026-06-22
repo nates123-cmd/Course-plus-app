@@ -9,8 +9,15 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, IconBtn, StatusPill, Priority, AreaDot, Card, Label, Tag,
-  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish,
+  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish, TODAY,
 } from '../kit'
+
+// Float time-sensitive tasks to the top of a project's open list: due today /
+// overdue first, then surfaced Next, then everything else. Stable within each
+// tier so manual drag order is preserved among same-priority tasks.
+const dnum = (d) => (d ? d.y * 10000 + d.m * 100 + d.d : null)
+const TODAY_N = dnum(TODAY)
+const taskTier = (x) => (x.dueDate && dnum(x.dueDate) <= TODAY_N ? 0 : x.next ? 1 : 2)
 import { briefingFor, composeDeliverable, updateGuide } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
@@ -380,6 +387,9 @@ function Tasks({ project, reload }) {
   }
 
   const openTasks = order.filter((x) => !x.done)
+    .map((x, i) => ({ x, i }))                                 // remember manual position
+    .sort((a, b) => taskTier(a.x) - taskTier(b.x) || a.i - b.i) // float due/next, stable otherwise
+    .map((o) => o.x)
   const doneTasks = order.filter((x) => x.done)
   const findTask = (id) => order.find((o) => o.id === id) || null
   return <div>
