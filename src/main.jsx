@@ -18,15 +18,6 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// Defensive cleanup for any stale service worker / caches from prior suite apps
-// served on the same origin.
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations()
-    .then((regs) => regs.forEach((r) => r.unregister()))
-    .catch(() => {})
-  if ('caches' in window) {
-    caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
-      .catch(() => {})
-  }
-}
+// NOTE: the service worker is registered INLINE in index.html, not here — the
+// rolldown minifier drops navigator.serviceWorker.register() from this module
+// bundle as a dead expression. See index.html + public/sw.js.

@@ -19,22 +19,20 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Kill any stale service worker / cache from another suite app on the
-         shared github.io origin BEFORE the module loads — a leftover SW serving a
-         cached shell is the classic cause of a blank page with no error. -->
+    <!-- Register the Course+ service worker INLINE (not from the JS bundle): the
+         rolldown minifier strips navigator.serviceWorker.register() from the
+         module bundle as a dead expression, so it has to live here. %BASE_URL% is
+         replaced by Vite with the app base (/Course-plus-app/ in prod, / in dev).
+         Own-scope worker → wins over any sibling suite app's root-scope SW for our
+         pages, and is network-first on the shell so deploys apply immediately.
+         (Replaces the old "unregister all + wipe every cache on load" hack, which
+         also nuked the cached on-device Whisper model.) -->
     <script>
-      (function () {
-        try {
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations()
-              .then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })
-              .catch(function () {});
-          }
-          if ('caches' in window) {
-            caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
-          }
-        } catch (e) {}
-      })();
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('%BASE_URL%sw.js', { scope: '%BASE_URL%' }).catch(function () {});
+        });
+      }
     </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
