@@ -30,13 +30,13 @@ async function getEmbedder(onProgress) {
     const { AutoProcessor, AutoModel, env } = await import('@huggingface/transformers')
     env.allowLocalModels = false
     env.useBrowserCache = true
-    let device
-    if (typeof navigator !== 'undefined' && navigator.gpu) device = 'webgpu'
+    // Single-threaded WASM — same backend constraint as the Whisper pipeline
+    // (WebGPU EP is broken in the bundled ORT; threaded WASM needs COOP/COEP
+    // headers GitHub Pages can't send). See lib/whisper.js getPipeline.
+    if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
     const opts = { dtype: 'q8', progress_callback: onProgress }
     const processor = await AutoProcessor.from_pretrained(EMB_MODEL, { progress_callback: onProgress })
-    let model
-    try { model = await AutoModel.from_pretrained(EMB_MODEL, { ...opts, device }) }
-    catch (e) { if (device === 'webgpu') model = await AutoModel.from_pretrained(EMB_MODEL, opts); else throw e }
+    const model = await AutoModel.from_pretrained(EMB_MODEL, { ...opts, device: 'wasm' })
     return { processor, model }
   })()
   _modelPromise.catch(() => { _modelPromise = null })

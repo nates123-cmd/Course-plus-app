@@ -20,15 +20,16 @@ async function getPipeline(onProgress) {
     // Pull weights from the HF hub (not bundled locally), keep the browser cache on.
     env.allowLocalModels = false
     env.useBrowserCache = true
-    let device // let transformers pick WASM if WebGPU is unavailable
-    if (typeof navigator !== 'undefined' && navigator.gpu) device = 'webgpu'
-    try {
-      return await pipeline('automatic-speech-recognition', MODEL, { device, progress_callback: onProgress })
-    } catch (e) {
-      // WebGPU can build but fail at runtime on some GPUs — fall back to WASM once.
-      if (device === 'webgpu') return await pipeline('automatic-speech-recognition', MODEL, { progress_callback: onProgress })
-      throw e
-    }
+    // Run on single-threaded WASM. Two failure modes both surface as
+    // onnxruntime's "no available backend found":
+    //  1. WebGPU EP in the bundled onnxruntime-web throws "webgpuInit is not a
+    //     function" — and v4 picks WebGPU by default when navigator.gpu exists,
+    //     so an undefined device fails the same way (no real WASM fallback).
+    //  2. Multi-threaded WASM needs SharedArrayBuffer, which needs COOP/COEP
+    //     headers GitHub Pages can't send → the threaded backend won't register.
+    // Single-threaded WASM is the one config that reliably loads on a static host.
+    if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
+    return await pipeline('automatic-speech-recognition', MODEL, { device: 'wasm', progress_callback: onProgress })
   })()
   // Don't cache a failed load — let the next attempt retry.
   _pipePromise.catch(() => { _pipePromise = null })
