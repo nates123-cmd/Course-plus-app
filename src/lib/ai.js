@@ -180,7 +180,7 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
 // The user's OWN live notes are the highest-signal input — they wrote those down
 // because they mattered — so they're weighted above the transcript. Long
 // transcripts escalate to Sonnet for whole-meeting recall.
-export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low', pins = [] } = {}) {
+export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcript = '', people = [], speakerLabels = [], detail = 'low', pins = [], projectOptions = [] } = {}) {
   const tx = transcript || ''
   const long = tx.length > 18000
   const model = pickModel((detail === 'high' || long) ? 'heavy' : 'light')
@@ -209,6 +209,11 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
   if (liveNotes.trim()) parts.push(`MY LIVE NOTES (highest priority — these are what I judged worth writing):\n${liveNotes.trim()}`)
   if (pins.length) parts.push(`MOMENTS I FLAGGED as important while recording (timestamps ${pins.join(', ')}): make sure the summary and next steps explicitly address whatever was being discussed around each of these — I marked them because they matter.`)
   if (tx.trim()) parts.push(`Transcript (${tx.length} chars, supporting context):\n${tx.trim()}`)
+  // Quick mode: hand the model the existing projects so it can file the meeting
+  // under the single best match (returned as an exact id in "project").
+  const wantProject = (projectOptions || []).length > 0
+  if (wantProject) parts.push('Existing projects I could file this meeting under (id — name [pillar]):\n' +
+    projectOptions.map((p) => `${p.id} — ${p.name}${p.area ? ` [${p.area}]` : ''}`).join('\n'))
   const labelList = (speakerLabels || []).filter(Boolean)
   const speakerAsk = labelList.length
     ? `\n\nThe transcript labels speakers as: ${labelList.join(', ')}. In "speakers", map EACH of those labels to the most likely real first name (lead with the people list above; otherwise infer; the first-person speaker is Nate). Only include confident guesses.`
@@ -217,6 +222,8 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
     parts.join('\n\n---\n\n') + '\n\n' +
     'Return ONLY JSON (no markdown fences, no prose around it). Use real "\\n" in strings for line ' +
     'breaks and "- " for bullets. Shape: {' +
+    '"title": string (a concise, specific meeting title — 4 to 8 words, Title Case, no surrounding quotes), ' +
+    (wantProject ? '"project": string (the id — copied EXACTLY — of the single best-matching project from the "Existing projects" list above for THIS meeting; "" if none clearly fits — never invent an id), ' : '') +
     '"summary": string (' + summarySpec + '), ' +
     '"actions": [{"text": string, "owner": string}], ' +
     '"next_steps": string (markdown bullet points — your suggested next steps / follow-ups / ' +
@@ -239,6 +246,8 @@ export async function synthesizeMeeting({ liveNotes = '', agenda = '', transcrip
   const summary = (typeof j.summary === 'string' && j.summary) ? j.summary : grab('summary')
   const nextSteps = (typeof j.next_steps === 'string' && j.next_steps) ? j.next_steps : grab('next_steps')
   return {
+    title: (typeof j.title === 'string' ? j.title.trim() : ''),
+    project: (typeof j.project === 'string' ? j.project.trim() : ''),
     summary: summary || '', nextSteps: nextSteps || '',
     actions: Array.isArray(j.actions) ? j.actions : [],
     tags: Array.isArray(j.tags) ? j.tags : [],

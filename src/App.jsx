@@ -20,7 +20,7 @@ import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
 import { SeriesScreen } from './screens/Series'
-import { RecorderProvider, FloatingRecorder } from './RecorderContext'
+import { RecorderProvider, FloatingRecorder, useRecorderCtx } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
 function SidebarContent({ onClose }) {
@@ -407,6 +407,7 @@ function QuickCapture({ onClose, initial }) {
   const todayStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
   const record = () => { onClose(); go({ screen: 'meeting', project: home, title: text.trim() }) }
+  const recordQuick = () => { onClose(); go({ screen: 'meeting', project: home, title: text.trim(), quick: true }) }
   const file = async () => {
     if (busy) return
     if (kind === 'meeting') { record(); return }
@@ -458,13 +459,24 @@ function QuickCapture({ onClose, initial }) {
       {autoResult && kind !== 'auto' && <div style={{ margin: '12px 14px 0', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', borderRadius: 10, background: t.accentBg, border: '1px solid ' + t.accentLine }}>
         <Icon n="sparkles" s={14} c={t.accent} />
         <span style={{ fontFamily: F.ui, fontSize: 12.5, color: t.t2 }}>Sorted as <span style={{ color: t.t1, fontWeight: 600 }}>{({ note: 'Note', meeting: 'Meeting', task: 'Task', project: 'Project' })[autoResult.kind]}</span>{autoResult.home ? <> · suggested <span style={{ color: t.t1, fontWeight: 600 }}>{projectName(autoResult.home)}</span></> : ''} — adjust or confirm below.</span></div>}
-      {kind === 'meeting' && <div onClick={record} style={{ margin: '12px 14px 0', display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 11, cursor: 'pointer', background: t.accentBg, border: '1px solid ' + t.accentLine }}
-        onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent} onMouseLeave={(e) => e.currentTarget.style.borderColor = t.accentLine}>
-        <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="microphone" s={16} c={t.accent} /></span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Open meeting page</div>
-          <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.t3 }}>Prep, notes, people — then paste a transcript or record</div></div>
-        <Icon n="arrow-right" s={16} c={t.accent} /></div>}
+      {kind === 'meeting' && <div style={{ margin: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Quick record — one tap: starts recording now, auto-fills title/summary/next steps/project after */}
+        <div onClick={recordQuick} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 11, cursor: 'pointer', background: t.accent, border: '1px solid ' + t.accent }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = 0.92} onMouseLeave={(e) => e.currentTarget.style.opacity = 1}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.18)' }}><Icon n="bolt" s={16} c={t.onAccent} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.onAccent }}>Quick record</div>
+            <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.onAccent, opacity: 0.82 }}>Starts recording now — title, summary &amp; next steps filled in after</div></div>
+          <Icon n="arrow-right" s={16} c={t.onAccent} /></div>
+        {/* Open meeting page — full composer (prep, notes, people, then record) */}
+        <div onClick={record} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 11, cursor: 'pointer', background: t.accentBg, border: '1px solid ' + t.accentLine }}
+          onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent} onMouseLeave={(e) => e.currentTarget.style.borderColor = t.accentLine}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="microphone" s={16} c={t.accent} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Open meeting page</div>
+            <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.t3 }}>Prep, notes, people — then record yourself</div></div>
+          <Icon n="arrow-right" s={16} c={t.accent} /></div>
+      </div>}
       <div style={{ flex: expanded ? 1 : 'none', display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: expanded ? 'auto' : 'visible', padding: expanded ? '6px 34px 8px' : 0 }}>
         {expanded && kind !== 'auto' && <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
           placeholder={kind === 'project' ? 'Project name…' : kind === 'task' ? 'Task…' : kind === 'meeting' ? 'Meeting title…' : 'Title…'}
@@ -509,6 +521,21 @@ function QuickCapture({ onClose, initial }) {
       </div>
     </div>
   </div>
+}
+
+// ── Mobile Quick-record FAB ─────────────────────────────────────
+// Phone-first: a persistent mic button (idle, off the record screen) that
+// one-taps straight into a Quick-record meeting — opens the page and auto-starts.
+function QuickRecordFab() {
+  const { t, go, route, isMobile } = useApp()
+  const rec = useRecorderCtx()
+  if (!isMobile || !rec || rec.phase !== 'idle') return null
+  if (route.screen === 'record' || route.screen === 'meeting') return null
+  return <button onClick={() => go({ screen: 'meeting', quick: true })} aria-label="Quick record a meeting" title="Quick record"
+    style={{ position: 'fixed', zIndex: 455, right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(18px + env(safe-area-inset-bottom))',
+      width: 62, height: 62, borderRadius: 31, border: 'none', background: t.accent, boxShadow: t.shadow,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+    <Icon n="microphone" s={27} c={t.onAccent} /></button>
 }
 
 // ── Screen router ───────────────────────────────────────────────
@@ -699,6 +726,7 @@ export default function App() {
             <SidebarContent onClose={() => setDrawer(false)} /></div></div>}
         {capture && <QuickCapture initial={capture === true ? null : capture} onClose={() => setCapture(false)} />}
         <FloatingRecorder />
+        <QuickRecordFab />
       </div>
     </RecorderProvider>
   </CourseCtx.Provider>

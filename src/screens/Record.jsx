@@ -217,7 +217,7 @@ export function RecordScreen() {
   const [enrollOpen, setEnrollOpen] = useState(false)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
-  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
+  const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
@@ -229,9 +229,12 @@ export function RecordScreen() {
   const pillarProjects = pickerProjects.filter((p) => p.area === effectivePillar)
 
   // seed title/home from the route when starting fresh
+  const autoStartedRef = useRef(false)
   useEffect(() => {
     if (phase !== 'idle') return
     const patch = {}
+    // Launched via "Quick record" (New → Meeting): quick mode + auto-start.
+    if (route.quick) patch.quick = true
     // Launched from a recurring series → prefill defaults (people, links, area)
     // and bind the series so the saved meeting becomes one of its instances.
     const s = route.series ? seriesById(route.series) : null
@@ -249,6 +252,8 @@ export function RecordScreen() {
     if (route.title != null && !title) patch.title = route.title
     if (!route.project && !route.series && !home && !pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
     if (Object.keys(patch).length) rec.setMeta(patch)
+    // Kick off recording immediately for Quick record (guard against double-mount).
+    if (route.quick && !autoStartedRef.current) { autoStartedRef.current = true; rec.start() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -376,11 +381,26 @@ export function RecordScreen() {
           background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
         <Icon n="repeat" s={12} c={t.accent} />{seriesById(rec.seriesId).name}</span>}
     </div>
-    <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
-      style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />
+    {/* Quick vs Full mode — only switchable before a session starts. Quick hides
+        every pre-field, records on one tap, and auto-synthesizes + auto-fills
+        title/project from the content when you stop. */}
+    {phase === 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+        {[['quick', 'Quick', 'bolt'], ['full', 'Full', 'list-details']].map(([id, label, icon]) => {
+          const on = quick === (id === 'quick')
+          return <span key={id} onClick={() => rec.setMeta({ quick: id === 'quick' })}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+            <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
+        })}
+      </div>
+      <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{quick ? 'one tap to record — title, summary & project filled in for you' : 'add details, notes & people before recording'}</span>
+    </div>}
+
+    {(!quick || phase === 'done') && <input value={title} onChange={(e) => rec.setMeta({ title: e.target.value })} placeholder="Name this meeting…" className="selectable"
+      style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 28, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.15 }} />}
 
     {/* save-to: pillar (drives the project list) · project */}
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+    {(!quick || phase === 'done') && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Save to</span>
       {/* pillar — defaults to Arrow */}
       <span style={{ position: 'relative' }}>
@@ -404,10 +424,10 @@ export function RecordScreen() {
           {pillarProjects.length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No projects in {destArea ? destArea.name : 'this pillar'}.</div>}
         </Popover>}
       </span>
-    </div>
+    </div>}
 
     {/* people (attendees + speakers) */}
-    <div style={{ marginTop: 16 }}>
+    {!quick && <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
         <Label style={{ margin: 0 }}>People</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>who's here / who spoke — also labels a pasted transcript</span>
@@ -421,10 +441,10 @@ export function RecordScreen() {
           placeholder="Add a name…" className="selectable"
           style={{ width: 130, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px' }} />
       </div>
-    </div>
+    </div>}
 
     {/* projects discussed */}
-    <div style={{ marginTop: 16 }}>
+    {!quick && <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
         <Label style={{ margin: 0 }}>Projects discussed</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>tag any that come up — you can pick several</span>
@@ -443,20 +463,20 @@ export function RecordScreen() {
           </Popover>}
         </span>
       </div>
-    </div>
+    </div>}
 
     {/* live notes — highest signal. Full markdown editor (headings, tables,
         bold, lists) — same formatting as every other notes section. */}
-    <div style={{ marginTop: 22 }}>
+    {!quick && <div style={{ marginTop: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <Label style={{ margin: 0 }}>My notes</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>what you write down — weighted above the transcript</span>
       </div>
       <MdEditor value={notes} onChange={(v) => rec.setMeta({ notes: v })} minHeight={420} />
-    </div>
+    </div>}
 
     {/* action items — yours; Claude appends your action items on synthesize */}
-    <div style={{ marginTop: 22 }}>
+    {(!quick || phase === 'done') && <div style={{ marginTop: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
         <Label style={{ margin: 0 }}>My action items{actions.length ? ' · ' + actions.length : ''}</Label>
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>add your own · check to push to tasks · × to dismiss · synthesize adds more</span>
@@ -474,11 +494,11 @@ export function RecordScreen() {
           placeholder="Add an action item for yourself…" className="selectable"
           style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.body, fontSize: 14, color: t.t1 }} />
       </div>
-    </div>
+    </div>}
 
     {/* transcript — record OR paste */}
     <div style={{ marginTop: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+      {!quick && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <Label style={{ margin: 0 }}>Transcript</Label>
         <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
           {[['paste', 'Paste', 'clipboard'], ['record', 'Record', 'microphone']].map(([id, label, icon]) => {
@@ -489,7 +509,7 @@ export function RecordScreen() {
           })}
         </div>
         {source === 'paste' && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>paste from Copilot / Teams — better speakers, no cost</span>}
-      </div>
+      </div>}
 
       {source === 'paste'
         ? <div style={editorBox}>
@@ -499,7 +519,7 @@ export function RecordScreen() {
           </div>
         : <>
             {/* engine picker — cloud (speaker labels) vs on-device Whisper (private, free) */}
-            {browserWhisperSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            {!quick && browserWhisperSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Transcribe with</span>
               <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
                 {[['cloud', 'Cloud · speaker labels', 'cloud'], ['browser', 'On device · private', 'device-laptop']].map(([id, label, icon]) => {
@@ -514,7 +534,7 @@ export function RecordScreen() {
             </div>}
             {/* on-device speaker labeling (Me vs Computer) — browser engine only,
                 needs a one-time voice enrollment */}
-            {engine === 'browser' && browserWhisperSupported && <div style={{ marginBottom: 10 }}>
+            {!quick && engine === 'browser' && browserWhisperSupported && <div style={{ marginBottom: 10 }}>
               {rec.hasVoice
                 ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span onClick={() => { if (!tuneLocked) rec.setLabelSpeakers(!rec.labelSpeakers) }} title="Tell your voice apart from the person on the call — runs on this device (experimental)"
@@ -529,7 +549,7 @@ export function RecordScreen() {
               {enrollOpen && <VoiceEnroll onDone={() => setEnrollOpen(false)} />}
             </div>}
             {/* tab/system-audio capture — Pindrop-style; choose BEFORE recording */}
-            {tabAudioSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            {!quick && tabAudioSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
               {(() => {
                 const locked = phase !== 'idle'
                 return <span onClick={() => { if (!locked) rec.setMeta({ tabAudio: !tabAudio }) }}
@@ -580,7 +600,7 @@ export function RecordScreen() {
                 {fmtClock(p.at)}<Icon n="x" s={11} c={t.accent} /></span>)}
             </div>}
             {/* tuning — speaker labels only exist on the cloud engine */}
-            {engine === 'cloud' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            {!quick && engine === 'cloud' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
                 <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
@@ -592,6 +612,16 @@ export function RecordScreen() {
             </div>}
           </>}
     </div>
+
+    {/* quick-mode scratch pad — live notes under the recorder, weighted highest
+        in synthesis (same field as Full mode's "My notes"). */}
+    {quick && <div style={{ marginTop: 22 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Label style={{ margin: 0 }}>My notes</Label>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>scratch pad — jot anything; weighted highest in the summary</span>
+      </div>
+      <MdEditor value={notes} onChange={(v) => rec.setMeta({ notes: v })} minHeight={240} />
+    </div>}
 
     {/* speakers — only after synthesize; AI has guessed names (People-led, else inferred).
         On-device Whisper has no diarization, so there's nothing to label. */}
@@ -616,8 +646,9 @@ export function RecordScreen() {
       </div>
     </div>}
 
-    {/* synthesize bar */}
-    {showSynthBar && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
+    {/* synthesize bar — hidden in quick mode (auto-synthesizes), except as a
+        retry path if auto-synth failed and we're parked at 'ready'. */}
+    {showSynthBar && (!quick || phase === 'ready') && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
       <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
       <div style={{ flex: 1, minWidth: 140 }}>
         <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Synthesize</div>

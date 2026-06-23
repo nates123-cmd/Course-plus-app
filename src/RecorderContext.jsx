@@ -40,7 +40,7 @@ export function RecorderProvider({ go, children }) {
   // Pin the current moment (dedupe within the same second). Works live + paused.
   const addPin = () => setPins((p) => p.some((x) => x.at === seconds) ? p : [...p, { at: seconds, label: '' }].sort((a, b) => a.at - b.at))
   const removePin = (at) => setPins((p) => p.filter((x) => x.at !== at))
-  const { areaOfProject, reload } = useData()
+  const { areaOfProject, reload, allProjects, projectById } = useData()
 
   // post-recording processing phase (idle when not in a processing stage)
   const [proc, setProc] = useState(PROC_IDLE) // idle | transcribing | ready | synth | done
@@ -58,6 +58,9 @@ export function RecorderProvider({ go, children }) {
   const [notes, setNotes] = useState('')       // live notes (highest-signal)
   const [source, setSource] = useState('paste') // transcript source: 'paste' | 'record'
   const [detail, setDetail] = useState('low') // synthesis depth: low | medium | high (Brief is the default)
+  // quick: one-tap record mode — hides all pre-fields, auto-synthesizes on stop
+  // (detail='medium') and auto-fills title + a suggested project from the content.
+  const [quick, setQuick] = useState(false)
   // transcription tuning (record mode only)
   const [speakers, setSpeakers] = useState(null) // expected speaker count (null = auto)
   const [diarize, setDiarize] = useState(true)   // speaker labels on/off
@@ -101,6 +104,7 @@ export function RecorderProvider({ go, children }) {
     if ('notes' in patch) setNotes(patch.notes)
     if ('source' in patch) setSource(patch.source)
     if ('detail' in patch) setDetail(patch.detail)
+    if ('quick' in patch) { setQuick(!!patch.quick); if (patch.quick) setSource('record') }
     if ('speakers' in patch) setSpeakers(patch.speakers)
     if ('diarize' in patch) setDiarize(patch.diarize)
     if ('engine' in patch) setEngine(browserWhisperSupported ? patch.engine : 'cloud')
@@ -169,7 +173,7 @@ export function RecorderProvider({ go, children }) {
         if (d && (d.title || d.notes || d.agenda || d.transcriptText)) {
           setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
           setProjects(d.projects || []); setSeriesId(d.seriesId ?? null); setPeople(d.people || []); setAgenda(d.agenda || '')
-          setNotes(d.notes || ''); setSource(d.source || 'paste')
+          setNotes(d.notes || ''); setSource(d.source || 'paste'); setQuick(!!d.quick)
           if (d.engine) setEngine(browserWhisperSupported ? d.engine : 'cloud')
           setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
           setPins(Array.isArray(d.pins) ? d.pins : [])
@@ -189,11 +193,11 @@ export function RecorderProvider({ go, children }) {
     const has = meaningful() || people.length || projects.length
     if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
     const id = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, seriesId, people, agenda, notes, source, engine, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, seriesId, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, home, pillar, projects, people, agenda, notes, source, engine, transcriptText, lines, synth, pins])
+  }, [title, home, pillar, projects, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins])
 
   // The note fields shared by autosave + finalize.
   const noteFields = (incomplete) => ({
@@ -406,6 +410,9 @@ export function RecorderProvider({ go, children }) {
       setSource('record')
       setProc('ready')
       clearRecovered().catch(() => {}) // audio captured into the transcript; no longer "interrupted"
+      // Quick mode: go straight to synthesis (medium) — no manual Synthesize tap.
+      // Pass the local txt/withAt since setState hasn't flushed yet this tick.
+      if (quick) await doSynth({ text: txt, lineList: withAt, detailLevel: 'medium', quick: true })
     } catch (e) {
       setError(humanize(e))
       setProc(PROC_IDLE)
@@ -423,18 +430,36 @@ export function RecorderProvider({ go, children }) {
   }
 
   // Synthesize → bullet summary + actions + tags, weighting the user's live notes.
-  const synthesize = async () => {
-    if (!transcriptText && !notes.trim()) return
+  // Args can override the state values (so it can run inside stopAndTranscribe
+  // before setState has flushed): text, detailLevel, lineList. isQuick also asks
+  // the model for a title + a best-fit project and auto-fills both.
+  const doSynth = async ({ text, detailLevel, lineList, quick: isQuick = false } = {}) => {
+    const tx = text != null ? text : transcriptText
+    if (!tx && !notes.trim()) return
     setError(null)
     setProc('synth')
     try {
-      const speakerLabels = [...new Set(lines.map((l) => l.sp))]
+      const ll = lineList || lines
+      const speakerLabels = [...new Set(ll.map((l) => l.sp))]
       const pinStamps = pins.map((p) => fmtClock(p.at))
-      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: transcriptText, people, speakerLabels, detail, pins: pinStamps })
+      const dl = detailLevel || detail
+      // Quick mode: offer the model the live (non-archived) projects to file under.
+      const projectOptions = isQuick
+        ? allProjects().filter((p) => p.status !== 'archived').map((p) => ({ id: p.id, name: p.name, area: areaOfProject(p.id)?.name || '' }))
+        : []
+      const s = await synthesizeMeeting({ liveNotes: notes, agenda, transcript: tx, people, speakerLabels, detail: dl, pins: pinStamps, projectOptions })
       setSynth({ summary: s.summary || '', actions: s.actions || [], terms: [], people: [], tags: s.tags || [], nextSteps: s.nextSteps || '' })
       // Apply Claude's speaker-name guesses (leads with the People list; else inferred).
       if (s.speakers && typeof s.speakers === 'object') {
         for (const [label, name] of Object.entries(s.speakers)) { if (name && String(name).trim() && label !== name) renameSpeaker(label, name) }
+      }
+      // Quick mode auto-fill — only when the user hasn't already set the field.
+      if (isQuick) {
+        if (s.title && !title.trim()) setTitle(s.title)
+        if (s.project && !home) {
+          const p = projectById(s.project) // validate the id is real before applying
+          if (p) { setHome(p.id); setProjects((xs) => [...new Set([p.id, ...xs])]) }
+        }
       }
       // Paste path is free; only cloud in-app recording incurs AssemblyAI cost
       // (on-device Whisper is free).
@@ -447,6 +472,7 @@ export function RecorderProvider({ go, children }) {
       setProc('ready') // fall back so the user can retry synth
     }
   }
+  const synthesize = () => doSynth({})
 
   // reset() — back to idle, keep title/home so the user can re-record.
   const reset = () => {
@@ -468,7 +494,7 @@ export function RecorderProvider({ go, children }) {
 
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
-    title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, lines, transcriptText, synth, cost,
+    title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
     engine, browserWhisperSupported, tStatus, modelPct,
     diarizeSupported, hasVoice, labelSpeakers, setLabelSpeakers, enrollVoice, clearVoice, enrollStatus, labelPct,
@@ -477,7 +503,7 @@ export function RecorderProvider({ go, children }) {
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

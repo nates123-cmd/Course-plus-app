@@ -69,10 +69,15 @@ export function useRecorder() {
   const audioCtx = useRef(null), analyser = useRef(null)
   const micStream = useRef(null), tabStream = useRef(null)
 
-  const tick = () => { timer.current = setInterval(() => setSeconds((s) => {
-    if (s + 1 >= MAX_SECONDS) { try { mr.current?.stop() } catch {} }
-    return s + 1
-  }), 1000) }
+  const tick = () => { timer.current = setInterval(() => {
+    // Keep the audio graph running — a backgrounded tab can suspend the
+    // AudioContext, which silences the tab-mix recording. resume() is idempotent.
+    audioCtx.current?.resume?.()
+    setSeconds((s) => {
+      if (s + 1 >= MAX_SECONDS) { try { mr.current?.stop() } catch {} }
+      return s + 1
+    })
+  }, 1000) }
   const stopTick = () => { clearInterval(timer.current); timer.current = null }
 
   // Keep the screen awake while recording — on mobile a sleeping screen
@@ -86,8 +91,8 @@ export function useRecorder() {
   useEffect(() => {
     const onVis = () => {
       const live = mr.current && mr.current.state === 'recording'
-      if (document.visibilityState === 'hidden') { if (live) setInterrupted(true) }
-      else if (live) acquireWake()
+      if (document.visibilityState === 'hidden') { if (live) { setInterrupted(true); audioCtx.current?.resume?.() } }
+      else if (live) { acquireWake(); audioCtx.current?.resume?.() }
     }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
@@ -138,14 +143,20 @@ export function useRecorder() {
       const ctx = new AC(); audioCtx.current = ctx
       const an = ctx.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = 0.7
       analyser.current = an
-      const dest = ctx.createMediaStreamDestination()
-      ctx.createMediaStreamSource(mic).connect(an)   // mic → analyser
-      ctx.createMediaStreamSource(mic).connect(dest)  // mic → recording
+      ctx.createMediaStreamSource(mic).connect(an)   // mic → analyser (live waveform)
       if (tab) {
+        // Mixing mic + tab REQUIRES the AudioContext, so this recording depends on
+        // the context staying alive in the background (tick + visibility resume it).
+        const dest = ctx.createMediaStreamDestination()
+        ctx.createMediaStreamSource(mic).connect(dest)
         const tsrc = ctx.createMediaStreamSource(tab)
         tsrc.connect(an); tsrc.connect(dest)          // tab → analyser + recording
+        return dest.stream
       }
-      return dest.stream
+      // Mic-only: record the RAW mic track. getUserMedia tracks keep delivering
+      // audio while the tab is backgrounded, so navigating away no longer silences
+      // the recording — here the AudioContext is purely a waveform tap.
+      return mic
     } catch {
       // AudioContext unavailable → record the raw mic, no waveform.
       analyser.current = null; audioCtx.current = null
