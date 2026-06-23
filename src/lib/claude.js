@@ -39,6 +39,7 @@ export const MODEL_PRICING = {
   'claude-opus-4-8':   { in: 15, out: 75 },
   'gemini-2.5-flash-lite':  { in: 0.10, out: 0.40 },
   'gemini-2.5-flash':  { in: 0.30, out: 2.50 },
+  'gemini-2.5-pro':  { in: 1.25, out: 10 },
 }
 
 // AI engine preference (set by the TopBar toggle, read at call time so flipping
@@ -50,8 +51,11 @@ export function aiProvider() {
 // Resolve a capability tier ('light' | 'heavy') to a concrete model id for the
 // currently-selected engine. Callers ask for a tier, not a vendor model, so the
 // same call works on either engine. The shared `claude` proxy routes by id.
+// Gemini heavy = 2.5-PRO (not flash): flash is far terser/shallower than Claude
+// Sonnet, so a "thorough briefing" came out thin or empty. Pro is the genuine
+// Sonnet-class model and still cheaper than Sonnet ($1.25/$10 vs $3/$15).
 export function pickModel(tier = 'light') {
-  if (aiProvider() === 'gemini') return tier === 'heavy' ? 'gemini-2.5-flash' : 'gemini-2.5-flash-lite'
+  if (aiProvider() === 'gemini') return tier === 'heavy' ? 'gemini-2.5-pro' : 'gemini-2.5-flash-lite'
   return tier === 'heavy' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
 }
 
