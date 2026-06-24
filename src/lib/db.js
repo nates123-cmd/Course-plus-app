@@ -14,7 +14,7 @@ function mapNote(r) {
     id: r.id, kind: r.kind, title: r.title, project: r.project, area: r.area,
     projects: r.projects || [], people: r.people || [], tags: r.tags || [],
     reference: typeof r.reference === 'boolean' ? r.reference : undefined,
-    date: r.date, updated: r.updated, indexed: r.indexed, status: r.status,
+    date: r.date, updated: r.updated, updatedAt: r.updated_at, indexed: r.indexed, status: r.status,
     rawWords: r.raw_words || undefined, transcript: r.transcript || undefined, summary: r.summary || undefined,
     agenda: r.agenda || undefined, incomplete: typeof r.incomplete === 'boolean' ? r.incomplete : undefined,
     nextSteps: r.next_steps || undefined, seriesId: r.series_id || undefined,
@@ -80,6 +80,24 @@ function groupBy(arr, key) {
   return o
 }
 
+// Authored-date order for the note corpus. The `date` label is stamped once at
+// create time and never patched, so it's the true authored date — unlike
+// `updated_at`, which every edit/autosave bumps to now() (that floated old,
+// edited notes to the top and broke the Library order). Parse the label into a
+// real epoch (reliable, unlike a naive string sort); fall back to updated_at
+// when it's absent/malformed, and tie-break same-day notes on edit recency.
+const _MON = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
+function noteSortKey(n) {
+  const m = /^([A-Za-z]{3}) (\d{1,2}), (\d{4})$/.exec(n.date || '')
+  if (m && _MON[m[1]] != null) return Date.UTC(+m[3], _MON[m[1]], +m[2])
+  return n.updatedAt ? Date.parse(n.updatedAt) : 0
+}
+function sortNotes(rows) {
+  return rows.map(mapNote).sort((a, b) =>
+    (noteSortKey(b) - noteSortKey(a)) ||
+    ((Date.parse(b.updatedAt || '') || 0) - (Date.parse(a.updatedAt || '') || 0)))
+}
+
 // ── load everything ────────────────────────────────────────────────
 export async function loadAll() {
   const [areas, projects, tasks, ms, upd, art, notes, inbox, assets, series] = await Promise.all([
@@ -98,7 +116,7 @@ export async function loadAll() {
   if (err) throw err
   return {
     areas: assemble(areas.data || [], projects.data || [], tasks.data || [], ms.data || [], upd.data || [], art.data || []),
-    notes: (notes.data || []).map(mapNote),
+    notes: sortNotes(notes.data || []),
     inbox: (inbox.data || []).map(mapInbox),
     assets: (assets.data || []).map(mapAsset),
     series: (series.data || []).map(mapSeries),
