@@ -87,15 +87,26 @@ export function useRecorder() {
   }
   const releaseWake = () => { try { wakeLock.current?.release?.() } catch {} wakeLock.current = null }
 
-  // Flag background-while-recording; re-acquire the wake lock when visible again.
+  // Keep recording alive while backgrounded; re-acquire the wake lock on return.
+  // The silent keep-alive tone (buildStream) is what actually stops the page from
+  // being frozen, so we only flag a recording as "interrupted" when there's NO
+  // live AudioContext keep-alive (the fallback path) — otherwise capture continues
+  // and a background warning would be a false alarm.
   useEffect(() => {
     const onVis = () => {
       const live = mr.current && mr.current.state === 'recording'
-      if (document.visibilityState === 'hidden') { if (live) { setInterrupted(true); audioCtx.current?.resume?.() } }
-      else if (live) { acquireWake(); audioCtx.current?.resume?.() }
+      if (document.visibilityState === 'hidden') {
+        if (live) { if (!audioCtx.current) setInterrupted(true); audioCtx.current?.resume?.() }
+      } else if (live) { acquireWake(); audioCtx.current?.resume?.() }
     }
     document.addEventListener('visibilitychange', onVis)
-    return () => document.removeEventListener('visibilitychange', onVis)
+    window.addEventListener('blur', onVis)
+    window.addEventListener('focus', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('blur', onVis)
+      window.removeEventListener('focus', onVis)
+    }
   }, [])
 
   // Tear down every capture source + the audio graph. Safe to call repeatedly.
@@ -141,9 +152,21 @@ export function useRecorder() {
     try {
       const AC = window.AudioContext || window.webkitAudioContext
       const ctx = new AC(); audioCtx.current = ctx
+      ctx.resume?.()
       const an = ctx.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = 0.7
       analyser.current = an
       ctx.createMediaStreamSource(mic).connect(an)   // mic → analyser (live waveform)
+      // Background keep-alive: route an inaudible tone (−80dB) to the speakers so
+      // the OS/browser counts the page as "playing audio". A page producing audio
+      // is exempt from background-tab throttling AND macOS WKWebView occlusion
+      // suspension (the Tauri desktop shell), so the recording keeps capturing when
+      // the window loses focus / is hidden behind others. Closed with the ctx.
+      try {
+        const osc = ctx.createOscillator(), kg = ctx.createGain()
+        kg.gain.value = 0.0001 // non-zero so it counts as audible, but inaudible to humans
+        osc.connect(kg).connect(ctx.destination)
+        osc.start()
+      } catch {}
       if (tab) {
         // Mixing mic + tab REQUIRES the AudioContext, so this recording depends on
         // the context staying alive in the background (tick + visibility resume it).

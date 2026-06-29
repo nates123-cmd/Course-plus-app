@@ -4,5 +4,9 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Course+ records meetings so it can transcribe and summarize them.</string>
+  <!-- Disable App Nap so macOS never throttles the process while a meeting is
+       recording in the background (window unfocused or hidden to the tray). -->
+  <key>NSAppSleepDisabled</key>
+  <true/>
 </dict>
 </plist>

@@ -12,6 +12,7 @@ import {
   holdDue, holdView, addDays, fmtDate,
 } from '../kit'
 import { createNote, deleteInbox, updateProject, createUpdate } from '../lib/db'
+import { HoldSheet } from './HoldSheet'
 
 // Today as the prototype's "Mon D, YYYY" string (e.g. "Jun 9, 2026").
 const todayStr = () => `${MONTHS[TODAY.m]} ${TODAY.d}, ${TODAY.y}`
@@ -71,6 +72,7 @@ function ProjectNudges() {
   const { allProjects, reload } = useData()
   const [busy, setBusy] = useState(null)
   const [dismissed, setDismissed] = useState(() => new Set())
+  const [holdFor, setHoldFor] = useState(null) // project pending the on-hold popup
 
   const nudges = buildNudges(allProjects()).filter((n) => !dismissed.has(n.proj.id))
   if (!nudges.length) return null
@@ -85,11 +87,17 @@ function ProjectNudges() {
     } finally { setBusy(null) }
   }
 
+  // Putting on hold is a gated flow (same HoldSheet as the project page): collect
+  // a reason + resurface date in the popup, THEN write status + hold together.
+  const commitHold = (p) => ({ reason, resurfaceOn, setAt }) => act(p, async () => {
+    await updateProject(p.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
+    await createUpdate(p.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+  })
+
   const stallActions = (p, days) => [
     { label: 'Archive', icon: 'archive', kind: 'primary', run: () => act(p, async () => {
         await updateProject(p.id, { status: 'archived' }); await createUpdate(p.id, `Archived — inactive ${days} days`) }) },
-    { label: 'On hold', icon: 'player-pause', kind: 'outline', run: () => act(p, async () => {
-        await updateProject(p.id, { status: 'on-hold', hold: { reason: 'Set down — was inactive', resurfaceOn: addDays(TODAY, 14), setAt: new Date().toISOString() } }) }) },
+    { label: 'On hold', icon: 'player-pause', kind: 'outline', run: () => setHoldFor(p) },
     { label: 'Keep active', icon: 'check', kind: 'ghost', run: () => act(p, () => createUpdate(p.id, 'Checked in — keeping active')) },
   ]
   const checkinActions = (p) => [
@@ -127,6 +135,7 @@ function ProjectNudges() {
           )
         })}
       </div>
+      {holdFor && <HoldSheet project={holdFor} onConfirm={commitHold(holdFor)} onClose={() => setHoldFor(null)} />}
     </Card>
   )
 }
