@@ -296,6 +296,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
       {x.done && <Icon n="check" s={12} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: x.done ? t.t3 : t.t1,
       textDecoration: x.done ? 'line-through' : 'none' }}>{x.label}</span>
+    {x.priority && !x.done && <span style={{ zIndex: 1, display: 'inline-flex' }}><Priority level={x.priority} /></span>}
     {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 1, fontFamily: f.ui, fontSize: 11,
       fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}>
       <Icon n="player-pause" s={11} />{x.waiting}</span>}
@@ -315,7 +316,7 @@ function Tasks({ project, reload }) {
   const [order, setOrder] = useState(project.tasks || [])
   const tasksSig = (project.tasks || []).map((x) => {
     const d = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m}-${x.dueDate.d}` : (x.due || '')
-    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}`
+    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}`
   }).join('|')
   useEffect(() => { setOrder(project.tasks || []) }, [tasksSig])
 

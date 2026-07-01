@@ -74,7 +74,7 @@ function textToBlocks(text: string) {
 function blocksToText(blocks: any[] = []) {
   return (blocks || []).map((b) => b.p || (b.ul ? b.ul.map((i: string) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i: string, n: number) => `${n + 1}. ${i}`).join('\n') : (b.links ? b.links.map((l: string) => `[[${l}]]`).join(' ') : '')))).filter(Boolean).join('\n\n')
 }
-const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0 })
+const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0 })
 const noteRow = (n: any) => ({ id: n.id, kind: n.kind, title: n.title, project: n.project ?? null, area: n.area ?? null, projects: n.projects || [], people: n.people || [], tags: n.tags || [], date: n.date, updated: n.updated, indexed: true, status: n.status ?? 2, transcript: n.transcript ?? null, summary: n.summary ?? null, agenda: n.agenda ?? null, terms: n.terms || [], actions: n.actions || [], body: n.body || [], related: n.related || [] })
 const noteOut = (r: any) => ({ id: r.id, kind: r.kind, title: r.title, project: r.project, area: r.area, projects: r.projects || [], people: r.people || [], tags: r.tags || [], date: r.date, summary: r.summary || null, agenda: r.agenda || null, incomplete: !!r.incomplete, bodyMarkdown: blocksToText(r.body || []), transcript: r.transcript || null, actions: r.actions || [], terms: r.terms || [] })
 const must = (e: any) => { if (e) throw new Error(e.message || String(e)) }
@@ -120,12 +120,13 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     if (status === 'open') q = q.eq('done', false); else if (status === 'done') q = q.eq('done', true)
     const { data, error } = await q; must(error); return (data || []).map(mapTask)
   },
-  async create_task(sb, { project, label, due, next = false, waiting }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, sort: 99 }); must(error); return { id, project, label } },
-  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status }) {
+  async create_task(sb, { project, label, due, next = false, waiting, priority = null }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, sort: 99 }); must(error); return { id, project, label } },
+  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {
     const row: any = {}
     if (label != null) row.label = label; if (done != null) row.done = done; if (next != null) row.next = next
     if (waiting !== undefined) row.waiting = waiting; if (due !== undefined) row.due_date = due ? toYMD(due) : null
     if (workType !== undefined) row.work_type = workType; if (notes !== undefined) row.notes = notes; if (status !== undefined) row.task_status = status
+    if (priority !== undefined) row.priority = priority
     const { error } = await sb.from('cp_tasks').update(row).eq('id', id); must(error); return { id, ...row }
   },
   async complete_task(sb, { id }) { return ops.update_task(sb, { id, done: true }) },
@@ -172,7 +173,7 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
 
 // ── tool definitions (name, description, JSON-Schema, write flag) ──
 const S = (props: any, required: string[] = []) => ({ type: 'object', properties: props, required })
-const str = { type: 'string' }, bool = { type: 'boolean' }, sArr = { type: 'array', items: { type: 'string' } }
+const str = { type: 'string' }, bool = { type: 'boolean' }, num = { type: 'integer' }, sArr = { type: 'array', items: { type: 'string' } }
 const TOOLS = [
   { name: 'list_areas', write: false, description: 'List your areas / pillars (top-level grouping).', inputSchema: S({}) },
   { name: 'list_projects', write: false, description: 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived).', inputSchema: S({ area: str, status: str }) },
@@ -186,8 +187,8 @@ const TOOLS = [
   { name: 'create_area', write: true, description: 'Create a new area / pillar.', inputSchema: S({ name: str }, ['name']) },
   { name: 'create_project', write: true, description: 'Create a project in an area. status defaults to active.', inputSchema: S({ area: str, name: str, status: str, priority: { type: 'integer' } }, ['area', 'name']) },
   { name: 'update_project', write: true, description: 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).', inputSchema: S({ id: str, name: str, status: str, priority: { type: 'integer' }, due: str, area: str }, ['id']) },
-  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action.', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str }, ['project', 'label']) },
-  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, notes, status).', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, notes: str, status: str }, ['id']) },
+  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest).', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num }, ['project', 'label']) },
+  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status).', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str }, ['id']) },
   { name: 'complete_task', write: true, description: 'Mark a task done.', inputSchema: S({ id: str }, ['id']) },
   { name: 'delete_task', write: true, description: 'Delete a task.', inputSchema: S({ id: str }, ['id']) },
   { name: 'create_note', write: true, description: 'Create a note or meeting. body is markdown (paragraphs, - bullets, 1. numbered).', inputSchema: S({ kind: str, title: str, project: str, area: str, body: str, people: sArr, tags: sArr, summary: str, transcript: str }, ['title']) },

@@ -53,6 +53,7 @@ const STATUS_OPTS = [
   { id: 'done', label: 'Done', icon: 'circle-check' },
 ]
 const WORK_OPTS = [{ id: 'deep', label: 'Deep work' }, { id: 'admin', label: 'Admin' }, { id: 'scheduled', label: 'Scheduled' }]
+const PRIO_OPTS = [{ id: 1, label: 'P1', tone: 'risk' }, { id: 2, label: 'P2', tone: 'accent' }, { id: 3, label: 'P3', tone: 't3' }]
 const addDays = (base, n) => { const dt = new Date(base.y, base.m, base.d + n); return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() } }
 const nextMonday = (base) => { const dow = new Date(base.y, base.m, base.d).getDay(); return addDays(base, ((8 - dow) % 7) || 7) }
 
@@ -166,6 +167,9 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
             {typeof task.due === 'string' && !d && <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>was “{task.due}”</span>}
           </div>
         })())}
+        {row('Priority', <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+          {PRIO_OPTS.map((p) => <Chip key={p.id} active={task.priority === p.id} tone={t[p.tone]} onClick={() => onPatch({ priority: task.priority === p.id ? null : p.id })}>{p.label}</Chip>)}
+        </div>)}
         {row('Work type', <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {WORK_OPTS.map((w) => <Chip key={w.id} active={task.workType === w.id} onClick={() => onPatch({ workType: task.workType === w.id ? null : w.id })}>{w.label}</Chip>)}
         </div>)}
