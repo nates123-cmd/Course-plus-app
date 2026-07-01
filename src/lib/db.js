@@ -39,6 +39,7 @@ function mapTask(r) {
     id: r.id, project: r.project_id || undefined, area: r.area_id || undefined, label: r.label, done: !!r.done, next: !!r.next,
     waiting: r.waiting || undefined, due: r.due || undefined, dueDate: r.due_date || undefined,
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
+    priority: r.priority ?? undefined,
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, sort: r.sort ?? 0,
   }
 }
@@ -248,7 +249,7 @@ export async function deleteSeries(id) {
 // ── tasks ──────────────────────────────────────────────────────────
 const TASK_COLS = {
   label: 'label', done: 'done', next: 'next', waiting: 'waiting', due: 'due',
-  dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status',
+  dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status', priority: 'priority',
   notes: 'notes', srcMeeting: 'src_meeting', project: 'project_id', area: 'area_id', sort: 'sort',
 }
 // projectId may be null for a pillar-only task — pass the pillar via task.area.
@@ -257,8 +258,8 @@ export async function createTask(projectId, task = {}) {
   const row = { id, project_id: projectId ?? null, area_id: task.area ?? null,
     label: task.label || '', done: !!task.done, next: !!task.next,
     waiting: task.waiting ?? null, due: task.due ?? null, due_date: task.dueDate ?? null,
-    work_type: task.workType ?? null, task_status: task.taskStatus ?? null, notes: task.notes ?? null,
-    src_meeting: task.srcMeeting ?? null, sort: task.sort ?? 0 }
+    work_type: task.workType ?? null, task_status: task.taskStatus ?? null, priority: task.priority ?? null,
+    notes: task.notes ?? null, src_meeting: task.srcMeeting ?? null, sort: task.sort ?? 0 }
   const { error } = await supabase.from('cp_tasks').insert(row)
   if (error) throw error
   return id
