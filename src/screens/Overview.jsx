@@ -7,13 +7,13 @@
 // (its `next` task plus any due/waiting task, not done) across all projects,
 // ranked due → next → waiting. Tap toggles done; press-and-hold opens TaskSheet.
 // Below, projects are grouped by Area into responsive ProjectCard grids.
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
-import { updateTask, deleteTask, updateProject, createUpdate } from '../lib/db'
+import { updateTask, deleteTask, updateProject, createUpdate, reorderProjects } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -34,7 +34,7 @@ function taskProgress(p) {
 // ── ProjectCard ─────────────────────────────────────────────────
 // Left status accent bar + name + Priority/StatusPill + meta row, then either a
 // surfaced Next action line or, when on hold, the waiting-on / check-in line.
-function ProjectCard({ p }) {
+function ProjectCard({ p, drag }) {
   const { t, f, go } = useApp()
   const { actionsForProject } = useData()
   const { open, dueToday } = taskProgress(p)
@@ -47,11 +47,29 @@ function ProjectCard({ p }) {
   const sk = statusSkin(t, p.status)
   const accent = p.status === 'idea' ? areaColor(t, p.area) : sk.dot
 
-  return <Card hover onClick={() => go({ screen: 'project', id: p.id })}
+  // Optional drag-to-reorder. The grip is the only draggable affordance (HTML5
+  // DnD, handle-gated) so normal taps still open the project; the wrapper carries
+  // the drag props and flips `draggable` on only while the grip is hovered.
+  const [grip, setGrip] = useState(false)
+  const dragging = drag && drag.dragging
+  const dragProps = drag ? {
+    draggable: grip,
+    onDragStart: (e) => drag.onDragStart(e, p.id),
+    onDragOver: (e) => drag.onDragOver(e, p.id),
+    onDrop: (e) => drag.onDrop(e),
+    onDragEnd: drag.onDragEnd,
+  } : {}
+
+  return <div {...dragProps} style={{ opacity: dragging ? 0.4 : 1, transition: 'opacity .15s' }}>
+  <Card hover onClick={() => go({ screen: 'project', id: p.id })}
     style={{ padding: 0, overflow: 'hidden', opacity: onHold ? 0.82 : 1, display: 'flex' }}>
     <span style={{ width: 3, flex: 'none', background: accent }} />
     <div style={{ flex: 1, minWidth: 0, padding: '14px 16px 13px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {drag && <span onClick={(e) => e.stopPropagation()} title="Drag to reorder"
+          onMouseEnter={() => setGrip(true)} onMouseLeave={() => setGrip(false)}
+          style={{ display: 'inline-flex', alignItems: 'center', flex: 'none', marginLeft: -4, cursor: 'grab' }}>
+          <Icon n="grip-vertical" s={15} c={t.t3} /></span>}
         <span style={{ fontFamily: f.title, fontSize: 16.5, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
           color: t.t1, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
         {p.priority && <Priority level={p.priority} />}
@@ -86,6 +104,47 @@ function ProjectCard({ p }) {
         {hv.resurfaceText && <span style={{ color: dueNow ? t.risk : t.t3, fontWeight: dueNow ? 600 : 400, whiteSpace: 'nowrap' }}>{dueNow ? 'resurfaced' : 'back ' + hv.resurfaceText}</span>}</div>}
     </div>
   </Card>
+  </div>
+}
+
+// ── Reorderable live-project grid (one per Area on the Work overview) ──
+// React owns the display order; drag mutates it optimistically and the new order
+// persists via reorderProjects (sort = position). Idea/archived ids are appended
+// so their sort slots survive the write. Re-seeds when the persisted set changes.
+function LiveGrid({ a, live }) {
+  const { reload } = useData()
+  const [order, setOrder] = useState(live)
+  const [dragId, setDragId] = useState(null)
+  const sig = live.map((p) => `${p.id}:${p.status}:${p.priority || ''}:${p.name}`).join('|')
+  useEffect(() => { setOrder(live) }, [sig]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onDragStart = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id) } catch {} }
+  const onDragOver = (e, overId) => {
+    e.preventDefault()
+    if (dragId == null || overId === dragId) return
+    setOrder((os) => {
+      const from = os.findIndex((o) => o.id === dragId)
+      const to = os.findIndex((o) => o.id === overId)
+      if (from < 0 || to < 0 || from === to) return os
+      const next = os.slice(); const [m] = next.splice(from, 1); next.splice(to, 0, m); return next
+    })
+  }
+  const onDrop = (e) => e.preventDefault()
+  const onDragEnd = async () => {
+    setDragId(null)
+    const ids = order.map((o) => o.id)
+    const orig = live.map((o) => o.id)
+    if (ids.join(',') === orig.join(',')) return
+    const ideaIds = a.projects.filter((p) => p.status === 'idea').map((p) => p.id)
+    const archIds = a.projects.filter((p) => p.status === 'archived').map((p) => p.id)
+    try { await reorderProjects([...ids, ...ideaIds, ...archIds]); await reload() }
+    catch (e) { window.alert('Could not reorder: ' + (e?.message || e)) }
+  }
+
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+    {order.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }}
+      drag={{ dragging: dragId === p.id, onDragStart, onDragOver, onDrop, onDragEnd }} />)}
+  </div>
 }
 
 // ── one cross-project open-task row ─────────────────────────────
@@ -308,9 +367,9 @@ export function OverviewScreen() {
   const [sheetTask, setSheetTask] = useState(null)
   const [ideasOpen, setIdeasOpen] = useState({})
 
-  const liveRank = { active: 0, sent: 1, 'on-hold': 2 }
+  // Live projects in the user's manual order (already sorted by `sort` from db);
+  // no status re-rank so drag-to-reorder on the cards persists exactly as dropped.
   const liveOf = (a) => a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
-    .slice().sort((x, y) => (liveRank[x.status] ?? 3) - (liveRank[y.status] ?? 3))
   const ideasOf = (a) => a.projects.filter((p) => p.status === 'idea')
 
   const projects = allProjects().filter((p) => p.status !== 'archived')
@@ -341,9 +400,7 @@ export function OverviewScreen() {
           <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${live.length} project${live.length === 1 ? '' : 's'}`}</span>
           <div style={{ flex: 1, height: 1, background: t.line }} />
         </div>
-        {live.length > 0 && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-          {live.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
-        </div>}
+        {live.length > 0 && <LiveGrid a={a} live={live} />}
         {ideas.length > 0 && <div style={{ marginTop: live.length ? 12 : 0 }}>
           <div onClick={() => setIdeasOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
             fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 8 }}
