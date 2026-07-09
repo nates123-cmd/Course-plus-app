@@ -131,8 +131,11 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
     ;(async () => {
       const { data } = await supabase.from('placed_blocks').select('*').eq('type', 'meeting').gte('date', iso(0)).lte('date', iso(6)).order('date').order('hour')
       if (!live) return
+      const now = new Date()
+      const startOf = (b) => { const [y, m, d] = b.date.split('-').map(Number); const hr = Math.floor(b.hour); return new Date(y, m - 1, d, hr, Math.round((b.hour - hr) * 60)) }
       const seen = new Set()
       const rows = (data || []).map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
+        .filter((b) => startOf(b) > now) // future meetings only — drop ones that already happened today
         .filter((b) => { const k = [b.date, b.hour, b.title.trim().toLowerCase()].join('|'); if (seen.has(k)) return false; seen.add(k); return true })
       setAgenda(rows)
     })()
