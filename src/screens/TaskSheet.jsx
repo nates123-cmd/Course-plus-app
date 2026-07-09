@@ -75,13 +75,14 @@ function Chip({ active, onClick, children, tone }) {
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
   const { t, f, go, isMobile } = useApp()
-  const { projectById, allProjects, areas, areaName } = useData()
+  const { projectById, allProjects, areas, areaName, activeSeries, seriesById, noteById, notes } = useData()
   const project = projectById(projectId)
   // Pillar-only task (no project): show its pillar instead of "No project".
   const pillarId = !project ? (task.area || null) : null
   const pillarName = pillarId ? areaName(pillarId) : null
   const [mounted, setMounted] = useState(false)
   const [projOpen, setProjOpen] = useState(false)
+  const [mtgOpen, setMtgOpen] = useState(false)
   const [title, setTitle] = useState(task.label || '')
   const [pushed, setPushed] = useState(false)
   const titleRef = useRef(null)
@@ -116,6 +117,19 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   }
 
   const row = (label, control) => <div style={{ padding: '14px 20px', borderTop: '1px solid ' + t.line }}><FieldLabel>{label}</FieldLabel>{control}</div>
+
+  // "Scheduled" work type = to be discussed in a meeting → must be assigned one.
+  // The meeting is a recurring series (seriesById) or a specific meeting note
+  // (noteById); the id lives in task.meetingId.
+  const recentMeetings = (notes || []).filter((n) => n.kind === 'meeting').slice(0, 12)
+  const meetingLabel = (id) => { const s = seriesById(id); if (s) return s.name; const n = noteById(id); return n ? n.title : null }
+  const pickMeeting = (id) => { setMtgOpen(false); onPatch({ workType: 'scheduled', meetingId: id }) }
+  const chooseWork = (id) => {
+    if (task.workType === id) { onPatch(id === 'scheduled' ? { workType: null, meetingId: null } : { workType: null }); return }
+    onPatch(id === 'scheduled' ? { workType: 'scheduled' } : { workType: id, meetingId: null })
+    if (id === 'scheduled' && !task.meetingId) setMtgOpen(true) // make them assign a meeting
+  }
+  const mtgHdr = { fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '7px 12px 4px' }
 
   return <div onClick={() => { if (armed.current) close() }} style={{ position: 'fixed', inset: 0, zIndex: 450, background: 'rgba(0,0,0,0.44)',
     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', opacity: mounted ? 1 : 0, transition: 'opacity .18s ease' }}>
@@ -175,8 +189,25 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
           {PRIO_OPTS.map((p) => <Chip key={p.id} active={task.priority === p.id} tone={t[p.tone]} onClick={() => onPatch({ priority: task.priority === p.id ? null : p.id })}>{p.label}</Chip>)}
         </div>)}
         {row('Work type', <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          {WORK_OPTS.map((w) => <Chip key={w.id} active={task.workType === w.id} onClick={() => onPatch({ workType: task.workType === w.id ? null : w.id })}>{w.label}</Chip>)}
+          {WORK_OPTS.map((w) => <Chip key={w.id} active={task.workType === w.id} onClick={() => chooseWork(w.id)}>{w.label}</Chip>)}
         </div>)}
+        {task.workType === 'scheduled' && row('Scheduled for', (() => {
+          const assigned = task.meetingId ? meetingLabel(task.meetingId) : null
+          return <span style={{ position: 'relative', display: 'inline-flex' }}>
+            <span onClick={() => setMtgOpen((o) => !o)} title="Which meeting will this be discussed in?"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', borderRadius: 8, padding: '6px 11px',
+                color: assigned ? t.t1 : t.risk, background: assigned ? t.sel : t.riskBg, border: '1px solid ' + (assigned ? 'transparent' : t.riskLine) }}>
+              <Icon n="users" s={14} />{assigned || 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
+            {mtgOpen && <Popover onClose={() => setMtgOpen(false)} width={284} maxHeight={360}>
+              {activeSeries.length > 0 && <div style={mtgHdr}>Recurring meetings</div>}
+              {activeSeries.map((s) => <PopRow key={'s-' + s.id} icon="repeat" label={s.name} on={task.meetingId === s.id} onClick={() => pickMeeting(s.id)} />)}
+              {recentMeetings.length > 0 && <div style={{ ...mtgHdr, borderTop: activeSeries.length ? '1px solid ' + t.line : 'none', marginTop: activeSeries.length ? 4 : 0 }}>Recent meetings</div>}
+              {recentMeetings.map((n) => <PopRow key={'m-' + n.id} icon="users" label={n.title} hint={n.date} on={task.meetingId === n.id} onClick={() => pickMeeting(n.id)} />)}
+              {activeSeries.length + recentMeetings.length === 0 && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>No meetings yet — record one or start a series first.</div>}
+              {task.meetingId && <div style={{ borderTop: '1px solid ' + t.line, marginTop: 4 }}><PopRow icon="x" label="Clear assignment" onClick={() => pickMeeting(null)} /></div>}
+            </Popover>}
+          </span>
+        })())}
         {row('Waiting on', <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.sel, borderRadius: 9, padding: '0 12px', height: 38 }}>
           <Icon n="player-pause" s={15} c={t.t3} />
           <input value={task.waiting || ''} onChange={(e) => onPatch({ waiting: e.target.value || null })} placeholder="A person or dependency…"
