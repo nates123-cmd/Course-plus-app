@@ -275,8 +275,35 @@ function Tasks({ project, reload }) {
     await updateTask(id, { done: !prevDone }); await reload()
     recordUndo(async () => { await updateTask(id, { done: prevDone }); await reload() })
   }
+  // Assigning a priority also PLACES the task: P1 → top of Now; P2 → top of
+  // Backlog; P3 → in Backlog right under the last P2. (Clearing priority, or
+  // any non-priority patch, doesn't move anything.)
+  const placeByPriority = async (id, pr, p) => {
+    const task = findTask(id); if (!task) { await updateTask(id, p); await reload(); return }
+    const now = nowList.filter((o) => o.id !== id)
+    const back = backlog.filter((o) => o.id !== id)
+    const moved = { ...task, priority: pr }
+    let toNow = now, toBack = back, lane = 'backlog'
+    if (pr === 1) { toNow = [moved, ...now]; lane = 'now' }
+    else if (pr === 2) { toBack = [moved, ...back] }
+    else { // pr === 3 → after the last P2 (or top of Backlog if none)
+      let idx = -1; back.forEach((o, i) => { if (o.priority === 2) idx = i })
+      toBack = [...back]; toBack.splice(idx + 1, 0, moved)
+    }
+    await updateTask(id, { ...p, priority: pr, taskStatus: lane, ...(lane === 'now' ? { next: false, waiting: null } : {}) })
+    const doneIds = (project.tasks || []).filter((x) => x.done).map((x) => x.id)
+    await reorderTasks([...toNow.map((o) => o.id), ...toBack.map((o) => o.id), ...doneIds])
+    await reload()
+  }
+
   const patch = async (id, p) => {
     const cur = findTask(id)
+    if ('priority' in p && [1, 2, 3].includes(p.priority)) {
+      const inv = cur ? { priority: cur.priority ?? null, taskStatus: cur.taskStatus ?? 'backlog' } : null
+      await placeByPriority(id, p.priority, p)
+      if (inv) recordUndo(async () => { await updateTask(id, inv); await reload() })
+      return
+    }
     const inverse = cur ? Object.fromEntries(Object.keys(p).map((k) => [k, cur[k] ?? null])) : null
     await updateTask(id, p); await reload()
     if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
