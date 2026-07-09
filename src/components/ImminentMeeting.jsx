@@ -8,7 +8,7 @@ import { useApp } from '../ctx'
 import { supabase } from '../lib/supabase'
 import { Icon } from '../kit'
 
-const LEAD_MIN = 10 // show this many minutes before start
+const LEAD_MIN = 2 // show this many minutes before start
 const GRACE_MIN = 2 // …and up to this many minutes after start
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const keyOf = (b) => `${b.date}|${b.hour}|${(b.title || '').trim().toLowerCase()}`
