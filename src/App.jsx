@@ -10,6 +10,7 @@ import { Icon, IconBtn, Btn, StatusPill, AreaDot, areaColor, usePersisted, Popov
 import { TOPICS } from './data'
 import { createArea, createProject, createNote, createTask, createInbox, reorderProjects } from './lib/db'
 
+import { ImminentMeeting } from './components/ImminentMeeting'
 import { OverviewScreen, AreaScreen } from './screens/Overview'
 import { ProjectScreen } from './screens/Project'
 import { NoteScreen } from './screens/Note'
@@ -727,6 +728,7 @@ export default function App() {
         {capture && <QuickCapture initial={capture === true ? null : capture} onClose={() => setCapture(false)} />}
         <FloatingRecorder />
         <QuickRecordFab />
+        <ImminentMeeting />
       </div>
     </RecorderProvider>
   </CourseCtx.Provider>
