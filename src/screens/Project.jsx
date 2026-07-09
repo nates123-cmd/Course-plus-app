@@ -254,7 +254,13 @@ function Tasks({ project, reload }) {
   const finalizing = useRef(false)
   useEffect(() => {
     const open = (project.tasks || []).filter((x) => !x.done) // already sort-ordered from db
-    const nw = open.filter(isNow), bk = open.filter((x) => !isNow(x))
+    // Priority drives placement: P1 → Now; Backlog is banded P2 → P3 → the rest.
+    // Within a band, keep the stored drag order (stable sort over the db order),
+    // so manual reordering still holds inside a priority tier.
+    const nw = open.filter((x) => x.priority === 1 || isNow(x))
+    const band = (x) => (x.priority === 2 ? 0 : x.priority === 3 ? 1 : 2)
+    const bk = open.filter((x) => !(x.priority === 1 || isNow(x)))
+      .map((x, i) => [x, i]).sort((a, b) => band(a[0]) - band(b[0]) || a[1] - b[1]).map((p) => p[0])
     setNowList(nw); setBacklog(bk); listRef.current = { now: nw, back: bk }
   }, [tasksSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -275,37 +281,14 @@ function Tasks({ project, reload }) {
     await updateTask(id, { done: !prevDone }); await reload()
     recordUndo(async () => { await updateTask(id, { done: prevDone }); await reload() })
   }
-  // Assigning a priority also PLACES the task: P1 → top of Now; P2 → top of
-  // Backlog; P3 → in Backlog right under the last P2. (Clearing priority, or
-  // any non-priority patch, doesn't move anything.)
-  const placeByPriority = async (id, pr, p) => {
-    const task = findTask(id); if (!task) { await updateTask(id, p); await reload(); return }
-    const now = nowList.filter((o) => o.id !== id)
-    const back = backlog.filter((o) => o.id !== id)
-    const moved = { ...task, priority: pr }
-    let toNow = now, toBack = back, lane = 'backlog'
-    if (pr === 1) { toNow = [moved, ...now]; lane = 'now' }
-    else if (pr === 2) { toBack = [moved, ...back] }
-    else { // pr === 3 → after the last P2 (or top of Backlog if none)
-      let idx = -1; back.forEach((o, i) => { if (o.priority === 2) idx = i })
-      toBack = [...back]; toBack.splice(idx + 1, 0, moved)
-    }
-    await updateTask(id, { ...p, priority: pr, taskStatus: lane, ...(lane === 'now' ? { next: false, waiting: null } : {}) })
-    const doneIds = (project.tasks || []).filter((x) => x.done).map((x) => x.id)
-    await reorderTasks([...toNow.map((o) => o.id), ...toBack.map((o) => o.id), ...doneIds])
-    await reload()
-  }
-
+  // P1 also pulls the task into Now (its priority means "now"). The rest of the
+  // priority-driven placement (P2 top of Backlog, P3 under the last P2) is done
+  // durably by the seed sort below, so it holds no matter where priority was set.
   const patch = async (id, p) => {
     const cur = findTask(id)
-    if ('priority' in p && [1, 2, 3].includes(p.priority)) {
-      const inv = cur ? { priority: cur.priority ?? null, taskStatus: cur.taskStatus ?? 'backlog' } : null
-      await placeByPriority(id, p.priority, p)
-      if (inv) recordUndo(async () => { await updateTask(id, inv); await reload() })
-      return
-    }
-    const inverse = cur ? Object.fromEntries(Object.keys(p).map((k) => [k, cur[k] ?? null])) : null
-    await updateTask(id, p); await reload()
+    const p2 = 'priority' in p && p.priority === 1 ? { ...p, taskStatus: 'now', next: false, waiting: null } : p
+    const inverse = cur ? Object.fromEntries(Object.keys(p2).map((k) => [k, cur[k] ?? null])) : null
+    await updateTask(id, p2); await reload()
     if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
   }
   const remove = async (id) => {
