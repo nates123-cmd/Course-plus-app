@@ -217,7 +217,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', borderRadius: 8, padding: '6px 11px',
                 color: assigned ? t.t1 : t.risk, background: assigned ? t.sel : t.riskBg, border: '1px solid ' + (assigned ? 'transparent' : t.riskLine) }}>
               <Icon n="calendar-event" s={14} />{assigned || 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
-            {mtgOpen && <Popover onClose={() => setMtgOpen(false)} width={300} maxHeight={360}>
+            {mtgOpen && <Popover onClose={() => setMtgOpen(false)} width={300} maxHeight={300} bottom="calc(100% + 8px)">
               {agenda.map((b) => <PopRow key={b.id} icon="users" label={b.title} hint={blockHint(b)} on={task.meetingId === b.title} onClick={() => pickMeeting(b.title)} />)}
               {agenda.length === 0 && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>No meetings on this week’s agenda. Schedule one in Today.</div>}
               {task.meetingId && <div style={{ borderTop: '1px solid ' + t.line, marginTop: 4 }}><PopRow icon="x" label="Clear assignment" onClick={() => pickMeeting(null)} /></div>}
