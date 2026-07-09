@@ -80,16 +80,21 @@ export async function updateProject(sb, { id, name, status, priority, due, area 
 }
 
 // ── tasks ──
-export async function listTasks(sb, { project, status = 'open' } = {}) {
+export async function listTasks(sb, { project, status = 'open', lane } = {}) {
   let q = sb.from('cp_tasks').select('*').order('sort')
   if (project) q = q.eq('project_id', project)
   if (status === 'open') q = q.eq('done', false)
   else if (status === 'done') q = q.eq('done', true)
-  const { data, error } = await q; must(error); return (data || []).map(mapTask)
+  const { data, error } = await q; must(error)
+  let rows = (data || []).map(mapTask)
+  // lane lives in task_status: 'now' = Now lane, anything else open = Backlog.
+  if (lane === 'now') rows = rows.filter((t) => t.status === 'now')
+  else if (lane === 'backlog') rows = rows.filter((t) => t.status !== 'now')
+  return rows
 }
-export async function createTask(sb, { project, label, due, next = false, waiting, priority = null }) {
+export async function createTask(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) {
   const id = uuid()
-  const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, sort: 99 })
+  const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99 })
   must(error); return { id, project, label }
 }
 export async function updateTask(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {

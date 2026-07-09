@@ -361,6 +361,90 @@ function ResurfaceBanner() {
   </Card>
 }
 
+// ── In-focus row — one pulled Now-lane task inside a project group ──
+function NowRow({ x, first, onToggle, onOpen }) {
+  const { t, f } = useApp()
+  const { pressing, handlers } = useLongPress(() => onOpen(x), () => onToggle(x), 450)
+  const due = dueText(x)
+  return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 14px', cursor: 'pointer',
+    userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
+    borderTop: first ? 'none' : '1px solid ' + t.line, background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
+    {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
+      background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
+    <span style={{ width: 16, height: 16, borderRadius: 5, flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />
+    <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11,
+      fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}><Icon n="player-pause" s={11} />{x.waiting}</span>}
+    {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
+  </div>
+}
+
+// ── In focus now (Phase 4) — the whole picture without opening each project:
+// every active project's pulled Now-lane tasks, so the pull method's payoff (the
+// items you committed to focus on) is the first thing seen on the Work overview.
+// Project-level active state (status active | sent) governs which projects show.
+function NowFocus({ projects }) {
+  const { t, f, go } = useApp()
+  const { reload } = useData()
+  const [nowCap] = usePersisted('course.nowCap', 3)
+  const [sheetTask, setSheetTask] = useState(null)
+
+  const active = projects.filter((p) => p.status === 'active' || p.status === 'sent')
+  if (!active.length) return null
+  const nowOf = (p) => (p.tasks || []).filter((x) => x.taskStatus === 'now' && !x.done)
+  const groups = active.map((p) => ({ p, now: nowOf(p) })).filter((g) => g.now.length)
+  const totalNow = groups.reduce((n, g) => n + g.now.length, 0)
+  const idle = active.length - groups.length
+
+  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
+  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
+  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  const reassign = async (target) => {
+    if (!sheetTask || !target) return
+    await updateTask(sheetTask.task.id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
+    setSheetTask(null); await reload()
+  }
+
+  return <div style={{ marginTop: 30 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+      <Icon n="player-play" s={16} c={t.accent} />
+      <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>In focus now</span>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{totalNow} pulled across {groups.length} project{groups.length === 1 ? '' : 's'}</span>
+      <div style={{ flex: 1, height: 1, background: t.line }} />
+    </div>
+    {groups.length === 0
+      ? <Card style={{ padding: '18px 16px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
+          Nothing pulled into Now yet. Open a project and pull a task up to put it in focus.</Card>
+      : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+          {groups.map(({ p, now }) => {
+            const over = now.length > nowCap
+            return <Card key={p.id} style={{ padding: 0, overflow: 'hidden' }}>
+              <div onClick={() => go({ screen: 'project', id: p.id })} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                padding: '11px 14px', cursor: 'pointer', borderBottom: '1px solid ' + t.line }}
+                onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                <AreaDot areaId={p.area} s={8} />
+                <span style={{ flex: 1, minWidth: 0, fontFamily: f.title, fontSize: 14.5, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
+                  color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: over ? t.risk : t.t3 }}>{now.length}{over ? ' of ' + nowCap : ''} in Now</span>
+                <Icon n="chevron-right" s={15} c={t.t3} />
+              </div>
+              <div style={{ padding: '4px 0' }}>
+                {now.map((x, i) => <NowRow key={x.id} x={x} first={i === 0} onToggle={toggle}
+                  onOpen={() => setSheetTask({ task: { ...x, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }, projectId: p.id })} />)}
+              </div>
+            </Card>
+          })}
+        </div>}
+    {idle > 0 && groups.length > 0 && <div style={{ marginTop: 10, fontFamily: f.ui, fontSize: 12, color: t.t3 }}>
+      {idle} active project{idle === 1 ? '' : 's'} with nothing pulled into Now.</div>}
+    {sheetTask && (() => {
+      let live = sheetTask.task
+      for (const p of projects) { const hit = (p.tasks || []).find((x) => x.id === sheetTask.task.id); if (hit) { live = { ...hit, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }; break } }
+      return <TaskSheet task={live} projectId={sheetTask.projectId} onPatch={patch} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} />
+    })()}
+  </div>
+}
+
 export function OverviewScreen() {
   const { t, f } = useApp()
   const { areas, allProjects } = useData()
@@ -387,6 +471,8 @@ export function OverviewScreen() {
     </div>
 
     <ResurfaceBanner />
+
+    <NowFocus projects={projects} />
 
     <OpenTasks projects={projects} sheetTask={sheetTask} setSheetTask={setSheetTask} />
 

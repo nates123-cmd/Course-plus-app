@@ -2,7 +2,7 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox } from './lib/db'
+import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateNote } from './lib/db'
 import { blocksToText } from './lib/blocks'
 import { holdView, holdDue } from './kit'
 
@@ -33,6 +33,53 @@ async function autoReactivateDue(areas) {
   return true
 }
 
+// ── Materialize meeting action items into the project Backlog ────────
+// Phase 2 of the pull-method rebuild: extraction no longer feeds a holding pen
+// with a promote button. On load, every meeting's action items that are Nate's
+// (or unassigned), read like a real deliverable, and aren't already a task,
+// become Backlog tasks tagged with their source meeting. Each processed action
+// is flagged `materialized` on its note so a load never double-creates, and a
+// dismissed or completed task never resurfaces.
+const OWNER_MINE = new Set(['', 'me', 'you', 'mine', 'i', 'us', 'we', 'open', 'unassigned', 'nate'])
+const ownerIsMine = (o) => OWNER_MINE.has((o || '').trim().toLowerCase())
+// Light deliverable threshold — catch obvious non-actions, nothing more (extraction accuracy is already high).
+const NON_ACTION = /^(discussed|discussion|talked about|reviewed|review of|note:|fyi|update on|status of|question about|thoughts on|re:)\b/i
+const looksActionable = (txt) => { const s = (txt || '').trim(); return s.split(/\s+/).length >= 2 && !NON_ACTION.test(s) }
+// Fuzzy dedup on task label (token Jaccard) so extraction doesn't restate a task already present.
+const DEDUP_STOP = new Set(['the', 'a', 'an', 'to', 'for', 'of', 'and', 'on', 'in', 'with', 'by', 'from', 'our', 'my', 'me', 'i', 'we', 'at', 'is', 'be', 'this', 'that'])
+const normTokens = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w && !DEDUP_STOP.has(w))
+const labelSim = (a, b) => {
+  const A = new Set(normTokens(a)), B = new Set(normTokens(b))
+  if (!A.size || !B.size) return 0
+  let inter = 0; A.forEach((w) => { if (B.has(w)) inter++ })
+  return inter / (A.size + B.size - inter)
+}
+async function materializeMeetingActions(areas, notes) {
+  const projIndex = {} // project id -> { labels[], count } (all tasks, so completed/dismissed don't resurrect)
+  for (const a of areas) for (const p of a.projects) projIndex[p.id] = { labels: (p.tasks || []).map((x) => x.label), count: (p.tasks || []).length }
+  let wrote = false
+  for (const n of notes) {
+    if (n.kind !== 'meeting' || !Array.isArray(n.actions) || !n.actions.length) continue
+    let changed = false
+    const nextActions = n.actions.map((a) => ({ ...a }))
+    for (const a of nextActions) {
+      if (a.materialized) continue
+      const projId = a.project || n.project
+      const idx = projId ? projIndex[projId] : null
+      if (!idx) continue // no project to file into — leave unflagged for a later (re)assignment
+      changed = true
+      a.materialized = true
+      if (!a.text || !ownerIsMine(a.owner) || !looksActionable(a.text)) continue // skip: not mine / not a deliverable
+      if (idx.labels.some((l) => labelSim(a.text, l) >= 0.6)) continue // already a task
+      await createTask(projId, { label: a.text.trim(), taskStatus: 'backlog', srcMeeting: n.id, sort: idx.count })
+      idx.labels.push(a.text); idx.count += 1
+      wrote = true
+    }
+    if (changed) { await updateNote(n.id, { actions: nextActions }); wrote = true }
+  }
+  return wrote
+}
+
 const DataCtx = createContext(null)
 export function useData() { return useContext(DataCtx) }
 
@@ -55,6 +102,8 @@ export function DataProvider({ children }) {
       let data = await loadAll()
       // Resurface anything whose hold date has come due, then re-read once.
       if (await autoReactivateDue(data.areas)) data = await loadAll()
+      // Pull any un-materialized meeting action items into the project Backlogs.
+      if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
       setStatus('ready')
     } catch (e) {
@@ -155,7 +204,7 @@ export function DataProvider({ children }) {
       const open = tasks.filter((x) => !x.done)
       const done = tasks.filter((x) => x.done)
       if (open.length) lines.push('\nOPEN TASKS:\n' + open.map((x) => {
-        const st = x.waiting ? 'waiting on ' + x.waiting : x.taskStatus || (x.next ? 'next' : '')
+        const st = x.waiting ? 'waiting on ' + x.waiting : x.taskStatus === 'now' ? 'now' : (x.next ? 'next' : '')
         const due = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m + 1}-${x.dueDate.d}` : x.due
         return `- ${x.label}${st ? ' [' + st + ']' : ''}${due ? ' (due ' + due + ')' : ''}`
       }).join('\n'))
