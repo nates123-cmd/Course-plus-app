@@ -391,7 +391,7 @@ export async function deleteAreaCascade(id) {
   const inDel = (table, col) => supabase.from(table).delete().in(col, pids)
   if (pids.length) {
     const child = await Promise.all([
-      inDel('cp_tasks', 'project_id'), inDel('cp_notes', 'project_id'),
+      inDel('cp_tasks', 'project_id'), inDel('cp_notes', 'project'), // cp_notes uses `project`, not project_id
       inDel('cp_artifacts', 'project_id'), inDel('cp_milestones', 'project_id'),
       inDel('cp_updates', 'project_id'), inDel('cp_assets', 'project_id'),
     ])
