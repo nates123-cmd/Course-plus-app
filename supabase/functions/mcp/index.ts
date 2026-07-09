@@ -114,13 +114,17 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     if (due !== undefined) row.due = toYMD(due); if (area != null) row.area_id = area
     const { error } = await sb.from('cp_projects').update(row).eq('id', id); must(error); return { id, ...row }
   },
-  async list_tasks(sb, { project, status = 'open' }) {
+  async list_tasks(sb, { project, status = 'open', lane }) {
     let q = sb.from('cp_tasks').select('*').order('sort')
     if (project) q = q.eq('project_id', project)
     if (status === 'open') q = q.eq('done', false); else if (status === 'done') q = q.eq('done', true)
-    const { data, error } = await q; must(error); return (data || []).map(mapTask)
+    const { data, error } = await q; must(error)
+    let rows = (data || []).map(mapTask)
+    if (lane === 'now') rows = rows.filter((t: any) => t.status === 'now')
+    else if (lane === 'backlog') rows = rows.filter((t: any) => t.status !== 'now')
+    return rows
   },
-  async create_task(sb, { project, label, due, next = false, waiting, priority = null }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, sort: 99 }); must(error); return { id, project, label } },
+  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99 }); must(error); return { id, project, label } },
   async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {
     const row: any = {}
     if (label != null) row.label = label; if (done != null) row.done = done; if (next != null) row.next = next
@@ -178,7 +182,7 @@ const TOOLS = [
   { name: 'list_areas', write: false, description: 'List your areas / pillars (top-level grouping).', inputSchema: S({}) },
   { name: 'list_projects', write: false, description: 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived).', inputSchema: S({ area: str, status: str }) },
   { name: 'get_project', write: false, description: 'Get one project in full: tasks, milestones, where-it-stands updates, artifacts.', inputSchema: S({ id: str }, ['id']) },
-  { name: 'list_tasks', write: false, description: 'List tasks, optionally for one project. status: open (default) | done | all.', inputSchema: S({ project: str, status: { type: 'string', enum: ['open', 'done', 'all'] } }) },
+  { name: 'list_tasks', write: false, description: 'List tasks, optionally for one project. status: open (default) | done | all. lane: now | backlog (the pull-board lane).', inputSchema: S({ project: str, status: { type: 'string', enum: ['open', 'done', 'all'] }, lane: { type: 'string', enum: ['now', 'backlog'] } }) },
   { name: 'list_notes', write: false, description: 'List notes/meetings, optionally by project or kind (note|meeting|knowledge|artifact).', inputSchema: S({ project: str, kind: str }) },
   { name: 'get_note', write: false, description: 'Get one note/meeting in full — body markdown, summary, agenda, transcript, actions.', inputSchema: S({ id: str }, ['id']) },
   { name: 'list_artifacts', write: false, description: 'List artifacts (deliverables / files / edit guides), optionally for one project.', inputSchema: S({ project: str }) },
@@ -187,7 +191,7 @@ const TOOLS = [
   { name: 'create_area', write: true, description: 'Create a new area / pillar.', inputSchema: S({ name: str }, ['name']) },
   { name: 'create_project', write: true, description: 'Create a project in an area. status defaults to active.', inputSchema: S({ area: str, name: str, status: str, priority: { type: 'integer' } }, ['area', 'name']) },
   { name: 'update_project', write: true, description: 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).', inputSchema: S({ id: str, name: str, status: str, priority: { type: 'integer' }, due: str, area: str }, ['id']) },
-  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest).', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num }, ['project', 'label']) },
+  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest). lane defaults to backlog (use now to pull into active focus); srcMeeting = source meeting note id for extracted action items.', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num, lane: { type: 'string', enum: ['now', 'backlog'] }, srcMeeting: str }, ['project', 'label']) },
   { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status).', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str }, ['id']) },
   { name: 'complete_task', write: true, description: 'Mark a task done.', inputSchema: S({ id: str }, ['id']) },
   { name: 'delete_task', write: true, description: 'Delete a task.', inputSchema: S({ id: str }, ['id']) },

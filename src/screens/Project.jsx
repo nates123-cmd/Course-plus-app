@@ -1,24 +1,20 @@
-// Project detail — THE home surface (Direction B). Header (area breadcrumb,
-// status, priority, due) · on-demand Claude Briefing · append-only Updates ·
-// drag-to-reorder Tasks (long-press → TaskSheet) · rolled-up action items ·
-// Documents (Meetings / Notes / Artifacts) with a Claude composer · right rail
-// (scoped Ask · Milestones · Related). Every mutation is a real db write
-// followed by reload(); React state stays the source of truth for ordering.
-import { Fragment, useEffect, useState } from 'react'
+// Project detail — THE home surface (Direction B), rebuilt around Cal Newport's
+// pull method. Three regions in one column: the task pull board (Now / Backlog
+// lanes, drag + tap, long-press → TaskSheet), one open Capture input (classifies
+// after submit into Meeting / Note / File, ambiguous → inbox), and one filterable
+// Library (Meeting / File / Note; Claude deliverables show as File). Right rail =
+// scoped Ask · Related. Meeting extraction feeds Backlog directly (no holding
+// pen). Every mutation is a real db write followed by reload(); React state stays
+// the source of truth for lane + ordering.
+import { Fragment, useEffect, useState, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
-  Icon, Btn, IconBtn, StatusPill, Priority, AreaDot, Card, Label, Tag,
-  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, isReference, Markish, TODAY,
+  Icon, Btn, IconBtn, StatusPill, Priority, AreaDot, Card, Label,
+  Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, TODAY, usePersisted,
 } from '../kit'
 
-// Float time-sensitive tasks to the top of a project's open list: due today /
-// overdue first, then surfaced Next, then everything else. Stable within each
-// tier so manual drag order is preserved among same-priority tasks.
-const dnum = (d) => (d ? d.y * 10000 + d.m * 100 + d.d : null)
-const TODAY_N = dnum(TODAY)
-const taskTier = (x) => (x.dueDate && dnum(x.dueDate) <= TODAY_N ? 0 : x.next ? 1 : 2)
-import { briefingFor, composeDeliverable, updateGuide } from '../lib/ai'
+import { composeDeliverable, updateGuide, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
 
@@ -27,12 +23,12 @@ const usdRough = (usage) => { const c = claudeCost(usage); return c ? `~$${c < 0
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
-  createMilestone, updateMilestone, createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote,
+  createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote, createNote, createInbox,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
 import { handleCsvPaste } from '../lib/tablePaste'
-import { Assets } from '../components/Assets'
+import { uploadAsset, signedUrl } from '../lib/assets'
 
 // ── relative-ish time from an ISO/at string ─────────────────────
 function timeAgo(at) {
@@ -162,114 +158,18 @@ function ProjectHeader({ project, reload }) {
   </div>
 }
 
-// ── Briefing — on-demand Claude call, never auto-runs ────────────
-function Briefing({ project, notes }) {
-  const { t, f } = useApp()
-  const [text, setText] = useState(null) // cached prose
-  const [busy, setBusy] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
-  const run = async () => {
-    setBusy(true)
-    try { setText((await briefingFor(project.name, notes)) || 'No notes to brief from yet.') }
-    catch (e) { setText('Couldn’t compose a briefing — ' + String(e?.message || e)) }
-    finally { setBusy(false) }
-  }
-
-  if (!text) return <Card style={{ padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-    <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: t.accentBg, border: '1px solid ' + t.accentLine }}>
-      <Icon n="sparkles" s={17} c={t.accent} /></span>
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Briefing</div>
-      <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>A synthesis of where this stands — run it when you want it.</div>
-    </div>
-    <Btn kind="outline" size="sm" icon={busy ? 'loader-2' : 'sparkles'} onClick={busy ? undefined : run}>{busy ? 'Reading…' : '✦ Generate briefing'}</Btn>
-  </Card>
-
-  return <Card style={{ padding: '16px 18px', borderColor: t.accentLine, background: t.accentBg }}>
-    <div onClick={() => setCollapsed((c) => !c)} style={{ display: 'flex', alignItems: 'center', gap: 8,
-      marginBottom: collapsed ? 0 : 9, cursor: 'pointer' }}>
-      <Icon n="sparkles" s={14} c={t.accent} />
-      <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing,
-        textTransform: 'uppercase', color: t.accent }}>Briefing</span>
-      {collapsed && <span style={{ flex: 1, minWidth: 0, fontFamily: f.body, fontSize: 13, color: t.t3,
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>}
-      <div style={{ flex: collapsed ? 'none' : 1 }} />
-      <span onClick={(e) => { e.stopPropagation(); if (!busy) run() }} style={{ display: 'inline-flex', alignItems: 'center',
-        gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t2, cursor: 'pointer' }}>
-        <Icon n={busy ? 'loader-2' : 'refresh'} s={13} />{busy ? 'Refreshing' : 'Refresh'}</span>
-      <Icon n={collapsed ? 'chevron-down' : 'chevron-up'} s={15} c={t.t3} />
-    </div>
-    {!collapsed && <Fragment>
-      <div style={{ fontFamily: f.body, fontSize: 14.5, lineHeight: 1.62, color: t.t1, textWrap: 'pretty', whiteSpace: 'pre-wrap' }}>{text}</div>
-      <div style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 11 }}>Synthesized from {notes.length} documents · just now</div>
-    </Fragment>}
-  </Card>
-}
-
-// ── Updates — append-only "where it stands" timeline ────────────
-function Updates({ project, reload }) {
-  const { t, f } = useApp()
-  const items = project.updates || []
-  const [adding, setAdding] = useState(false)
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const collapseKey = 'course.updates.collapsed.' + project.id
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(collapseKey) === '1' } catch { return false } })
-  const toggleCollapsed = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem(collapseKey, n ? '1' : '0') } catch {} return n })
-  const post = async () => {
-    const v = text.trim()
-    if (!v) { setAdding(false); setText(''); return }
-    setBusy(true)
-    try { await createUpdate(project.id, v); await reload(); setText(''); setAdding(false) }
-    finally { setBusy(false) }
-  }
-
-  return <div>
-    <SectionHead label={`Where it stands · ${items.length}`} action={adding || collapsed ? null : '+ Update'} onAction={() => setAdding(true)}
-      collapsible collapsed={collapsed} onToggle={toggleCollapsed} />
-    {!collapsed && <>
-    {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 12, padding: 12, marginBottom: 14 }}>
-      <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) post(); if (e.key === 'Escape') { setText(''); setAdding(false) } }}
-        placeholder="Where does this stand right now?"
-        style={{ width: '100%', minHeight: 64, border: 0, outline: 0, resize: 'vertical', background: 'transparent',
-          fontFamily: f.body, fontSize: 14, lineHeight: 1.55, color: t.t1 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-        <span style={{ flex: 1, fontFamily: f.ui, fontSize: 10.5, color: t.t3 }}>⌘↵ to post</span>
-        <Btn kind="ghost" size="sm" onClick={() => { setText(''); setAdding(false) }}>Cancel</Btn>
-        <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : 'corner-down-left'} onClick={busy ? undefined : post}>Post update</Btn>
-      </div>
-    </div>}
-    {items.length === 0 && !adding
-      ? <div style={{ fontFamily: f.body, fontSize: 13.5, color: t.t3, fontStyle: 'italic', padding: '4px 2px' }}>
-          No updates yet — log where this stands.</div>
-      : <div style={{ paddingLeft: 4 }}>
-          {items.map((u, i) => {
-            const last = i === items.length - 1; const newest = i === 0
-            return <div key={u.id} style={{ display: 'flex', gap: 13, position: 'relative', paddingBottom: last ? 0 : 16 }}>
-              {!last && <span style={{ position: 'absolute', left: 4, top: 14, bottom: 0, width: 1.5, background: t.line }} />}
-              <span style={{ width: 9, height: 9, borderRadius: 5, flex: 'none', marginTop: 4, zIndex: 1,
-                background: newest ? t.accent : t.line2, border: '2px solid ' + (newest ? t.accent : t.line2) }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontFamily: f.meta, fontSize: 11, fontWeight: 600, letterSpacing: '0.02em',
-                  color: newest ? t.accent : t.t3, marginBottom: 3 }}>{timeAgo(u.at)}</div>
-                <div style={{ fontFamily: f.body, fontSize: 14, lineHeight: 1.58, color: t.t1, textWrap: 'pretty', whiteSpace: 'pre-wrap' }}>{u.body}</div>
-              </div>
-            </div>
-          })}
-        </div>}
-    </>}
-  </div>
-}
 
 // ── A single task row — tap toggles done, hold opens TaskSheet, ──
-//    grip handle is the only draggable affordance.
-function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, dragging, noDrag }) {
-  const { t, f } = useApp()
+//    grip handle is the only draggable affordance. On the pull board it also
+//    carries a quiet lane-move button (↑ Now / ↓ Backlog) so the board is usable
+//    by tap on a phone, where HTML5 drag doesn't fire.
+function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, dragging, noDrag, onLane, laneUp, onDismiss }) {
+  const { t, f, go } = useApp()
+  const { noteById } = useData()
   const { pressing, handlers } = useLongPress(() => onOpen(x.id), () => onToggle(x.id), 450)
   const [grip, setGrip] = useState(false)
   const due = x.dueDate ? fmtDate(x.dueDate) : x.due
+  const srcMeeting = x.srcMeeting ? noteById(x.srcMeeting) : null
   const dragProps = noDrag ? {} : {
     draggable: grip,
     onDragStart: (e) => onDragStart(e, x.id),
@@ -303,50 +203,82 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
     {due && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, zIndex: 1, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
     {x.next && !x.done && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', zIndex: 1,
       textTransform: 'uppercase', color: t.accent }}>Next</span>}
+    {x.srcMeeting && !x.done && <span onClick={(e) => { e.stopPropagation(); if (srcMeeting) go({ screen: 'note', id: x.srcMeeting }) }}
+      title={srcMeeting ? 'From meeting: ' + srcMeeting.title : 'From a meeting'}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', zIndex: 1, cursor: srcMeeting ? 'pointer' : 'default',
+        fontFamily: f.ui, fontSize: 10.5, fontWeight: 600, color: t.t3, background: t.tagBg, borderRadius: 6, padding: '2px 7px', maxWidth: 130 }}>
+      <Icon n="users" s={11} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>meeting</span></span>}
+    {onLane && !x.done && <button onClick={(e) => { e.stopPropagation(); onLane(x.id) }}
+      title={laneUp ? 'Pull into Now' : 'Send to Backlog'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+      flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+      color: laneUp ? t.accent : t.t3, background: 'transparent', border: '1px solid ' + (laneUp ? t.accentLine : t.line2),
+      borderRadius: 7, padding: '3px 8px', transition: 'border-color .14s, color .14s, background .14s' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = laneUp ? t.accentBg : t.sel }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+      <Icon n={laneUp ? 'arrow-up' : 'arrow-down'} s={12} />{laneUp ? 'Now' : 'Backlog'}</button>}
+    {onDismiss && !x.done && <button onClick={(e) => { e.stopPropagation(); onDismiss(x.id) }} title="Dismiss this task"
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', zIndex: 1, width: 24, height: 24,
+        borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+      <Icon n="x" s={14} /></button>}
   </div>
 }
 
-// ── Tasks — drag-to-reorder + inline add + long-press TaskSheet ──
+// ── Task pull board — Now / Backlog lanes (Cal Newport pull, one level down
+//    from the project-level pull). Lane lives in task_status ('now' = Now lane,
+//    anything else open = Backlog); intra-lane order is `sort`. Drag between and
+//    within lanes, or tap ↑ Now / ↓ Backlog (phone-friendly). Now is soft-WIP-
+//    capped: over the line flags red, never blocks. Existing open tasks are
+//    Backlog by default (nothing is 'now'), so no migration write is needed.
+const isNow = (x) => x.taskStatus === 'now'
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
   const { recordUndo } = useData()
-  // React owns order; re-seed whenever the persisted tasks change — keyed on the
-  // mutable fields too, not just ids, so a sheet edit (due/status/etc) shows live
-  // without a refresh. (Drag preview is safe: project.tasks only changes on drop.)
-  const [order, setOrder] = useState(project.tasks || [])
+  const [nowCap, setNowCap] = usePersisted('course.nowCap', 3)
+  // React owns lane order; re-seed whenever the persisted tasks change — keyed on
+  // the mutable fields too, not just ids, so a sheet edit (due/status/lane) shows
+  // live without a refresh. (Drag preview is safe: project.tasks only changes on drop.)
   const tasksSig = (project.tasks || []).map((x) => {
     const d = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m}-${x.dueDate.d}` : (x.due || '')
     return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}`
   }).join('|')
-  useEffect(() => { setOrder(project.tasks || []) }, [tasksSig])
+  const [nowList, setNowList] = useState([])
+  const [backlog, setBacklog] = useState([])
+  useEffect(() => {
+    const open = (project.tasks || []).filter((x) => !x.done) // already sort-ordered from db
+    setNowList(open.filter(isNow))
+    setBacklog(open.filter((x) => !isNow(x)))
+  }, [tasksSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const [sheetTask, setSheetTask] = useState(null)
-  const [dragId, setDragId] = useState(null)
+  const [drag, setDrag] = useState(null) // { id, from: 'now' | 'backlog' }
   const [showDone, setShowDone] = useState(false)
 
+  const allOpen = [...nowList, ...backlog]
+  const findTask = (id) => allOpen.find((o) => o.id === id) || (project.tasks || []).find((o) => o.id === id) || null
+
   const toggle = async (id) => {
-    const x = order.find((o) => o.id === id); if (!x) return
+    const x = findTask(id); if (!x) return
     const prevDone = x.done
-    setOrder((os) => os.map((o) => o.id === id ? { ...o, done: !o.done } : o)) // optimistic
-    await updateTask(id, { done: !x.done }); await reload()
+    if (isNow(x)) setNowList((l) => l.filter((o) => o.id !== id)) // optimistic: completing clears the lane
+    else setBacklog((l) => l.filter((o) => o.id !== id))
+    await updateTask(id, { done: !prevDone }); await reload()
     recordUndo(async () => { await updateTask(id, { done: prevDone }); await reload() })
   }
   const patch = async (id, p) => {
-    const cur = order.find((o) => o.id === id)
+    const cur = findTask(id)
     const inverse = cur ? Object.fromEntries(Object.keys(p).map((k) => [k, cur[k] ?? null])) : null
-    setOrder((os) => os.map((o) => o.id === id ? { ...o, ...p } : o)) // optimistic — chip flips instantly
     await updateTask(id, p); await reload()
     if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
   }
   const remove = async (id) => {
-    const prev = order.find((o) => o.id === id)
+    const prev = findTask(id)
     setSheetTask(null); await deleteTask(id); await reload()
     if (prev) recordUndo(async () => { await createTask(prev.project || project.id, prev); await reload() })
   }
-  // target = { project: id } | { area: id }. Moving to a pillar clears the
-  // project (and vice-versa) so a task lives in exactly one place.
   const reassign = async (target) => {
     if (!sheetTask || !target) return
     const id = sheetTask.id
@@ -361,60 +293,121 @@ function Tasks({ project, reload }) {
   const commit = async () => {
     const v = text.trim(); setText(''); setAdding(false)
     if (!v) return
-    await createTask(project.id, { label: v, sort: order.length }); await reload()
+    // New tasks land in Backlog (the user pulls a few up), at the end.
+    await createTask(project.id, { label: v, taskStatus: 'backlog', sort: (project.tasks || []).length }); await reload()
   }
 
-  // HTML5 drag-to-reorder, handle-gated (only the grip flips draggable on)
-  const onDragStart = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id) } catch {} }
-  const onDragOver = (e, overId) => {
+  // Persist the current lane split + intra-lane order. Only lane-changed tasks
+  // get a task_status write; sort is rewritten for the whole project (Now first,
+  // then Backlog, then the untouched done tasks) so both orderings survive reload.
+  const persist = async () => {
+    const nowIds = nowList.map((o) => o.id), backIds = backlog.map((o) => o.id)
+    const wasNow = new Set((project.tasks || []).filter((x) => !x.done && isNow(x)).map((x) => x.id))
+    const origNow = [...wasNow], origBack = (project.tasks || []).filter((x) => !x.done && !isNow(x)).map((x) => x.id)
+    const orderSame = nowIds.join(',') === origNow.join(',') && backIds.join(',') === origBack.join(',')
+    if (orderSame) return
+    const changes = []
+    nowIds.forEach((id) => { if (!wasNow.has(id)) changes.push(updateTask(id, { taskStatus: 'now', next: false, waiting: null })) })
+    backIds.forEach((id) => { if (wasNow.has(id)) changes.push(updateTask(id, { taskStatus: 'backlog' })) })
+    if (changes.length) await Promise.all(changes)
+    const doneIds = (project.tasks || []).filter((x) => x.done).map((x) => x.id)
+    await reorderTasks([...nowIds, ...backIds, ...doneIds])
+    await reload()
+  }
+
+  // Tap affordance: move one task across lanes (phone-friendly; drag is the enhancement).
+  const moveLane = async (id, toLane) => {
+    const src = toLane === 'now' ? backlog : nowList
+    const item = src.find((o) => o.id === id); if (!item) return
+    if (toLane === 'now') { setBacklog((l) => l.filter((o) => o.id !== id)); setNowList((l) => [...l, item]) }
+    else { setNowList((l) => l.filter((o) => o.id !== id)); setBacklog((l) => [item, ...l]) }
+    await updateTask(id, toLane === 'now' ? { taskStatus: 'now', next: false, waiting: null } : { taskStatus: 'backlog' })
+    const nowIds = (toLane === 'now' ? [...nowList.map((o) => o.id), id] : nowList.filter((o) => o.id !== id).map((o) => o.id))
+    const backIds = (toLane === 'now' ? backlog.filter((o) => o.id !== id).map((o) => o.id) : [id, ...backlog.map((o) => o.id)])
+    const doneIds = (project.tasks || []).filter((x) => x.done).map((x) => x.id)
+    await reorderTasks([...nowIds, ...backIds, ...doneIds]); await reload()
+  }
+
+  // HTML5 drag, handle-gated. Moves within and across the two lanes.
+  const onDragStart = (from) => (e, id) => { setDrag({ id, from }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id) } catch {} }
+  const moveInto = (toLane, toIndex) => {
+    if (!drag) return
+    const item = (drag.from === 'now' ? nowList : backlog).find((o) => o.id === drag.id)
+    if (!item) return
+    const nl = nowList.filter((o) => o.id !== drag.id)
+    const bl = backlog.filter((o) => o.id !== drag.id)
+    const target = toLane === 'now' ? nl : bl
+    const idx = toIndex == null ? target.length : Math.max(0, Math.min(toIndex, target.length))
+    target.splice(idx, 0, item)
+    setNowList(nl); setBacklog(bl)
+    if (drag.from !== toLane) setDrag({ id: drag.id, from: toLane })
+  }
+  const onRowOver = (lane) => (e, overId) => {
     e.preventDefault()
-    if (dragId == null || overId === dragId) return
-    setOrder((os) => {
-      const from = os.findIndex((o) => o.id === dragId)
-      const to = os.findIndex((o) => o.id === overId)
-      if (from < 0 || to < 0 || from === to) return os
-      const next = os.slice(); const [m] = next.splice(from, 1); next.splice(to, 0, m); return next
-    })
+    if (!drag || overId === drag.id) return
+    const list = lane === 'now' ? nowList : backlog
+    const idx = list.findIndex((o) => o.id === overId)
+    if (idx < 0) return
+    moveInto(lane, idx)
   }
-  const onDrop = (e) => { e.preventDefault() }
-  const onDragEnd = async () => {
-    setDragId(null)
-    const ids = order.map((o) => o.id)
-    const orig = (project.tasks || []).map((o) => o.id)
-    if (ids.join(',') !== orig.join(',')) {
-      await reorderTasks(ids); await reload()
-      recordUndo(async () => { await reorderTasks(orig); await reload() })
-    }
-  }
+  const onLaneOver = (lane) => (e) => { e.preventDefault(); if (drag) moveInto(lane, null) }
+  const onDrop = (e) => e.preventDefault()
+  const onDragEnd = async () => { setDrag(null); await persist() }
 
-  const openTasks = order.filter((x) => !x.done)
-    .map((x, i) => ({ x, i }))                                 // remember manual position
-    .sort((a, b) => taskTier(a.x) - taskTier(b.x) || a.i - b.i) // float due/next, stable otherwise
-    .map((o) => o.x)
-  const doneTasks = order.filter((x) => x.done)
-  const findTask = (id) => order.find((o) => o.id === id) || null
+  const laneHandlers = (lane) => ({ onDragStart: onDragStart(lane), onDragOver: onRowOver(lane), onDrop, onDragEnd })
+  const doneTasks = (project.tasks || []).filter((x) => x.done)
+  const over = nowList.length > nowCap
+  const nowH = laneHandlers('now'), backH = laneHandlers('back')
+
   return <div>
-    <SectionHead label={`Tasks · ${openTasks.length} open`} action="Drag to reorder · hold for details" />
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {openTasks.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
-        onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dragging={dragId === x.id} />)}
+    {/* Now lane */}
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 11, gap: 10 }}>
+      <Label style={{ whiteSpace: 'nowrap' }}>Now</Label>
+      <span style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
+        color: over ? t.risk : t.t3 }}>{nowList.length} of {nowCap} pulled</span>
+      {over && <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.risk, background: t.riskBg,
+        border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>over your line</span>}
+      <div style={{ flex: 1 }} />
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+        <button onClick={() => setNowCap((c) => Math.max(1, c - 1))} title="Lower the Now limit" style={stepBtn(t)}><Icon n="minus" s={13} /></button>
+        <button onClick={() => setNowCap((c) => c + 1)} title="Raise the Now limit" style={stepBtn(t)}><Icon n="plus" s={13} /></button>
+      </span>
     </div>
-    <div style={{ marginTop: 6 }}>
-      {adding ? <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 10,
-        border: '1px solid ' + t.line2, background: t.card }}>
-        <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none' }} />
-        <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onBlur={commit}
-          onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setText(''); setAdding(false) } }}
-          placeholder="New task…" style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.body, fontSize: 14.5, color: t.t1 }} />
-      </div> : <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 11,
-        padding: '10px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: f.ui, fontSize: 13, color: t.t3 }}
-        onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-        <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none',
-          display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={11} /></span>
-        <span style={{ whiteSpace: 'nowrap' }}>New task</span></div>}
+    <div onDragOver={onLaneOver('now')} onDrop={onDrop} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+      {nowList.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
+        {...nowH} dragging={drag?.id === x.id} onLane={(id) => moveLane(id, 'back')} laneUp={false} />)}
+      {nowList.length < nowCap && <div onDragOver={onLaneOver('now')} onDrop={onDrop}
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 10,
+        border: '1.5px dashed ' + t.line2, fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>
+        <Icon n="arrow-up" s={14} c={t.t3} />
+        <span>Slot open. Pull a task up from Backlog, or tap ↑ Now on one below.</span></div>}
     </div>
-    {doneTasks.length > 0 && <div style={{ marginTop: 10 }}>
+
+    {/* Backlog lane */}
+    <div style={{ marginTop: 20 }}>
+      <SectionHead label={`Backlog · ${backlog.length}`} action="Drag or tap ↑ Now · hold for details" />
+      <div onDragOver={onLaneOver('back')} onDrop={onDrop} style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 8 }}>
+        {backlog.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
+          {...backH} dragging={drag?.id === x.id} onLane={(id) => moveLane(id, 'now')} laneUp onDismiss={remove} />)}
+      </div>
+      <div style={{ marginTop: 6 }}>
+        {adding ? <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 10,
+          border: '1px solid ' + t.line2, background: t.card }}>
+          <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none' }} />
+          <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setText(''); setAdding(false) } }}
+            placeholder="New task…" style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.body, fontSize: 14.5, color: t.t1 }} />
+        </div> : <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 11,
+          padding: '10px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: f.ui, fontSize: 13, color: t.t3 }}
+          onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+          <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={11} /></span>
+          <span style={{ whiteSpace: 'nowrap' }}>New task</span></div>}
+      </div>
+    </div>
+
+    {doneTasks.length > 0 && <div style={{ marginTop: 14 }}>
       <div onClick={() => setShowDone((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
         fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
         onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
@@ -428,114 +421,150 @@ function Tasks({ project, reload }) {
         {doneTasks.map((x) => <TaskRow key={x.id} x={x} noDrag onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))} />)}
       </div>}
     </div>}
-    {sheetTask && (() => { const live = order.find((o) => o.id === sheetTask.id) || sheetTask
+    {sheetTask && (() => { const live = findTask(sheetTask.id) || sheetTask
       return <TaskSheet task={live} projectId={project.id}
         onPatch={(p) => patch(sheetTask.id, p)} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} /> })()}
   </div>
 }
+// small square stepper button for the Now WIP cap
+const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  flex: 'none', border: '1px solid ' + t.line2, background: 'transparent', color: t.t2, cursor: 'pointer' })
 
-// ── A rolled-up action item — promote to task or dismiss ────────
-function ActionRow({ a, first, onPromote, onDismiss }) {
-  const { t, f, go } = useApp()
-  const [hov, setHov] = useState(false)
-  return <div style={{ position: 'relative', borderTop: first ? 'none' : '1px solid ' + t.line }}>
-    <div style={{ background: t.card, display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 16px' }}>
-      <span onClick={onDismiss} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title="Dismiss this action item"
-        style={{ width: 22, height: 22, borderRadius: 7, flex: 'none', marginTop: 0, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', background: hov ? t.riskBg : t.sel, transition: 'background .14s' }}>
-        <Icon n="x" s={14} c={hov ? t.risk : t.t3} /></span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, lineHeight: 1.4 }}>{a.text}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontFamily: f.ui, fontSize: 11.5, color: t.t3, flexWrap: 'wrap' }}>
-          <span onClick={() => go({ screen: 'note', id: a.mid })} style={{ display: 'inline-flex', alignItems: 'center',
-            gap: 4, color: t.t2, cursor: 'pointer' }}><Icon n="users" s={12} />{a.meeting}</span>
-          {a.owner && <Fragment><span style={{ opacity: 0.5 }}>·</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Icon n="user" s={12} />{a.owner}</span></Fragment>}
-          {a.linked && <Tag>linked</Tag>}
-        </div>
-      </div>
-      <button onClick={onPromote} title="Promote to task" style={{ display: 'inline-flex', alignItems: 'center',
-        gap: 5, flex: 'none', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent, background: 'transparent',
-        border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-        onMouseEnter={(e) => e.currentTarget.style.background = t.accentBg}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-        <Icon n="arrow-bar-up" s={13} />To task</button>
-    </div>
-  </div>
+// ── Capture — one open input: paste a transcript, drop a file, or jot a note.
+//    Classification happens after submit and never blocks. A transcript-shaped
+//    or long entry becomes a Meeting (synthesized, its Nate-owned action items
+//    flow into Backlog on reload); short text becomes a Note; a file becomes a
+//    File; anything ambiguous is filed with a ? and dropped into the inbox to
+//    resolve with one tap (reusing the existing inbox primitive).
+function classifyCapture(text) {
+  const s = (text || '').trim(); const lower = s.toLowerCase()
+  const words = s ? s.split(/\s+/).length : 0
+  const transcriptish = /\b(meeting|call|sync|stand-?up|1:1|transcript|kickoff|kick-off|debrief|attendees|agenda|minutes)\b/.test(lower)
+    || /(^|\n)\s*[A-Z][\w .'-]{1,28}:\s/.test(s) // "Name: …" speaker labels
+    || /\b\d{1,2}:\d{2}\b/.test(s)               // timestamps
+  if (transcriptish || words > 120) return 'meeting'
+  if (words <= 40) return 'note'
+  return 'unknown'
 }
-
-// ── Open action items rolled up from this project's meetings ────
-function ActionItems({ project, reload }) {
-  const { actionsForProject, noteById } = useData()
+function Capture({ project, reload }) {
+  const { t, f } = useApp()
+  const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const open = actionsForProject(project.id)
-  if (!open.length) return null
+  const [drag, setDrag] = useState(false)
+  const [status, setStatus] = useState(null)
+  const fileRef = useRef(null)
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const flash = (m) => { setStatus(m); setTimeout(() => setStatus(null), 5000) }
 
-  // Persist by removing the action from its SOURCE meeting note (else it
-  // reappears on reload, since it's rolled up from the meeting's actions[]).
-  const removeFromSource = async (a) => {
-    const note = noteById(a.mid); if (!note) return
-    const next = (note.actions || []).filter((x) => !(x.text === a.text && (x.owner || '') === (a.owner || '')))
-    await updateNote(a.mid, { actions: next })
+  const doFiles = async (files) => {
+    const list = Array.from(files || []); if (!list.length || busy) return
+    setBusy(true); setStatus('Uploading…')
+    try { for (const file of list) await uploadAsset(file, { projectId: project.id, onExtracted: reload }); await reload(); flash(list.length + ' file' + (list.length === 1 ? '' : 's') + ' added to the library.') }
+    catch (e) { flash('Upload failed: ' + (e?.message || e)) } finally { setBusy(false) }
   }
-  const promote = async (a) => {
-    if (busy) return; setBusy(true)
-    try { await createTask(project.id, { label: a.text, srcMeeting: a.mid, sort: (project.tasks || []).length }); await removeFromSource(a); await reload() }
-    catch (e) { window.alert('Could not promote: ' + (e?.message || e)) } finally { setBusy(false) }
-  }
-  const dismiss = async (a) => {
-    if (busy) return; setBusy(true)
-    try { await removeFromSource(a); await reload() } catch (e) { window.alert('Could not dismiss: ' + (e?.message || e)) } finally { setBusy(false) }
+  const submit = async () => {
+    const s = text.trim(); if (!s || busy) return
+    setBusy(true)
+    const type = classifyCapture(s)
+    try {
+      if (type === 'meeting') {
+        setStatus('Reading the transcript and pulling action items…')
+        let synth = {}
+        try { synth = await synthesizeMeeting({ transcript: s }) } catch {}
+        const ttl = (synth.title || s.split('\n')[0].slice(0, 60) || 'Meeting').trim()
+        await createNote({ kind: 'meeting', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2,
+          transcript: s, summary: synth.summary || '', nextSteps: synth.nextSteps || null, tags: synth.tags || [],
+          actions: (synth.actions || []).map((a) => ({ text: a.text, owner: a.owner || 'me', src: 'this meeting' })) })
+        setText(''); await reload(); flash('Meeting captured. Any action items are landing in Backlog.')
+      } else if (type === 'note') {
+        const ttl = s.split('\n')[0].slice(0, 60) || 'Note'
+        await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: [{ p: s }] })
+        setText(''); await reload(); flash('Note saved to the library.')
+      } else {
+        const ttl = s.split('\n')[0].slice(0, 60) || 'Capture'
+        await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: [{ p: s }], tags: ['?'] })
+        await createInbox({ title: ttl, src: 'capture', srcIcon: 'clipboard', snippet: s.slice(0, 200), suggest: { project: project.id, confidence: 0.6 }, tags: ['?'] })
+        setText(''); await reload(); flash('Filed with a ? (it’s in your inbox to sort with one tap).')
+      }
+    } catch (e) { flash('Could not file that: ' + (e?.message || e)) } finally { setBusy(false) }
   }
 
-  return <div>
-    <SectionHead label={`Open action items · ${open.length}`} />
-    <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-      {open.map((a, i) => <ActionRow key={a.mid + '|' + a.text} a={a} first={i === 0} onPromote={() => promote(a)} onDismiss={() => dismiss(a)} />)}
-    </Card>
-  </div>
-}
-
-// ── Document row → opens the note screen ─────────────────────────
-function DocRow({ n, first }) {
-  const { t, f, go } = useApp()
-  return <div onClick={() => go({ screen: 'note', id: n.id })} style={{ display: 'flex', alignItems: 'center', gap: 12,
-    padding: '11px 16px', cursor: 'pointer', borderTop: first ? 'none' : '1px solid ' + t.line }}
-    onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
-    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-    <Icon n={(KIND[n.kind] || KIND.note).icon} s={16} c={t.t3} />
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
-        {n.date && <span>{n.date}</span>}
-        {n.people && n.people.length > 0 && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{n.people.join(', ')}</span></Fragment>}
-        {n.rawWords && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{n.rawWords} words</span></Fragment>}
-      </div>
+  return <div onDragOver={(e) => { e.preventDefault(); if (!drag) setDrag(true) }} onDragLeave={() => setDrag(false)}
+    onDrop={(e) => { e.preventDefault(); setDrag(false); doFiles(e.dataTransfer.files) }}
+    style={{ border: '1px solid ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, borderRadius: 12, padding: 12, transition: 'border-color .14s, background .14s' }}>
+    <textarea value={text} onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
+      placeholder="Throw something in: paste a transcript, drop a file, or jot a note."
+      style={{ width: '100%', minHeight: 66, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.55, color: t.t1 }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+      <button onClick={() => fileRef.current?.click()} title="Attach a file" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
+        <Icon n="paperclip" s={14} />Attach</button>
+      <input ref={fileRef} type="file" multiple hidden onChange={(e) => { doFiles(e.target.files); e.target.value = '' }} />
+      <span style={{ flex: 1, minWidth: 0, fontFamily: f.ui, fontSize: 11, color: t.t3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status || 'Sorted after you send. Never blocks. ⌘↵'}</span>
+      <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : 'corner-down-left'} onClick={busy ? undefined : submit}>Throw in</Btn>
     </div>
-    {isReference(n) && <Icon n="bookmark" s={13} c={t.accent} title="Reference" />}
-    <Icon n="chevron-right" s={15} c={t.t3} />
   </div>
 }
 
-function DocSection({ label, notes, kind, project }) {
-  const { t, f, openCapture } = useApp()
-  const add = () => openCapture({ kind, home: project.id })
+// ── Library — one chronological stream of everything captured, filterable by
+//    type. Replaces the old Meetings / Notes / Files / Artifacts sections. Type
+//    is a filter, not a container. Claude-made deliverables appear as File
+//    entries (no separate chip); tapping any row opens the full entry.
+const shortDate = (at) => { const d = at ? new Date(at) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
+const LIB_TYPES = [['all', 'All'], ['meeting', 'Meeting'], ['file', 'File'], ['note', 'Note']]
+const LIB_BADGE = { meeting: ['users', 'Meeting'], file: ['file-text', 'File'], note: ['file-text', 'Note'] }
+function Library({ project, meetings, docNotes }) {
+  const { t, f, go } = useApp()
+  const { assetsForProject } = useData()
+  const [filter, setFilter] = useState('all')
+
+  const noteTs = (n) => { const d = Date.parse(n.date || ''); return Number.isNaN(d) ? (Date.parse(n.updatedAt || '') || 0) : d }
+  const items = []
+  meetings.forEach((n) => items.push({ key: 'n' + n.id, type: 'meeting', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }) }))
+  docNotes.forEach((n) => items.push({ key: 'n' + n.id, type: 'note', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }) }))
+  ;(project.artifacts || []).forEach((a) => items.push({ key: 'a' + a.id, type: 'file', title: a.title || 'Untitled', ts: Date.parse(a.at) || 0, dateLabel: shortDate(a.at), sub: a.provenance || '', onClick: () => go({ screen: 'artifact', id: a.id }) }))
+  assetsForProject(project.id).forEach((a) => items.push({ key: 'f' + a.id, type: 'file', title: a.filename, ts: Date.parse(a.at) || 0, dateLabel: shortDate(a.at), sub: a.kind, onClick: async () => { try { const u = await signedUrl(a.storagePath); if (u) window.open(u, '_blank') } catch {} } }))
+  items.sort((x, y) => y.ts - x.ts)
+  const counts = { all: items.length, meeting: 0, file: 0, note: 0 }
+  items.forEach((i) => { counts[i.type] += 1 })
+  const shown = filter === 'all' ? items : items.filter((i) => i.type === filter)
+
   return <div>
-    <SectionHead label={notes.length ? `${label} · ${notes.length}` : label} onAdd={add} />
-    {notes.length ? <Card style={{ padding: 0, overflow: 'hidden' }}>
-      {notes.map((n, i) => <DocRow key={n.id} n={n} first={i === 0} />)}
-    </Card> : <div onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-      borderRadius: 11, cursor: 'pointer', border: '1px dashed ' + t.line2, fontFamily: f.ui, fontSize: 13, color: t.t3 }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
-      <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none',
-        display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>
-      Add {label.toLowerCase().replace(/s$/, '')}</div>}
+    <SectionHead label={`Library · ${items.length}`} />
+    <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
+      {LIB_TYPES.map(([id, label]) => {
+        const on = filter === id; const n = counts[id]
+        if (id !== 'all' && n === 0) return null
+        return <span key={id} onClick={() => setFilter(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+          fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
+          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 8, padding: '5px 11px' }}>
+          {label}<span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: on ? t.onAccent : t.t3 }}>{n}</span></span>
+      })}
+    </div>
+    {shown.length ? <Card style={{ padding: 0, overflow: 'hidden' }}>
+      {shown.map((it, i) => { const [icon, label] = LIB_BADGE[it.type]
+        return <div key={it.key} onClick={it.onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+          cursor: 'pointer', borderTop: i ? '1px solid ' + t.line : 'none' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+          <Icon n={icon} s={16} c={t.t3} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
+              <span>{label}</span>
+              {it.dateLabel && <><span style={{ opacity: 0.5 }}>·</span><span>{it.dateLabel}</span></>}
+              {it.sub && <><span style={{ opacity: 0.5 }}>·</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.sub}</span></>}
+              {(it.q || []).includes('?') && <span title="Unsorted (resolve it in the inbox)" style={{ color: t.risk, fontWeight: 700 }}>?</span>}
+            </div>
+          </div>
+          <Icon n="chevron-right" s={15} c={t.t3} />
+        </div> })}
+    </Card> : <div style={{ fontFamily: f.body, fontSize: 13.5, color: t.t3, fontStyle: 'italic', padding: '6px 2px' }}>
+      Nothing here yet. Throw something in above.</div>}
   </div>
 }
 
 // ── Artifacts — project deliverables + Claude composer ──────────
-function Artifacts({ project, notes, meetings = [], reload }) {
+function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
   const { t, f, go, aiName, mcpMode } = useApp()
   const { projectDigest, areaDigest } = useData()
   // Label for the generator: in MCP mode the work runs on claude.ai, not the engine.
@@ -639,7 +668,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
   }
 
   return <div style={{ position: 'relative' }}>
-    <SectionHead label={rows.length ? 'Artifacts · ' + rows.length : 'Artifacts'} />
+    <SectionHead label={compact ? 'Add to library' : (rows.length ? 'Artifacts · ' + rows.length : 'Artifacts')} />
     {!composing && !adding && !updating && !busy && <div style={{ display: 'flex', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
       <Btn kind="outline" size="sm" icon="plus" onClick={() => { setAdding(true); setComposing(false); setUpdating(false) }}>Add file</Btn>
       <Btn kind="outline" size="sm" icon="file-diff" onClick={() => { setUpdating(true); setAdding(false); setComposing(false); setDocArtId(rows[0]?.id || null); setMeetingId(meetings[0]?.id || null) }}>Update doc from meeting</Btn>
@@ -751,7 +780,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       </div>
     </Card>}
 
-    {rows.length ? <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
+    {!compact && (rows.length ? <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
       {rows.map((a, i) => {
         const isNew = a.id === newId
         const type = COMPOSE_TYPES.find((c) => c.id === a.artType)
@@ -777,7 +806,7 @@ function Artifacts({ project, notes, meetings = [], reload }) {
       onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
       <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none', display: 'flex',
-        alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>No artifacts yet — add a file or generate one</div>}
+        alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>No artifacts yet — add a file or generate one</div>)}
 
     {toast && <div style={{ position: 'fixed', left: '50%', bottom: 26, transform: 'translateX(-50%)', zIndex: 470, animation: 'toast-in .2s ease-out',
       display: 'flex', alignItems: 'center', gap: 10, background: t.card, border: '1px solid ' + t.accentLine,
@@ -811,83 +840,6 @@ function ScopedAsk({ project }) {
         <Icon n="arrow-right" s={16} /></button>
     </form>
   </Card>
-}
-
-// ── Right rail: Milestones ───────────────────────────────────────
-function Milestones({ project, reload }) {
-  const { t, f } = useApp()
-  const ms = project.milestones || []
-  const [adding, setAdding] = useState(false)
-  const [label, setLabel] = useState('')
-
-  // legacy: a milestone's date may live as free text in `sub` ("Oct 3")
-  const parseSub = (s) => {
-    if (!s) return null
-    const mm = /^([A-Za-z]{3,})\s+(\d{1,2})$/.exec(String(s).trim())
-    if (!mm) return null
-    const idx = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(mm[1].slice(0, 3).toLowerCase())
-    return idx < 0 ? null : { m: idx, d: parseInt(mm[2], 10) }
-  }
-  const cycle = async (m) => {
-    const next = m.state === 'done' ? 'upcoming' : m.state === 'current' ? 'done' : 'current'
-    await updateMilestone(m.id, { state: next }); await reload()
-  }
-  const setMDate = async (m, d) => {
-    const patch = { due: d || null }
-    if (m.sub && parseSub(m.sub)) patch.sub = null // migrate legacy text-date out of sub
-    await updateMilestone(m.id, patch); await reload()
-  }
-  const commit = async () => {
-    const v = label.trim(); setLabel(''); setAdding(false)
-    if (!v) return
-    await createMilestone(project.id, { label: v, sort: ms.length }); await reload()
-  }
-
-  return <div>
-    <SectionHead label="Milestones" action={adding ? null : '+ Add'} onAction={() => setAdding(true)} />
-    <div style={{ paddingLeft: 4 }}>
-      {ms.map((m, i) => {
-        const last = i === ms.length - 1 && !adding
-        const c = m.state === 'done' ? t.good : m.state === 'current' ? t.accent : t.line2
-        const theDate = m.due || parseSub(m.sub)
-        const note = m.sub && !parseSub(m.sub) ? m.sub : null
-        return <div key={m.id} style={{ display: 'flex', gap: 12, position: 'relative', paddingBottom: last ? 0 : 18 }}>
-          {!last && <span style={{ position: 'absolute', left: 5, top: 16, bottom: 2, width: 1.5, background: t.line }} />}
-          <span onClick={() => cycle(m)} title="Click to cycle status"
-            style={{ width: 12, height: 12, borderRadius: 6, flex: 'none', marginTop: 2, zIndex: 1, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: m.state === 'upcoming' ? t.bg : c, border: '2px solid ' + c,
-              boxShadow: m.state === 'current' ? '0 0 0 3px ' + t.accentBg : 'none' }}>
-            {m.state === 'done' && <Icon n="check" s={8} c={t.onAccent} />}</span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div onClick={() => cycle(m)} title="Click to cycle status"
-              style={{ fontFamily: f.body, fontSize: 13.5, lineHeight: 1.35, cursor: 'pointer',
-                color: m.state === 'upcoming' ? t.t3 : t.t1, fontWeight: m.state === 'current' ? 600 : 400 }}>{m.label}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-              <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex' }}>
-                <DatePill value={theDate} onChange={(d) => setMDate(m, d)} label="" empty="+ date"
-                  icon="calendar" variant="accent" bottom="calc(100% + 6px)" /></span>
-              {note && <span style={{ fontFamily: f.ui, fontSize: 11, color: m.state === 'current' ? t.accent : t.t3 }}>{note}</span>}
-            </div>
-          </div>
-        </div>
-      })}
-
-      {adding && <div style={{ display: 'flex', gap: 12, position: 'relative' }}>
-        <span style={{ width: 12, height: 12, borderRadius: 6, flex: 'none', marginTop: 2, border: '2px dashed ' + t.line2, background: t.bg }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <input autoFocus value={label} onChange={(e) => setLabel(e.target.value)} onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setLabel(''); setAdding(false) } }}
-            placeholder="Milestone…" style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 8,
-              outline: 0, background: t.card, fontFamily: f.body, fontSize: 13.5, color: t.t1, padding: '6px 9px' }} />
-          <div style={{ display: 'flex', gap: 7, marginTop: 9 }}>
-            <Btn kind="primary" size="sm" onClick={commit}>Add</Btn>
-            <Btn kind="ghost" size="sm" onClick={() => { setLabel(''); setAdding(false) }}>Cancel</Btn>
-          </div>
-        </div>
-      </div>}
-    </div>
-  </div>
 }
 
 // ── Right rail: Related — reason-labelled neighbours ────────────
@@ -949,31 +901,24 @@ export function ProjectScreen() {
 
   if (!project) return null
 
-  const assetCount = assetsForProject(project.id).length
-
   const owned = ownedNotes(project.id)
   const linked = linkedMeetings(project.id)
-  const briefingNotes = [...owned, ...linked]
+  const genNotes = [...owned, ...linked]
   const meetings = [...owned.filter((n) => n.kind === 'meeting'), ...linked]
   const docNotes = owned.filter((n) => n.kind === 'note' || n.kind === 'knowledge' || n.kind === 'brainstorm')
 
+  // Three regions, one scrolling column: the task pull board, one capture input,
+  // and one filterable library. (Where-it-stands, milestones, the briefing block,
+  // and the action-items holding pen were removed in the surface rebuild.)
   const main = <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
-    <Briefing project={project} notes={briefingNotes} />
-    <Updates project={project} reload={reload} />
     <Tasks project={project} reload={reload} />
-    <ActionItems project={project} reload={reload} />
-    <DocSection label="Meetings" notes={meetings} kind="meeting" project={project} />
-    <DocSection label="Notes" notes={docNotes} kind="note" project={project} />
-    <div>
-      <SectionHead label={assetCount ? 'Files · ' + assetCount : 'Files'} />
-      <Assets projectId={project.id} />
-    </div>
-    <Artifacts project={project} notes={briefingNotes} meetings={meetings} reload={reload} />
+    <Capture project={project} reload={reload} />
+    <Library project={project} meetings={meetings} docNotes={docNotes} />
+    <Artifacts project={project} notes={genNotes} meetings={meetings} reload={reload} compact />
   </div>
 
   const rail = <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
     <ScopedAsk project={project} />
-    <Milestones project={project} reload={reload} />
     <Related project={project} owned={owned} linked={linked} />
   </div>
 

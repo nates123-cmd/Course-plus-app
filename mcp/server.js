@@ -32,8 +32,8 @@ tool('list_projects', 'List projects, optionally filtered by area id or status (
   { area: z.string().optional(), status: z.string().optional() }, (a) => D.listProjects(sb, a))
 tool('get_project', 'Get one project in full: tasks, milestones, where-it-stands updates, and artifacts.',
   { id: z.string() }, (a) => D.getProject(sb, a))
-tool('list_tasks', 'List tasks, optionally for one project. status: open (default) | done | all.',
-  { project: z.string().optional(), status: z.enum(['open', 'done', 'all']).optional() }, (a) => D.listTasks(sb, a))
+tool('list_tasks', 'List tasks, optionally for one project. status: open (default) | done | all. lane: now | backlog (the pull-board lane).',
+  { project: z.string().optional(), status: z.enum(['open', 'done', 'all']).optional(), lane: z.enum(['now', 'backlog']).optional() }, (a) => D.listTasks(sb, a))
 tool('list_notes', 'List notes/meetings/artifacts-as-notes, optionally by project or kind (note|meeting|knowledge|artifact).',
   { project: z.string().optional(), kind: z.string().optional() }, (a) => D.listNotes(sb, a))
 tool('get_note', 'Get one note/meeting in full — body (markdown), summary, agenda, transcript, action items.',
@@ -49,8 +49,8 @@ tool('create_project', 'Create a project in an area. status defaults to active.'
   { area: z.string(), name: z.string(), status: z.string().optional(), priority: z.number().int().min(1).max(3).optional() }, (a) => D.createProject(sb, a), { write: true })
 tool('update_project', 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).',
   { id: z.string(), name: z.string().optional(), status: z.string().optional(), priority: z.number().int().nullable().optional(), due: z.string().nullable().optional(), area: z.string().optional() }, (a) => D.updateProject(sb, a), { write: true })
-tool('create_task', 'Add a task to a project. due is YYYY-MM-DD; next=true marks it the surfaced next action; priority 1|2|3 (P1=highest).',
-  { project: z.string(), label: z.string(), due: z.string().optional(), next: z.boolean().optional(), waiting: z.string().optional(), priority: z.number().int().min(1).max(3).nullable().optional() }, (a) => D.createTask(sb, a), { write: true })
+tool('create_task', 'Add a task to a project. due is YYYY-MM-DD; next=true marks it the surfaced next action; priority 1|2|3 (P1=highest). lane defaults to backlog (use now to pull it into active focus); srcMeeting = source meeting note id for extracted action items.',
+  { project: z.string(), label: z.string(), due: z.string().optional(), next: z.boolean().optional(), waiting: z.string().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), lane: z.enum(['now', 'backlog']).optional(), srcMeeting: z.string().optional() }, (a) => D.createTask(sb, a), { write: true })
 tool('update_task', 'Update a task (label, done, next, waiting, due YYYY-MM-DD, workType deep|admin|scheduled, priority 1|2|3, notes, status none|next|in-progress|waiting|done).',
   { id: z.string(), label: z.string().optional(), done: z.boolean().optional(), next: z.boolean().optional(), waiting: z.string().nullable().optional(), due: z.string().nullable().optional(), workType: z.string().nullable().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), notes: z.string().nullable().optional(), status: z.string().optional() }, (a) => D.updateTask(sb, a), { write: true })
 tool('complete_task', 'Mark a task done.', { id: z.string() }, (a) => D.updateTask(sb, { id: a.id, done: true }), { write: true })

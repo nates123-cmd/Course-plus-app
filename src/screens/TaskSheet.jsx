@@ -37,18 +37,20 @@ export function useLongPress(onLong, onTap, ms = 450) {
   } }
 }
 
-// derive a single status chip from real task flags
+// derive a single status chip from real task flags. `task_status` doubles as the
+// pull-board lane: 'now' = pulled into the Now lane (the old "in progress"), any
+// other open value = Backlog. next/waiting stay their own columns.
 export function taskStatus(x) {
   if (x.done) return 'done'
+  if (x.taskStatus === 'now') return 'now'
   if (x.taskStatus === 'waiting' || x.waiting) return 'waiting'
-  if (x.taskStatus === 'in-progress') return 'in_progress'
   if (x.next) return 'next'
   return 'none'
 }
 const STATUS_OPTS = [
   { id: 'none', label: 'None', icon: 'circle-dotted' },
   { id: 'next', label: 'Next', icon: 'arrow-up-right' },
-  { id: 'in_progress', label: 'In progress', icon: 'progress' },
+  { id: 'now', label: 'Now', icon: 'player-play' },
   { id: 'waiting', label: 'Waiting', icon: 'player-pause' },
   { id: 'done', label: 'Done', icon: 'circle-check' },
 ]
@@ -94,11 +96,13 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
 
   const status = taskStatus(task)
   const setStatus = (id) => {
+    // 'now' pulls the task into the Now lane; the rest leave it in Backlog with
+    // their respective hint. taskStatus carries the lane, next/waiting the hints.
     if (id === 'done') onPatch({ done: true })
-    else if (id === 'next') onPatch({ done: false, next: true, taskStatus: 'next', waiting: null })
-    else if (id === 'in_progress') onPatch({ done: false, next: false, taskStatus: 'in-progress', waiting: null })
+    else if (id === 'now') onPatch({ done: false, next: false, taskStatus: 'now', waiting: null })
+    else if (id === 'next') onPatch({ done: false, next: true, taskStatus: 'backlog', waiting: null })
     else if (id === 'waiting') onPatch({ done: false, next: false, taskStatus: 'waiting' })
-    else onPatch({ done: false, next: false, taskStatus: 'none', waiting: null })
+    else onPatch({ done: false, next: false, taskStatus: 'backlog', waiting: null })
   }
   const commitTitle = () => { const v = title.trim(); if (v && v !== task.label) onPatch({ label: v }); else if (!v) setTitle(task.label) }
   const autosize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
