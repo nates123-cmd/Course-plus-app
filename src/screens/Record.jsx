@@ -266,6 +266,19 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Clicking a meeting (from the Agenda screen or the imminent-meeting popup)
+  // should open THAT meeting — with its scheduled tasks on top. The composer's
+  // draft persists above the router, so a stale title would otherwise stick.
+  // Adopt the clicked meeting's title when we're idle and not mid-draft, so the
+  // "To discuss" list matches. Never disrupts an active recording or real notes.
+  useEffect(() => {
+    if (route.title == null || phase !== 'idle') return
+    const clean = route.title
+    const draftEmpty = !notes && !transcriptText && actions.length === 0
+    if (clean !== title && (draftEmpty || !title)) rec.setMeta({ title: clean })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.title])
+
   // seed editable draft action items once synthesis completes
   useEffect(() => {
     if (phase === 'done') setActions((prev) => {
