@@ -14,6 +14,7 @@ import {
   Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, TODAY, usePersisted,
 } from '../kit'
 
+import { handleTablePaste } from '../lib/tablePaste'
 import { composeDeliverable, updateGuide, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
@@ -23,7 +24,7 @@ const usdRough = (usage) => { const c = claudeCost(usage); return c ? `~$${c < 0
 import { COMPOSE_TYPES } from '../data'
 import {
   createTask, updateTask, deleteTask, reorderTasks,
-  createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote, createNote, createInbox,
+  createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote, createNote, createInbox, deleteNote,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
@@ -245,10 +246,16 @@ function Tasks({ project, reload }) {
   }).join('|')
   const [nowList, setNowList] = useState([])
   const [backlog, setBacklog] = useState([])
+  // Mirror the live lane split in a ref so the drop handler persists the final
+  // order synchronously — React state closures aren't flushed yet when a native
+  // drag ends, and a cross-lane drag unmounts the row (so its dragend may never
+  // fire). The ref is the source of truth for persist(); state is just render.
+  const listRef = useRef({ now: [], back: [] })
+  const finalizing = useRef(false)
   useEffect(() => {
     const open = (project.tasks || []).filter((x) => !x.done) // already sort-ordered from db
-    setNowList(open.filter(isNow))
-    setBacklog(open.filter((x) => !isNow(x)))
+    const nw = open.filter(isNow), bk = open.filter((x) => !isNow(x))
+    setNowList(nw); setBacklog(bk); listRef.current = { now: nw, back: bk }
   }, [tasksSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [adding, setAdding] = useState(false)
@@ -301,7 +308,7 @@ function Tasks({ project, reload }) {
   // get a task_status write; sort is rewritten for the whole project (Now first,
   // then Backlog, then the untouched done tasks) so both orderings survive reload.
   const persist = async () => {
-    const nowIds = nowList.map((o) => o.id), backIds = backlog.map((o) => o.id)
+    const nowIds = listRef.current.now.map((o) => o.id), backIds = listRef.current.back.map((o) => o.id)
     const wasNow = new Set((project.tasks || []).filter((x) => !x.done && isNow(x)).map((x) => x.id))
     const origNow = [...wasNow], origBack = (project.tasks || []).filter((x) => !x.done && !isNow(x)).map((x) => x.id)
     const orderSame = nowIds.join(',') === origNow.join(',') && backIds.join(',') === origBack.join(',')
@@ -339,7 +346,7 @@ function Tasks({ project, reload }) {
     const target = toLane === 'now' ? nl : bl
     const idx = toIndex == null ? target.length : Math.max(0, Math.min(toIndex, target.length))
     target.splice(idx, 0, item)
-    setNowList(nl); setBacklog(bl)
+    setNowList(nl); setBacklog(bl); listRef.current = { now: nl, back: bl }
     if (drag.from !== toLane) setDrag({ id: drag.id, from: toLane })
   }
   const onRowOver = (lane) => (e, overId) => {
@@ -351,8 +358,17 @@ function Tasks({ project, reload }) {
     moveInto(lane, idx)
   }
   const onLaneOver = (lane) => (e) => { e.preventDefault(); if (drag) moveInto(lane, null) }
-  const onDrop = (e) => e.preventDefault()
-  const onDragEnd = async () => { setDrag(null); await persist() }
+  // Commit on drop (fires reliably on the drop target even when the source row
+  // unmounted mid-drag) and again on dragend as a fallback; the guard makes the
+  // second a no-op. persist() reads listRef, so order is already flushed.
+  const finalize = async () => {
+    if (finalizing.current) return
+    finalizing.current = true
+    setDrag(null)
+    try { await persist() } finally { finalizing.current = false }
+  }
+  const onDrop = (e) => { e.preventDefault(); finalize() }
+  const onDragEnd = () => { finalize() }
 
   const laneHandlers = (lane) => ({ onDragStart: onDragStart(lane), onDragOver: onRowOver(lane), onDrop, onDragEnd })
   const doneTasks = (project.tasks || []).filter((x) => x.done)
@@ -436,15 +452,58 @@ const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 7, display: 'flex
 //    flow into Backlog on reload); short text becomes a Note; a file becomes a
 //    File; anything ambiguous is filed with a ? and dropped into the inbox to
 //    resolve with one tap (reusing the existing inbox primitive).
-function classifyCapture(text) {
+// The kinds a pasted/typed capture can be. Ordered for the confirm bar. Only
+// 'transcript' runs meeting synthesis; the rest file as notes (tagged with the
+// type) so nothing gets wrongly turned into a meeting.
+const CAP_TYPES = [
+  ['note', 'Note', 'file-text'],
+  ['update', 'Update', 'activity'],
+  ['email', 'Email', 'mail'],
+  ['teams', 'Teams', 'message-circle'],
+  ['doc', 'Working doc', 'file-text'],
+  ['table', 'Table', 'table'],
+  ['transcript', 'Transcript', 'users'],
+]
+const CAP_LABEL = Object.fromEntries(CAP_TYPES.map(([id, label]) => [id, label]))
+
+// Guess what a capture is — biased AWAY from meeting. The user almost never
+// pastes a real transcript here, so 'transcript' needs a strong multi-speaker
+// signal, and even then the confirm bar lets them override before it files.
+function classifyCapture(text, sawTable) {
   const s = (text || '').trim(); const lower = s.toLowerCase()
-  const words = s ? s.split(/\s+/).length : 0
-  const transcriptish = /\b(meeting|call|sync|stand-?up|1:1|transcript|kickoff|kick-off|debrief|attendees|agenda|minutes)\b/.test(lower)
-    || /(^|\n)\s*[A-Z][\w .'-]{1,28}:\s/.test(s) // "Name: …" speaker labels
-    || /\b\d{1,2}:\d{2}\b/.test(s)               // timestamps
-  if (transcriptish || words > 120) return 'meeting'
-  if (words <= 40) return 'note'
-  return 'unknown'
+  if (sawTable || /(^|\n)\s*\|.*\|.*\|/.test(s)) return 'table'
+  if (/(^|\n)\s*(from|to|cc|subject|sent):\s/i.test(s) || /\bon .+ wrote:\s*$/im.test(s)) return 'email'
+  const chatLines = (s.match(/(^|\n)[A-Z][\w .'-]{1,28}\s+\d{1,2}:\d{2}\b/g) || []).length
+  if (chatLines >= 2) return 'teams'
+  const speakerTurns = (s.match(/(^|\n)\s*[A-Z][\w .'-]{1,28}:\s/g) || []).length
+  if (speakerTurns >= 4) return 'transcript'
+  if (/\b(update|status|fyi|heads[- ]up|shipped|blocked|in progress|next steps?|eta)\b/i.test(lower) && s.split(/\s+/).length <= 90) return 'update'
+  return 'note'
+}
+
+// Turn capture text into note blocks, converting any GFM table region (Excel
+// paste is normalized to one by handleTablePaste) into a { table: rows } block
+// so it renders as a real table when the note is opened.
+function textToBlocks(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n')
+  const blocks = []; let para = [], tbl = []
+  const flushPara = () => { const p = para.join('\n').trim(); if (p) blocks.push({ p }); para = [] }
+  const flushTbl = () => {
+    if (tbl.length >= 2) {
+      const rows = tbl
+        .map((l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.replace(/\\\|/g, '|').trim()))
+        .filter((r, i) => !(i === 1 && r.every((c) => /^:?-{2,}:?$/.test(c)))) // drop |---| separator
+      blocks.push({ table: rows })
+    } else para.push(...tbl)
+    tbl = []
+  }
+  const isTblRow = (l) => /^\s*\|.*\|\s*$/.test(l)
+  for (const l of lines) {
+    if (isTblRow(l)) { if (!tbl.length) flushPara(); tbl.push(l) }
+    else { if (tbl.length) flushTbl(); para.push(l) }
+  }
+  flushTbl(); flushPara()
+  return blocks.length ? blocks : [{ p: String(text || '').trim() }]
 }
 function Capture({ project, reload }) {
   const { t, f } = useApp()
@@ -452,6 +511,8 @@ function Capture({ project, reload }) {
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
   const [status, setStatus] = useState(null)
+  const [sawTable, setSawTable] = useState(false)
+  const [pending, setPending] = useState(null) // confirm-type step: the guessed type id
   const fileRef = useRef(null)
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const flash = (m) => { setStatus(m); setTimeout(() => setStatus(null), 5000) }
@@ -462,12 +523,23 @@ function Capture({ project, reload }) {
     try { for (const file of list) await uploadAsset(file, { projectId: project.id, onExtracted: reload }); await reload(); flash(list.length + ' file' + (list.length === 1 ? '' : 's') + ' added to the library.') }
     catch (e) { flash('Upload failed: ' + (e?.message || e)) } finally { setBusy(false) }
   }
-  const submit = async () => {
+  // Excel/Sheets paste → GFM markdown table in the box (so it reads as a table
+  // and stores as one). Falls through to a normal paste otherwise.
+  const onPaste = (e) => { if (handleTablePaste(e, text, setText)) setSawTable(true) }
+
+  // Step 1: don't file blindly — classify and ask the user to confirm the type
+  // (so a pasted email/update/table never gets auto-turned into a meeting).
+  const submit = () => {
     const s = text.trim(); if (!s || busy) return
-    setBusy(true)
-    const type = classifyCapture(s)
+    setPending(classifyCapture(s, sawTable))
+  }
+
+  // Step 2: file it as the confirmed type. Only 'transcript' synthesizes a meeting.
+  const fileAs = async (type) => {
+    const s = text.trim(); if (!s || busy) return
+    setBusy(true); setPending(null)
     try {
-      if (type === 'meeting') {
+      if (type === 'transcript') {
         setStatus('Reading the transcript and pulling action items…')
         let synth = {}
         try { synth = await synthesizeMeeting({ transcript: s }) } catch {}
@@ -475,16 +547,11 @@ function Capture({ project, reload }) {
         await createNote({ kind: 'meeting', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2,
           transcript: s, summary: synth.summary || '', nextSteps: synth.nextSteps || null, tags: synth.tags || [],
           actions: (synth.actions || []).map((a) => ({ text: a.text, owner: a.owner || 'me', src: 'this meeting' })) })
-        setText(''); await reload(); flash('Meeting captured. Any action items are landing in Backlog.')
-      } else if (type === 'note') {
-        const ttl = s.split('\n')[0].slice(0, 60) || 'Note'
-        await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: [{ p: s }] })
-        setText(''); await reload(); flash('Note saved to the library.')
+        setText(''); setSawTable(false); await reload(); flash('Transcript synthesized. Any action items are landing in Backlog.')
       } else {
-        const ttl = s.split('\n')[0].slice(0, 60) || 'Capture'
-        await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: [{ p: s }], tags: ['?'] })
-        await createInbox({ title: ttl, src: 'capture', srcIcon: 'clipboard', snippet: s.slice(0, 200), suggest: { project: project.id, confidence: 0.6 }, tags: ['?'] })
-        setText(''); await reload(); flash('Filed with a ? (it’s in your inbox to sort with one tap).')
+        const ttl = s.split('\n')[0].replace(/^\|/, '').replace(/\|.*$/, '').trim().slice(0, 60) || CAP_LABEL[type] || 'Note'
+        await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: textToBlocks(s), tags: [type] })
+        setText(''); setSawTable(false); await reload(); flash((CAP_LABEL[type] || 'Note') + ' saved to the library.')
       }
     } catch (e) { flash('Could not file that: ' + (e?.message || e)) } finally { setBusy(false) }
   }
@@ -492,15 +559,26 @@ function Capture({ project, reload }) {
   return <div onDragOver={(e) => { e.preventDefault(); if (!drag) setDrag(true) }} onDragLeave={() => setDrag(false)}
     onDrop={(e) => { e.preventDefault(); setDrag(false); doFiles(e.dataTransfer.files) }}
     style={{ border: '1px solid ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, borderRadius: 12, padding: 12, transition: 'border-color .14s, background .14s' }}>
-    <textarea value={text} onChange={(e) => setText(e.target.value)}
+    <textarea value={text} onChange={(e) => { setText(e.target.value); if (pending) setPending(null); if (!e.target.value.trim()) setSawTable(false) }} onPaste={onPaste}
       onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
-      placeholder="Throw something in: paste a transcript, drop a file, or jot a note."
+      placeholder="Throw something in: paste an email, Teams thread, a table, an update, or jot a note."
       style={{ width: '100%', minHeight: 66, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.55, color: t.t1 }} />
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+    {pending && <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 8, paddingTop: 10, borderTop: '1px solid ' + t.line }}>
+      <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, marginRight: 2 }}>File as</span>
+      {CAP_TYPES.map(([id, label, icon]) => { const on = pending === id
+        return <span key={id} onClick={() => setPending(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+          fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
+          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 8, padding: '5px 10px' }}>
+          <Icon n={icon} s={12} />{label}</span> })}
+      <div style={{ flex: 1 }} />
+      <Btn kind="ghost" size="sm" onClick={() => setPending(null)}>Cancel</Btn>
+      <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : (pending === 'transcript' ? 'wand' : 'corner-down-left')} onClick={busy ? undefined : () => fileAs(pending)}>{pending === 'transcript' ? 'Synthesize' : 'File as ' + CAP_LABEL[pending]}</Btn>
+    </div>}
+    <div style={{ display: pending ? 'none' : 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
       <button onClick={() => fileRef.current?.click()} title="Attach a file" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
         <Icon n="paperclip" s={14} />Attach</button>
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => { doFiles(e.target.files); e.target.value = '' }} />
-      <span style={{ flex: 1, minWidth: 0, fontFamily: f.ui, fontSize: 11, color: t.t3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status || 'Sorted after you send. Never blocks. ⌘↵'}</span>
+      <span style={{ flex: 1, minWidth: 0, fontFamily: f.ui, fontSize: 11, color: t.t3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status || 'Confirm the type before it files. ⌘↵'}</span>
       <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : 'corner-down-left'} onClick={busy ? undefined : submit}>Throw in</Btn>
     </div>
   </div>
@@ -513,16 +591,22 @@ function Capture({ project, reload }) {
 const shortDate = (at) => { const d = at ? new Date(at) : null; return d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
 const LIB_TYPES = [['all', 'All'], ['meeting', 'Meeting'], ['file', 'File'], ['note', 'Note']]
 const LIB_BADGE = { meeting: ['users', 'Meeting'], file: ['file-text', 'File'], note: ['file-text', 'Note'] }
-function Library({ project, meetings, docNotes }) {
+function Library({ project, meetings, docNotes, reload }) {
   const { t, f, go } = useApp()
   const { assetsForProject } = useData()
   const [filter, setFilter] = useState('all')
 
+  const remove = async (it, e) => {
+    e.stopPropagation()
+    if (!it.del || !window.confirm('Delete “' + it.title + '”? This can’t be undone.')) return
+    try { await it.del(); if (reload) await reload() } catch (err) { window.alert('Could not delete: ' + (err?.message || err)) }
+  }
+
   const noteTs = (n) => { const d = Date.parse(n.date || ''); return Number.isNaN(d) ? (Date.parse(n.updatedAt || '') || 0) : d }
   const items = []
-  meetings.forEach((n) => items.push({ key: 'n' + n.id, type: 'meeting', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }) }))
-  docNotes.forEach((n) => items.push({ key: 'n' + n.id, type: 'note', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }) }))
-  ;(project.artifacts || []).forEach((a) => items.push({ key: 'a' + a.id, type: 'file', title: a.title || 'Untitled', ts: Date.parse(a.at) || 0, dateLabel: shortDate(a.at), sub: a.provenance || '', onClick: () => go({ screen: 'artifact', id: a.id }) }))
+  meetings.forEach((n) => items.push({ key: 'n' + n.id, type: 'meeting', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }), del: () => deleteNote(n.id) }))
+  docNotes.forEach((n) => items.push({ key: 'n' + n.id, type: 'note', title: n.title, ts: noteTs(n), dateLabel: n.date, sub: (n.people || []).join(', '), q: n.tags, onClick: () => go({ screen: 'note', id: n.id }), del: () => deleteNote(n.id) }))
+  ;(project.artifacts || []).forEach((a) => items.push({ key: 'a' + a.id, type: 'file', title: a.title || 'Untitled', ts: Date.parse(a.at) || 0, dateLabel: shortDate(a.at), sub: a.provenance || '', onClick: () => go({ screen: 'artifact', id: a.id }), del: () => deleteArtifact(a.id) }))
   assetsForProject(project.id).forEach((a) => items.push({ key: 'f' + a.id, type: 'file', title: a.filename, ts: Date.parse(a.at) || 0, dateLabel: shortDate(a.at), sub: a.kind, onClick: async () => { try { const u = await signedUrl(a.storagePath); if (u) window.open(u, '_blank') } catch {} } }))
   items.sort((x, y) => y.ts - x.ts)
   const counts = { all: items.length, meeting: 0, file: 0, note: 0 }
@@ -556,6 +640,12 @@ function Library({ project, meetings, docNotes }) {
               {(it.q || []).includes('?') && <span title="Unsorted (resolve it in the inbox)" style={{ color: t.risk, fontWeight: 700 }}>?</span>}
             </div>
           </div>
+          {it.del && <button onClick={(e) => remove(it, e)} title="Delete from library"
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 26, height: 26,
+              borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+            <Icon n="trash-2" s={14} /></button>}
           <Icon n="chevron-right" s={15} c={t.t3} />
         </div> })}
     </Card> : <div style={{ fontFamily: f.body, fontSize: 13.5, color: t.t3, fontStyle: 'italic', padding: '6px 2px' }}>
@@ -913,7 +1003,7 @@ export function ProjectScreen() {
   const main = <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
     <Tasks project={project} reload={reload} />
     <Capture project={project} reload={reload} />
-    <Library project={project} meetings={meetings} docNotes={docNotes} />
+    <Library project={project} meetings={meetings} docNotes={docNotes} reload={reload} />
     <Artifacts project={project} notes={genNotes} meetings={meetings} reload={reload} compact />
   </div>
 

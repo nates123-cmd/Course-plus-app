@@ -380,6 +380,34 @@ export async function deleteArea(id) {
   const { error } = await supabase.from('cp_areas').delete().eq('id', id)
   if (error) throw error
 }
+
+// Delete an area AND everything under it. cp_* references are app-side (no FK
+// cascade), so a bare deleteArea would orphan its projects/tasks/notes — this
+// removes the children first, then the area. Irreversible; confirm before use.
+export async function deleteAreaCascade(id) {
+  const projs = await supabase.from('cp_projects').select('id').eq('area_id', id)
+  if (projs.error) throw projs.error
+  const pids = (projs.data || []).map((p) => p.id)
+  const inDel = (table, col) => supabase.from(table).delete().in(col, pids)
+  if (pids.length) {
+    const child = await Promise.all([
+      inDel('cp_tasks', 'project_id'), inDel('cp_notes', 'project_id'),
+      inDel('cp_artifacts', 'project_id'), inDel('cp_milestones', 'project_id'),
+      inDel('cp_updates', 'project_id'), inDel('cp_assets', 'project_id'),
+    ])
+    const cErr = child.find((r) => r.error); if (cErr) throw cErr.error
+    const pErr = (await supabase.from('cp_projects').delete().in('id', pids)).error
+    if (pErr) throw pErr
+  }
+  // loose pillar tasks / notes attached directly to the area (note: cp_notes uses `area`)
+  const loose = await Promise.all([
+    supabase.from('cp_tasks').delete().eq('area_id', id),
+    supabase.from('cp_notes').delete().eq('area', id),
+  ])
+  const lErr = loose.find((r) => r.error); if (lErr) throw lErr.error
+  const { error } = await supabase.from('cp_areas').delete().eq('id', id)
+  if (error) throw error
+}
 export async function reorderAreas(orderedIds) {
   const r = await Promise.all(orderedIds.map((id, sort) => supabase.from('cp_areas').update({ sort }).eq('id', id)))
   const err = r.find((x) => x.error); if (err) throw err.error

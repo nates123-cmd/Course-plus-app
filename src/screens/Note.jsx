@@ -31,6 +31,20 @@ function wordCount(n) {
   return w ? w.toLocaleString() : null
 }
 
+// Render a { table: rows } block (first row = header) as a real table so a
+// pasted spreadsheet reads like one instead of a wall of tab-separated text.
+function TableBlock({ rows, t, f }) {
+  if (!rows || !rows.length) return null
+  const [head, ...body] = rows
+  const cell = { padding: '8px 12px', textAlign: 'left', verticalAlign: 'top', borderBottom: '1px solid ' + t.line }
+  return <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 10 }}>
+    <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: f.ui, fontSize: 13.5, color: t.t1 }}>
+      <thead><tr>{head.map((c, j) => <th key={j} style={{ ...cell, fontWeight: 700, color: t.t2, background: t.sel, whiteSpace: 'nowrap' }}>{c}</th>)}</tr></thead>
+      <tbody>{body.map((r, i) => <tr key={i}>{head.map((_, j) => <td key={j} style={cell}>{r[j] ?? ''}</td>)}</tr>)}</tbody>
+    </table>
+  </div>
+}
+
 // ── Body renderer ────────────────────────────────────────────────
 function Body({ blocks }) {
   const { t, f, go } = useApp()
@@ -48,6 +62,7 @@ function Body({ blocks }) {
           <span style={{ fontFamily: f.ui, fontWeight: 700, fontSize: 13, color: t.accent, flex: 'none', minWidth: 16, marginTop: 1 }}>{j + 1}.</span>
           <span style={{ flex: 1 }}>{inlineMd(li)}</span></li>)}
       </ol>
+      if (b.table) return <TableBlock key={i} rows={b.table} t={t} f={f} />
       if (b.links) return <div key={i} style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {b.links.map((lk, j) => { const tgt = noteByTitle(lk)
           return <span key={j} onClick={() => tgt && go({ screen: 'note', id: tgt.id })}

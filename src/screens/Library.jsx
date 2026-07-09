@@ -8,6 +8,7 @@ import { Fragment, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Card, Tag, KindBadge, AreaDot, isReference } from '../kit'
+import { deleteNote } from '../lib/db'
 import { TOPICS } from '../data'
 
 const KINDS = [
@@ -28,9 +29,15 @@ function matchesKind(n, kind) {
 
 export function LibraryScreen() {
   const { t, f, go, route } = useApp()
-  const { notes: NOTES, notesByTag, projectById, projectName, ALL_TAGS } = useData()
+  const { notes: NOTES, notesByTag, projectById, projectName, ALL_TAGS, reload } = useData()
   const [kind, setKind] = useState('all')
   const [tag, setTag] = useState(route.tag || null)
+
+  const removeNote = async (n, e) => {
+    e.stopPropagation()
+    if (!window.confirm('Delete “' + n.title + '”? This can’t be undone.')) return
+    try { await deleteNote(n.id); await reload() } catch (err) { window.alert('Could not delete: ' + (err?.message || err)) }
+  }
 
   // Tag pre-filter uses the data helper when set; otherwise the full corpus.
   let rows = tag ? notesByTag(tag) : NOTES
@@ -125,6 +132,13 @@ export function LibraryScreen() {
               <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, fontVariantNumeric: 'tabular-nums', width: 64, textAlign: 'right' }}>
                 {(n.date || '').replace(/,\s*\d{4}$/, '')}
               </span>
+              <button onClick={(e) => removeNote(n, e)} title="Delete from library"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 26, height: 26,
+                  borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+                <Icon n="trash-2" s={14} />
+              </button>
             </div>
           )
         })}

@@ -13,7 +13,7 @@ import { useData } from '../DataContext'
 import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
-import { updateTask, deleteTask, updateProject, createUpdate, reorderProjects } from '../lib/db'
+import { updateTask, deleteTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -546,9 +546,21 @@ function PillarTasks({ area }) {
 
 export function AreaScreen() {
   const { t, f, go, route } = useApp()
-  const { areas } = useData()
+  const { areas, reload } = useData()
+  const [deleting, setDeleting] = useState(false)
   const a = areas.find((x) => x.id === route.id) || areas[0]
   if (!a) return null
+
+  const removeArea = async () => {
+    const n = a.projects.length
+    const msg = n
+      ? `Delete the area “${a.name}” and all ${n} project${n === 1 ? '' : 's'} in it (with their tasks, notes, and files)? This can’t be undone.`
+      : `Delete the area “${a.name}”? This can’t be undone.`
+    if (!window.confirm(msg)) return
+    setDeleting(true)
+    try { await deleteAreaCascade(a.id); await reload(); go({ screen: 'overview' }) }
+    catch (e) { window.alert('Could not delete the area: ' + (e?.message || e)); setDeleting(false) }
+  }
 
   const projs = a.projects.map((p) => ({ ...p, area: a.id, areaName: a.name }))
   const active = projs.filter((p) => ['active', 'sent'].includes(p.status))
@@ -576,6 +588,13 @@ export function AreaScreen() {
 
     <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
       <span style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>{a.name}</span>
+      <div style={{ flex: 1 }} />
+      <button onClick={deleting ? undefined : removeArea} title="Delete this area"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
+          color: t.t3, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 8, padding: '6px 11px', cursor: deleting ? 'default' : 'pointer', transition: 'color .14s, border-color .14s' }}
+        onMouseEnter={(e) => { if (!deleting) { e.currentTarget.style.color = t.risk; e.currentTarget.style.borderColor = t.riskLine } }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = t.t3; e.currentTarget.style.borderColor = t.line2 }}>
+        <Icon n={deleting ? 'loader-2' : 'trash-2'} s={14} />{deleting ? 'Deleting…' : 'Delete area'}</button>
     </div>
     <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 5 }}>
       {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} idea${ideas.length === 1 ? '' : 's'}` : ''}</div>
