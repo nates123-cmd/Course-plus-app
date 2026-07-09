@@ -233,6 +233,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
 //    capped: over the line flags red, never blocks. Existing open tasks are
 //    Backlog by default (nothing is 'now'), so no migration write is needed.
 const isNow = (x) => x.taskStatus === 'now'
+const isScheduled = (x) => x.workType === 'scheduled' // parked for a meeting → hidden from the board
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
   const { recordUndo } = useData()
@@ -253,7 +254,7 @@ function Tasks({ project, reload }) {
   const listRef = useRef({ now: [], back: [] })
   const finalizing = useRef(false)
   useEffect(() => {
-    const open = (project.tasks || []).filter((x) => !x.done) // already sort-ordered from db
+    const open = (project.tasks || []).filter((x) => !x.done && !isScheduled(x)) // scheduled tasks park in their own section
     // Priority drives placement: P1 → Now; Backlog is banded P2 → P3 → the rest.
     // Within a band, keep the stored drag order (stable sort over the db order),
     // so manual reordering still holds inside a priority tier.
@@ -269,6 +270,7 @@ function Tasks({ project, reload }) {
   const [sheetTask, setSheetTask] = useState(null)
   const [drag, setDrag] = useState(null) // { id, from: 'now' | 'backlog' }
   const [showDone, setShowDone] = useState(false)
+  const [showScheduled, setShowScheduled] = useState(false)
 
   const allOpen = [...nowList, ...backlog]
   const findTask = (id) => allOpen.find((o) => o.id === id) || (project.tasks || []).find((o) => o.id === id) || null
@@ -382,6 +384,7 @@ function Tasks({ project, reload }) {
 
   const laneHandlers = (lane) => ({ onDragStart: onDragStart(lane), onDragOver: onRowOver(lane), onDrop, onDragEnd })
   const doneTasks = (project.tasks || []).filter((x) => x.done)
+  const scheduledTasks = (project.tasks || []).filter((x) => !x.done && isScheduled(x))
   const over = nowList.length > nowCap
   const nowH = laneHandlers('now'), backH = laneHandlers('back')
 
@@ -432,6 +435,21 @@ function Tasks({ project, reload }) {
           <span style={{ whiteSpace: 'nowrap' }}>New task</span></div>}
       </div>
     </div>
+
+    {scheduledTasks.length > 0 && <div style={{ marginTop: 14 }}>
+      <div onClick={() => setShowScheduled((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
+        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+        onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+        <Icon n={showScheduled ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+        <Icon n="calendar-event" s={14} c={t.t3} />
+        <span style={{ flex: 1 }}>Scheduled</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{scheduledTasks.length}</span>
+      </div>
+      {showScheduled && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+        {scheduledTasks.map((x) => <TaskRow key={x.id} x={x} noDrag onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))} />)}
+      </div>}
+    </div>}
 
     {doneTasks.length > 0 && <div style={{ marginTop: 14 }}>
       <div onClick={() => setShowDone((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
