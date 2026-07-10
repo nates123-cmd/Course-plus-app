@@ -2,7 +2,7 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateNote } from './lib/db'
+import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateTask, deleteTask, updateNote } from './lib/db'
 import { blocksToText } from './lib/blocks'
 import { holdView, holdDue } from './kit'
 
@@ -112,6 +112,47 @@ export function DataProvider({ children }) {
   }
   const reload = () => load(true)
   useEffect(() => { load() }, [])
+
+  // ── Optimistic task mutations ────────────────────────────────────────
+  // Patch local state synchronously so the UI reacts instantly, then persist in
+  // the background. On DB failure we reload() to resync and rethrow. Replaces the
+  // old "await updateTask(); await reload()" pattern whose full 10-table refetch
+  // made every P2 flip / add / toggle / delete feel laggy across the board.
+  const _mapTask = (list, id, fn) => list.map((a) => ({
+    ...a,
+    areaTasks: (a.areaTasks || []).map((t) => (t.id === id ? fn(t) : t)),
+    projects: a.projects.map((p) => ({ ...p, tasks: (p.tasks || []).map((t) => (t.id === id ? fn(t) : t)) })),
+  }))
+  const patchTask = async (id, patch) => {
+    setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...patch })))
+    try { await updateTask(id, patch) } catch (e) { reload(); throw e }
+  }
+  const removeTask = async (id) => {
+    setAreas((prev) => prev.map((a) => ({
+      ...a,
+      areaTasks: (a.areaTasks || []).filter((t) => t.id !== id),
+      projects: a.projects.map((p) => ({ ...p, tasks: (p.tasks || []).filter((t) => t.id !== id) })),
+    })))
+    try { await deleteTask(id) } catch (e) { reload(); throw e }
+  }
+  // Insert a task into its target project (or pillar when projectId is null and
+  // task.area is set) immediately, then persist. Returns the (stable) id.
+  const addTask = async (projectId, task = {}) => {
+    const id = task.id || (crypto?.randomUUID?.() || 'tmp-' + Date.now())
+    const opt = {
+      id, project: projectId ?? undefined, area: task.area ?? undefined,
+      label: task.label || '', done: !!task.done, next: !!task.next,
+      waiting: task.waiting, due: task.due, dueDate: task.dueDate,
+      workType: task.workType, taskStatus: task.taskStatus, priority: task.priority ?? undefined,
+      notes: task.notes, srcMeeting: task.srcMeeting, meetingId: task.meetingId, sort: task.sort ?? 0,
+    }
+    setAreas((prev) => prev.map((a) => {
+      if (projectId == null && task.area && a.id === task.area) return { ...a, areaTasks: [...(a.areaTasks || []), opt] }
+      return { ...a, projects: a.projects.map((p) => (p.id === projectId ? { ...p, tasks: [...(p.tasks || []), opt] } : p)) }
+    }))
+    try { await createTask(projectId, { ...task, id }) } catch (e) { reload(); throw e }
+    return id
+  }
 
   // ── Single-level undo (Cmd/Ctrl+Z) ──────────────────────────────
   // Mutation sites call recordUndo(revertFn); the global key handler runs the
@@ -303,6 +344,7 @@ export function DataProvider({ children }) {
 
     return {
       areas, notes, inbox, assets, series, status, error, reload, recordUndo, canUndo,
+      patchTask, addTask, removeTask,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
       assetsForProject, assetsForNote, assetsInProject,

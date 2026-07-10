@@ -9,7 +9,7 @@ import {
   Icon, Btn, IconBtn, Card, Label, Tag, Person, KindBadge, SynthPill, KIND, isReference, inlineMd,
   AreaDot, areaColor, Popover, PopRow, STATUS,
 } from '../kit'
-import { updateNote, createTask, deleteNote } from '../lib/db'
+import { updateNote, deleteNote } from '../lib/db'
 import { blocksToText, textToBlocks, markdownToBlocks } from '../lib/blocks'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
@@ -224,7 +224,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas } = useData()
+  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas, addTask } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
@@ -273,7 +273,7 @@ export function NoteScreen() {
   const fileTask = async (a, i) => {
     if (!n.project || taskBusy != null || taskDone[i]) return
     setTaskBusy(i)
-    try { await createTask(n.project, { label: a.text }); await reload(); setTaskDone((d) => ({ ...d, [i]: true })) }
+    try { await addTask(n.project, { label: a.text }); setTaskDone((d) => ({ ...d, [i]: true })) }
     catch (e) { window.alert('Could not create task: ' + (e?.message || e)) }
     finally { setTaskBusy(null) }
   }

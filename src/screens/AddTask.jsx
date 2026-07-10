@@ -11,11 +11,10 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Popover, PopRow, AreaDot, areaColor, DatePill } from '../kit'
-import { createTask } from '../lib/db'
 
 export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd = false, onAdded }) {
   const { t, f } = useApp()
-  const { areas, allProjects, projectById, areaName } = useData()
+  const { areas, allProjects, projectById, areaName, addTask } = useData()
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const [target, setTarget] = useState(defaultTarget || null)
@@ -33,7 +32,7 @@ export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd 
     const v = text.trim()
     if (!v || !target) return // keep the bar open until there's a label + a target
     setText(''); setDue(null); setAdding(false)
-    await createTask(target.project || null, {
+    await addTask(target.project || null, {
       label: v, area: target.area || null, sort: 0, next: !!surfaceOnAdd, dueDate: due || null,
     })
     onAdded && onAdded()

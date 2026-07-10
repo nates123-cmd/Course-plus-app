@@ -23,7 +23,7 @@ import { claudeCost } from '../lib/claude'
 const usdRough = (usage) => { const c = claudeCost(usage); return c ? `~$${c < 0.01 ? c.toFixed(3) : c.toFixed(2)}` : '' }
 import { COMPOSE_TYPES } from '../data'
 import {
-  createTask, updateTask, deleteTask, reorderTasks,
+  updateTask, reorderTasks,
   createUpdate, createArtifact, deleteArtifact, updateProject, createArea, updateNote, createNote, createInbox, deleteNote,
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
@@ -236,7 +236,7 @@ const isNow = (x) => x.taskStatus === 'now'
 const isScheduled = (x) => x.workType === 'scheduled' // parked for a meeting → hidden from the board
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
-  const { recordUndo } = useData()
+  const { recordUndo, patchTask, addTask, removeTask } = useData()
   const [nowCap, setNowCap] = usePersisted('course.nowCap', 3)
   // React owns lane order; re-seed whenever the persisted tasks change — keyed on
   // the mutable fields too, not just ids, so a sheet edit (due/status/lane) shows
@@ -280,8 +280,8 @@ function Tasks({ project, reload }) {
     const prevDone = x.done
     if (isNow(x)) setNowList((l) => l.filter((o) => o.id !== id)) // optimistic: completing clears the lane
     else setBacklog((l) => l.filter((o) => o.id !== id))
-    await updateTask(id, { done: !prevDone }); await reload()
-    recordUndo(async () => { await updateTask(id, { done: prevDone }); await reload() })
+    await patchTask(id, { done: !prevDone })
+    recordUndo(async () => { await patchTask(id, { done: prevDone }) })
   }
   // P1 also pulls the task into Now (its priority means "now"). The rest of the
   // priority-driven placement (P2 top of Backlog, P3 under the last P2) is done
@@ -290,13 +290,13 @@ function Tasks({ project, reload }) {
     const cur = findTask(id)
     const p2 = 'priority' in p && p.priority === 1 ? { ...p, taskStatus: 'now', next: false, waiting: null } : p
     const inverse = cur ? Object.fromEntries(Object.keys(p2).map((k) => [k, cur[k] ?? null])) : null
-    await updateTask(id, p2); await reload()
-    if (inverse) recordUndo(async () => { await updateTask(id, inverse); await reload() })
+    await patchTask(id, p2)
+    if (inverse) recordUndo(async () => { await patchTask(id, inverse) })
   }
   const remove = async (id) => {
     const prev = findTask(id)
-    setSheetTask(null); await deleteTask(id); await reload()
-    if (prev) recordUndo(async () => { await createTask(prev.project || project.id, prev); await reload() })
+    setSheetTask(null); await removeTask(id)
+    if (prev) recordUndo(async () => { await addTask(prev.project || project.id, prev) })
   }
   const reassign = async (target) => {
     if (!sheetTask || !target) return
@@ -313,7 +313,7 @@ function Tasks({ project, reload }) {
     const v = text.trim(); setText(''); setAdding(false)
     if (!v) return
     // New tasks land in Backlog (the user pulls a few up), at the end.
-    await createTask(project.id, { label: v, taskStatus: 'backlog', sort: (project.tasks || []).length }); await reload()
+    await addTask(project.id, { label: v, taskStatus: 'backlog', sort: (project.tasks || []).length })
   }
 
   // Persist the current lane split + intra-lane order. Only lane-changed tasks

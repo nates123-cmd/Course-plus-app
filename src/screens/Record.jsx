@@ -11,7 +11,7 @@ import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
 import { fmtClock } from '../lib/recorder'
 import { markdownToBlocks } from '../lib/blocks'
-import { createTask, updateTask } from '../lib/db'
+import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 import { MdEditor } from '../components/MdEditor'
@@ -198,7 +198,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks, patchTask } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
   // Pickers prioritize active → on-hold → ideas (archived last).
@@ -229,7 +229,7 @@ export function RecordScreen() {
        ...looseTasks().map((x) => ({ ...x, where: x.areaName, pid: null }))]
         .filter((x) => !x.done && x.meetingId === title)
     : []
-  const toggleScheduled = async (id) => { setCheckedSched((c) => ({ ...c, [id]: !c[id] })); try { await updateTask(id, { done: true }); await reload() } catch {} }
+  const toggleScheduled = async (id) => { setCheckedSched((c) => ({ ...c, [id]: !c[id] })); try { await patchTask(id, { done: true }) } catch {} }
   // pillar drives the project list; default Arrow. A chosen project's area wins.
   const effectivePillar = home ? (areaOfProject(home)?.id || null) : (pillar || (areaById('arrow') ? 'arrow' : (areas[0]?.id || null)))
   const destAreaId = effectivePillar

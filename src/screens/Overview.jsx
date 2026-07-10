@@ -13,7 +13,7 @@ import { useData } from '../DataContext'
 import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
-import { updateTask, deleteTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
+import { updateTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -203,7 +203,7 @@ const FILTERS = [
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const { t, f } = useApp()
-  const { reload, looseTasks, areas } = useData()
+  const { reload, looseTasks, areas, patchTask, removeTask } = useData()
   const [filter, setFilter] = usePersisted('course.openTasksFilter.v2', 'focus')
   const [pillar, setPillar] = usePersisted('course.openTasksPillar.v1', 'all')
   const [pillarOpen, setPillarOpen] = useState(false)
@@ -224,7 +224,7 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
   })
   if (!all.length) {
     return <div style={{ marginTop: 30 }}>
-      <AddTaskInline surfaceOnAdd onAdded={reload} />
+      <AddTaskInline surfaceOnAdd />
     </div>
   }
 
@@ -243,9 +243,9 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
   const rank = (x) => (x.dueDate ? 0 : x.due ? 1 : x.next ? 2 : 3)
   rows.sort((a, b) => rank(a) - rank(b) || (dnum(a.dueDate) || 9e8) - (dnum(b.dueDate) || 9e8))
 
-  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
-  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
-  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  const toggle = (x) => patchTask(x.id, { done: !x.done })
+  const patch = (p) => { if (sheetTask) patchTask(sheetTask.task.id, p) }
+  const remove = (id) => { setSheetTask(null); removeTask(id) }
   // target = { project: id } | { area: id } — moving to one clears the other.
   const reassign = async (target) => {
     if (!sheetTask || !target) return
@@ -300,7 +300,7 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
           {rows.map((x, i) => <OpenTaskRow key={(x.projectId || x.area) + x.id} x={x} first={i === 0} onToggle={toggle}
             onOpen={(r) => setSheetTask({ task: r, projectId: r.projectId })} />)}
         </Card>}
-    <div style={{ marginTop: 8 }}><AddTaskInline surfaceOnAdd onAdded={reload} /></div>
+    <div style={{ marginTop: 8 }}><AddTaskInline surfaceOnAdd /></div>
     {sheetTask && (() => {
       // Re-derive the live task from reloaded data each render so patches (status
       // / due date) reflect in the open sheet — check project tasks, then the
@@ -385,7 +385,7 @@ function NowRow({ x, first, onToggle, onOpen }) {
 // Project-level active state (status active | sent) governs which projects show.
 function NowFocus({ projects }) {
   const { t, f, go } = useApp()
-  const { reload } = useData()
+  const { reload, patchTask, removeTask } = useData()
   const [nowCap] = usePersisted('course.nowCap', 3)
   const [sheetTask, setSheetTask] = useState(null)
 
@@ -396,9 +396,9 @@ function NowFocus({ projects }) {
   const totalNow = groups.reduce((n, g) => n + g.now.length, 0)
   const idle = active.length - groups.length
 
-  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
-  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
-  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  const toggle = (x) => patchTask(x.id, { done: !x.done })
+  const patch = (p) => { if (sheetTask) patchTask(sheetTask.task.id, p) }
+  const remove = (id) => { setSheetTask(null); removeTask(id) }
   const reassign = async (target) => {
     if (!sheetTask || !target) return
     await updateTask(sheetTask.task.id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
@@ -510,14 +510,14 @@ export function OverviewScreen() {
 // Pillar-only tasks for an Area — same long-press/open behavior as Open tasks.
 function PillarTasks({ area }) {
   const { t, f } = useApp()
-  const { reload, looseTasksInArea } = useData()
+  const { reload, looseTasksInArea, patchTask, removeTask } = useData()
   const [sheetTask, setSheetTask] = useState(null)
   const tasks = looseTasksInArea(area.id)
   const open = tasks.filter((x) => !x.done)
 
-  const toggle = async (x) => { await updateTask(x.id, { done: !x.done }); await reload() }
-  const patch = async (p) => { if (!sheetTask) return; await updateTask(sheetTask.task.id, p); await reload() }
-  const remove = async (id) => { await deleteTask(id); setSheetTask(null); await reload() }
+  const toggle = (x) => patchTask(x.id, { done: !x.done })
+  const patch = (p) => { if (sheetTask) patchTask(sheetTask.task.id, p) }
+  const remove = (id) => { setSheetTask(null); removeTask(id) }
   const reassign = async (target) => {
     if (!sheetTask || !target) return
     await updateTask(sheetTask.task.id, target.area ? { project: null, area: target.area } : { project: target.project, area: null })
@@ -535,7 +535,7 @@ function PillarTasks({ area }) {
       {open.map((x, i) => <OpenTaskRow key={x.id} x={row(x)} first={i === 0} onToggle={toggle}
         onOpen={(r) => setSheetTask({ task: r, projectId: null })} />)}
     </Card>}
-    <AddTaskInline defaultTarget={{ area: area.id }} lockTarget onAdded={reload} />
+    <AddTaskInline defaultTarget={{ area: area.id }} lockTarget />
     {sheetTask && (() => {
       const hit = looseTasksInArea(area.id).find((x) => x.id === sheetTask.task.id)
       const live = hit ? row(hit) : sheetTask.task
