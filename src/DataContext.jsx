@@ -2,36 +2,24 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
+import { loadAll, seedIfEmpty, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
 import { blocksToText } from './lib/blocks'
-import { holdView, holdDue } from './kit'
+import { holdView } from './kit'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'On hold: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
 
-// Auto-reactivate on-hold projects whose resurface date has arrived: flip to
-// active + clear hold, log a where-it-stands update, and drop a notification
-// into the inbox. Idempotent — the same pass clears `on-hold`, so a project is
-// never reactivated twice. Returns true if anything changed (caller re-fetches).
-async function autoReactivateDue(areas) {
-  const due = areas.flatMap((a) => a.projects
-    .filter((p) => p.status === 'on-hold' && holdDue(p.hold))
-    .map((p) => ({ ...p, areaName: a.name })))
-  if (!due.length) return false
-  for (const p of due) {
-    const hv = holdView(p.hold)
-    await updateProject(p.id, { status: 'active', hold: null })
-    await createUpdate(p.id, 'Reactivated from hold — resurface date reached')
-    await createInbox({
-      title: `Reactivated: ${p.name}`,
-      src: 'Auto-reactivate', srcIcon: 'player-play',
-      snippet: `Resurface date reached${hv?.reason ? ` — ${hv.reason}` : ''}. ${p.name} is active again${p.areaName ? ' in ' + p.areaName : ''}.`,
-      suggest: { project: p.id, confidence: 1 },
-      tags: ['reactivated'],
-    })
-  }
-  return true
-}
+// NOTE: a due hold is NOT auto-reactivated any more.
+//
+// This used to flip the project to active, clear the hold, and drop an inbox
+// notice — the app deciding on Nate's behalf. Two problems. The decision it made
+// was the one it had no standing to make (a hold expiring is a question, not an
+// answer: the thing you were waiting on may still not have happened), and it
+// pre-empted the check-in nudge, which could therefore never appear.
+//
+// A due hold now surfaces as a `checkin` row in the Inbox's Pending decisions —
+// Reactivate, or Keep on hold with a new date. The project stays on-hold until
+// Nate says otherwise. See buildNudges() in screens/Inbox.jsx.
 
 // ── Materialize meeting action items into the project Backlog ────────
 // Phase 2 of the pull-method rebuild: extraction no longer feeds a holding pen
@@ -101,8 +89,8 @@ export function DataProvider({ children }) {
       if (!silent) setStatus('loading')
       await seedIfEmpty()
       let data = await loadAll()
-      // Resurface anything whose hold date has come due, then re-read once.
-      if (await autoReactivateDue(data.areas)) data = await loadAll()
+      // (Due holds are no longer auto-reactivated here — they surface as a
+      // check-in row in Pending decisions. See the note at the top of the file.)
       // Pull any un-materialized meeting action items into the project Backlogs.
       if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])

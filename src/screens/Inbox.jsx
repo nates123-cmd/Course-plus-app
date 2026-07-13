@@ -139,9 +139,20 @@ function ProjectNudges() {
 
   // Putting on hold is a gated flow (same HoldSheet as the project page): collect
   // a reason + resurface date in the popup, THEN write status + hold together.
+  // This doubles as "keep on hold" for a hold that just came due — same sheet,
+  // prefilled with the old reason, asking for a fresh date.
   const commitHold = (p) => ({ reason, resurfaceOn, setAt }) => act(p, async () => {
     await updateProject(p.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
-    await createUpdate(p.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+    const held = p.status === 'on-hold'
+    await createUpdate(p.id, `${held ? 'Still on hold' : 'On hold'} — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+  })
+
+  // The other half of a due hold. Clears the hold payload so a stale reason/date
+  // can't linger, and logs it — which counts as activity, so a just-reactivated
+  // project doesn't immediately turn around and nag about being stale.
+  const reactivate = (p) => act(p, async () => {
+    await updateProject(p.id, { status: 'active', hold: null })
+    await createUpdate(p.id, 'Reactivated from hold')
   })
 
   // The one action on a nudge row. Same semantics as the project page's picker:
@@ -152,10 +163,14 @@ function ProjectNudges() {
   // activity and the project stops re-nagging.
   const setStatus = (p) => async (k) => {
     setPickFor(null)
-    // Re-affirming the current status IS a decision ("leave it alone") — snooze it
-    // for real rather than just hiding the row until the next reload.
-    if (k === p.status) { setDismissed((s) => new Set(s).add(p.id)); snoozeNudge(p.id, 14); return }
+    // On-hold ALWAYS goes through the sheet — including re-picking it on a project
+    // that's already held. That's the "keep on hold" case, and it needs a new
+    // resurface date; snoozing the row instead would leave the hold expired and
+    // the project quietly rotting with no date to come back on.
     if (k === 'on-hold') { setHoldFor(p); return }
+    // Re-affirming any other current status IS a decision ("leave it alone") —
+    // snooze it for real rather than just hiding the row until the next reload.
+    if (k === p.status) { setDismissed((s) => new Set(s).add(p.id)); snoozeNudge(p.id, 14); return }
     await act(p, async () => {
       await updateProject(p.id, p.hold ? { status: k, hold: null } : { status: k })
       await createUpdate(p.id, `Status → ${STATUS[k]?.label || k}`)
@@ -186,9 +201,20 @@ function ProjectNudges() {
                   <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
-                  {/* The other half of the decision: the pill answers "what is this?",
-                      Stuck? answers "why isn't it moving?" and ends in a real write. */}
-                  <Btn kind="ghost" size="sm" icon="sparkles" onClick={() => setStuckFor(stuck ? null : p.id)}>Stuck?</Btn>
+                  {/* A held project that came due gets the two answers its own question
+                      admits: it's back, or it isn't yet. "Keep on hold" reopens the
+                      HoldSheet for a fresh date rather than silently re-arming the old
+                      one — a hold with no new date is just a project you've forgotten. */}
+                  {p.status === 'on-hold' ? (
+                    <>
+                      <Btn kind="primary" size="sm" icon="player-play" onClick={() => reactivate(p)}>Reactivate</Btn>
+                      <Btn kind="ghost" size="sm" icon="player-pause" onClick={() => setHoldFor(p)}>Keep on hold</Btn>
+                    </>
+                  ) : (
+                    /* The other half of the decision: the pill answers "what is this?",
+                       Stuck? answers "why isn't it moving?" and ends in a real write. */
+                    <Btn kind="ghost" size="sm" icon="sparkles" onClick={() => setStuckFor(stuck ? null : p.id)}>Stuck?</Btn>
+                  )}
                   <span style={{ position: 'relative' }}>
                     <StatusPill id={p.status} open={open} onClick={() => setPickFor(open ? null : p.id)} />
                     {open && (

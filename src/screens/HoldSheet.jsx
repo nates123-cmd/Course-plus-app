@@ -6,13 +6,20 @@
 // logs an update; held projects whose resurfaceOn arrives surface on Work.
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../ctx'
-import { Icon, Btn, DatePill, fmtDate, holdView, addDays, TODAY } from '../kit'
+import { Icon, Btn, DatePill, fmtDate, holdView, holdDue, addDays, TODAY } from '../kit'
 
 export function HoldSheet({ project, onConfirm, onClose }) {
   const { t, f, isMobile } = useApp()
   const prev = holdView(project.hold)
+  // Re-opened on an already-held project = "keep on hold" (the resurface date came
+  // due and Nate chose to keep waiting), not a fresh hold.
+  const extending = project.status === 'on-hold' && !!project.hold
   const [reason, setReason] = useState(prev?.reason || '')
-  const [resurfaceOn, setResurfaceOn] = useState(prev?.resurfaceOn || addDays(TODAY, 14))
+  // Never prefill a date that's already come and gone — re-arming an expired hold
+  // would just make it due again on the spot. Ask for a real new date.
+  const stale = holdDue(project.hold)
+  const [resurfaceOn, setResurfaceOn] = useState(
+    (!stale && prev?.resurfaceOn) || addDays(TODAY, 14))
   const [mounted, setMounted] = useState(false)
   const [busy, setBusy] = useState(false)
   const armed = useRef(false)
@@ -40,12 +47,15 @@ export function HoldSheet({ project, onConfirm, onClose }) {
       <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, padding: '8px 20px 4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
           <Icon n="player-pause" s={17} c={t.risk} />
-          <span style={{ fontFamily: f.title, fontSize: 19, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>Put on hold</span>
+          <span style={{ fontFamily: f.title, fontSize: 19, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>
+            {extending ? 'Keep on hold' : 'Put on hold'}</span>
         </div>
         <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, marginBottom: 18 }}>
-          {project.name} steps off the active board until it resurfaces.</div>
+          {extending
+            ? `${project.name} stays off the active board. Still waiting on the same thing, or has that changed?`
+            : `${project.name} steps off the active board until it resurfaces.`}</div>
 
-        <FieldLabel t={t} f={f}>Why on hold?</FieldLabel>
+        <FieldLabel t={t} f={f}>{extending ? 'Still on hold because…' : 'Why on hold?'}</FieldLabel>
         <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') confirm() }}
           placeholder="What's it waiting on? (e.g. revised scope from Haritha)"
@@ -72,7 +82,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
         <Btn kind="ghost" onClick={close}>Cancel</Btn>
         <div style={{ flex: 1 }} />
         <Btn kind="primary" icon={busy ? 'loader-2' : 'player-pause'} onClick={ready ? confirm : undefined}
-          style={!ready ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>Put on hold</Btn>
+          style={!ready ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{extending ? 'Keep on hold' : 'Put on hold'}</Btn>
       </div>
     </div>
   </div>
