@@ -28,6 +28,7 @@ import {
 } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
+import { ThinkItThrough } from '../components/ThinkItThrough'
 import { handleCsvPaste } from '../lib/tablePaste'
 import { uploadAsset, signedUrl } from '../lib/assets'
 
@@ -68,10 +69,11 @@ function SectionHead({ label, action, onAction, onAdd, collapsible, collapsed, o
 // ── Header ───────────────────────────────────────────────────────
 function ProjectHeader({ project, reload }) {
   const { t, f, go } = useApp()
-  const { areas } = useData()
+  const { areas, lastTouchAt } = useData()
   const [open, setOpen] = useState(false)
   const [areaOpen, setAreaOpen] = useState(false)
   const [holdOpen, setHoldOpen] = useState(false)
+  const [stuck, setStuck] = useState(false)
   const [newPillar, setNewPillar] = useState(null) // null = closed, '' = typing
   const [editTitle, setEditTitle] = useState(false)
   const [draftTitle, setDraftTitle] = useState('')
@@ -108,6 +110,10 @@ function ProjectHeader({ project, reload }) {
     const id = await createArea(nm, areas.length)
     await updateProject(project.id, { areaId: id }); await reload()
   }
+  // Same activity signal the Inbox nudge uses, so "Think it through" is grounded
+  // in how long this has actually sat — null when nothing has ever touched it.
+  const touched = lastTouchAt(project)
+  const idleDays = touched ? Math.floor((Date.now() - touched) / 86400000) : null
   return <div>
     <div style={{ position: 'relative', display: 'inline-flex', marginBottom: 10 }}>
       <div onClick={() => setAreaOpen((o) => !o)} title="Change pillar" style={{ display: 'inline-flex', alignItems: 'center',
@@ -154,7 +160,15 @@ function ProjectHeader({ project, reload }) {
       </span>
       {project.priority ? <Priority level={project.priority} /> : null}
       <DatePill value={project.due || null} onChange={setDue} label="Due" empty="+ Due date" />
+      {/* On demand, not just when the Inbox nags. A project can be stuck long
+          before it trips the 14-day stall rule — and the day it DOES trip it is
+          the day you least want to think about it. */}
+      {project.status !== 'archived' && (
+        <Btn kind="ghost" size="sm" icon="sparkles" onClick={() => setStuck((s) => !s)}>Stuck?</Btn>
+      )}
     </div>
+    {stuck && <ThinkItThrough project={project} idleDays={idleDays}
+      onClose={() => setStuck(false)} onHold={() => { setStuck(false); setHoldOpen(true) }} />}
     {holdOpen && <HoldSheet project={project} onConfirm={commitHold} onClose={() => setHoldOpen(false)} />}
   </div>
 }
