@@ -378,3 +378,137 @@ export async function rewriteNote(note) {
     'and any [[links]]. Output ONLY the rewritten body in plain markdown (paragraphs, - lists).'
   return (await claudeComplete(noteContext(note), { system, max_tokens: 1200 })).trim()
 }
+
+// ── "Think it through" — the stuck-project thinking partner ──────────────────
+// Ported from the original Course app (next-moves.jsx), which is where Nate first
+// built this. The shape is the point and is deliberately constrained:
+//
+//   turn 1  ask ONE diagnostic question grounded in the project's real state,
+//           plus 3-4 chip answers so the common cases are one tap
+//   turn 2  RESOLVE — no open-ended chat. The resolution is either a TINY task
+//           right-sized to the diagnosis, or a status change. Nothing else.
+//
+// The constraint is the value: a stalled project has exactly two honest
+// resolutions — do a smaller thing, or stop pretending it's active. Every path
+// through this ends in a real write.
+//
+// Both calls fall back to a deterministic script if Claude fails or returns junk
+// (see FALLBACK_* below), so the feature never dead-ends on a network blip.
+
+const NM_SYSTEM =
+  'You are Course, a thinking partner inside a project planning app. ' +
+  'Use short declarative sentences. Never narrate, preface, or explain yourself. ' +
+  'Be specific to THIS project — generic advice is worse than nothing.'
+
+// Compact the project into the state the diagnosis actually reasons over.
+export function projectStateFor(p, opts = {}) {
+  const { lastTouchDays = null, updates = [] } = opts
+  const tasks = (p.tasks || []).filter((t) => !t.done)
+  const overdue = tasks.filter((t) => t.dueDate && new Date(t.dueDate.y, t.dueDate.m, t.dueDate.d) < new Date())
+  const drifting = tasks.filter((t) => (t.rescheduleCount || 0) >= 3)
+  return {
+    name: p.name,
+    status: p.status,
+    blurb: p.blurb || '',
+    openTasks: tasks.length,
+    taskList: tasks.slice(0, 8).map((t) => `- ${t.label}${t.priority ? ` (P${t.priority})` : ''}${t.waiting ? ` (waiting on ${t.waiting})` : ''}`).join('\n') || '(no open tasks)',
+    overdue: overdue.length,
+    drifting: drifting.length,
+    driftLabel: drifting[0]?.label || '',
+    idleDays: lastTouchDays,
+    latestUpdate: (updates[0]?.body || '').slice(0, 300),
+  }
+}
+
+const stateBlock = (s) => `PROJECT
+Name: ${s.name}
+Status: ${s.status}${s.blurb ? `\nWhat it is: ${s.blurb}` : ''}
+Idle: ${s.idleDays == null ? 'unknown' : `${s.idleDays} days with no activity`}
+Open tasks: ${s.openTasks}${s.overdue ? ` (${s.overdue} overdue)` : ''}${s.drifting ? `\nRescheduled 3+ times: "${s.driftLabel}"` : ''}
+${s.taskList}${s.latestUpdate ? `\nLatest logged update: "${s.latestUpdate}"` : ''}`
+
+// Turn 1 — the diagnostic question.
+export async function diagnoseStuck(state) {
+  const prompt = `The user tapped "Stuck?" on this project because it is not moving. Ask ONE short, sharp diagnostic question rooted in its ACTUAL state below (idle time, overdue work, a task they keep pushing, a status that no longer matches reality). Then offer 3-4 short chip answers covering the common cases.
+
+${stateBlock(state)}
+
+Return ONLY JSON:
+{ "question": "<one line, under 22 words, references something specific from above>",
+  "chips": ["<3-5 word chip>", "<3-5 word chip>", "<3-5 word chip>"] }`
+  try {
+    const j = extractJSON(await claudeComplete(prompt, { system: NM_SYSTEM, max_tokens: 400, model: pickModel('light') }))
+    if (j?.question && Array.isArray(j.chips) && j.chips.length) return { question: j.question, chips: j.chips.slice(0, 4) }
+  } catch {}
+  return FALLBACK_DIAGNOSIS(state)
+}
+
+// Turn 2 — resolve into ONE concrete system change.
+export async function resolveStuck(state, question, answer) {
+  const prompt = `Based on this exchange, propose ONE concrete change that resolves the user's stuckness. Either a deliberately TINY next task right-sized to the diagnosis, OR a status change.
+
+Rules:
+- If the user is overwhelmed / avoiding / the next step is too big -> propose a TINY task ("Open the doc for 5 minutes", "Send one text"). One concrete action, under 60 chars.
+- If the user signals not-a-priority / no-energy / it can wait -> propose a status change instead.
+- kind "pause" = on hold, "idea" = demote to Idea, "task" = add the tiny task.
+
+${stateBlock(state)}
+
+EXCHANGE
+Q: ${question}
+A: ${answer}
+
+Return ONLY JSON:
+{ "reframe": "<brief closing reframe, under 25 words>",
+  "resolution": { "kind": "task" | "pause" | "idea",
+                  "label": "<the task label if kind=task, else a short reason>",
+                  "hint": "<one line of context>" } }`
+  try {
+    const j = extractJSON(await claudeComplete(prompt, { system: NM_SYSTEM, max_tokens: 500, model: pickModel('light') }))
+    if (j?.resolution?.kind && j.resolution.label) return j
+  } catch {}
+  return FALLBACK_RESOLUTION(answer)
+}
+
+// ── Deterministic fallbacks (ported near-verbatim from the old app) ──────────
+// These are not filler. They encode the two diagnoses that actually matter, and
+// they run whenever Claude is unavailable, so the feature degrades to a working
+// rules engine rather than an error.
+export const STUCK_CHIPS = ["Next step's too big", 'Avoiding it', 'Not a priority', "Waiting on someone"]
+
+function FALLBACK_DIAGNOSIS(s) {
+  const q = s.drifting && s.driftLabel
+    ? `You've pushed "${s.driftLabel}" three times. What's actually in the way?`
+    : s.overdue
+      ? `${s.overdue} task${s.overdue > 1 ? 's are' : ' is'} overdue here. What's blocking it?`
+      : s.openTasks === 0
+        ? `No open tasks and no activity${s.idleDays ? ` in ${s.idleDays} days` : ''}. Is this still live?`
+        : `Quiet${s.idleDays ? ` for ${s.idleDays} days` : ''} with ${s.openTasks} open. What's holding it up?`
+  return { question: q, chips: STUCK_CHIPS.slice(0, 4) }
+}
+
+function FALLBACK_RESOLUTION(answer) {
+  const a = (answer || '').toLowerCase()
+  if (/avoid|too big|overwhelm|dread|don't know where/.test(a)) {
+    return {
+      reframe: 'Cliff-edge problem. The goal is real but the step in front of you is too tall.',
+      resolution: { kind: 'task', label: 'Spend 5 minutes on the smallest next step', hint: 'Small enough that starting is easier than not starting.' },
+    }
+  }
+  if (/priority|not now|later|no energy|season|can wait/.test(a)) {
+    return {
+      reframe: "Honesty helps here — if it's not the season, parking it costs less than dragging it.",
+      resolution: { kind: 'pause', label: 'Not the season for it', hint: 'Set a date to look again, rather than letting it rot as active.' },
+    }
+  }
+  if (/waiting|blocked|someone|reply|response/.test(a)) {
+    return {
+      reframe: "If it's genuinely on someone else, holding it as active just makes you feel behind.",
+      resolution: { kind: 'pause', label: 'Blocked on someone else', hint: 'Park it with a resurface date so it comes back on its own.' },
+    }
+  }
+  return {
+    reframe: 'When the next step is unclear, the step IS clarifying the next step.',
+    resolution: { kind: 'task', label: 'Write down the one thing that has to happen next', hint: 'Two minutes. It unblocks the rest.' },
+  }
+}

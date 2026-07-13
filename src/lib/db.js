@@ -41,7 +41,7 @@ function mapTask(r) {
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
     priority: r.priority ?? undefined,
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined, sort: r.sort ?? 0,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    createdAt: r.created_at, updatedAt: r.updated_at, rescheduleCount: r.reschedule_count ?? 0,
   }
 }
 function mapMilestone(r) {
@@ -122,7 +122,31 @@ export async function loadAll() {
     inbox: (inbox.data || []).map(mapInbox),
     assets: (assets.data || []).map(mapAsset),
     series: (series.data || []).map(mapSeries),
+    nudgeStates: await loadNudgeStates(),
   }
+}
+
+// ── Nudge memory (cp_nudge_states) ──────────────────────────────────────────
+// Persisted "Pending decisions" state: a project waved off stays waved off, and
+// a project decided on stays quiet for a while. Deliberately kept OUT of the
+// loadAll() error gate above — a read failure here (e.g. the table not migrated
+// yet) degrades to "no memory", it must never take the whole spine down.
+export async function loadNudgeStates() {
+  try {
+    const { data, error } = await supabase.from('cp_nudge_states').select('*')
+    if (error) return []
+    return (data || []).map((r) => ({
+      project: r.project_id, snoozedUntil: r.snoozed_until, dismissedAt: r.dismissed_at, lastQuestion: r.last_question,
+    }))
+  } catch { return [] }
+}
+export async function upsertNudgeState(projectId, patch = {}) {
+  const row = { project_id: projectId, updated_at: new Date().toISOString() }
+  if (patch.snoozedUntil !== undefined) row.snoozed_until = patch.snoozedUntil
+  if (patch.dismissedAt !== undefined) row.dismissed_at = patch.dismissedAt
+  if (patch.lastQuestion !== undefined) row.last_question = patch.lastQuestion
+  const { error } = await supabase.from('cp_nudge_states').upsert(row, { onConflict: 'user_id,project_id' })
+  if (error) throw error
 }
 
 // ── app shape -> row ───────────────────────────────────────────────
@@ -252,6 +276,7 @@ const TASK_COLS = {
   label: 'label', done: 'done', next: 'next', waiting: 'waiting', due: 'due',
   dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status', priority: 'priority',
   notes: 'notes', srcMeeting: 'src_meeting', meetingId: 'meeting_id', project: 'project_id', area: 'area_id', sort: 'sort',
+  rescheduleCount: 'reschedule_count',
 }
 // projectId may be null for a pillar-only task — pass the pillar via task.area.
 export async function createTask(projectId, task = {}) {
@@ -273,7 +298,17 @@ export async function updateTask(id, patch) {
   const row = { updated_at: new Date().toISOString() }
   for (const k in patch) if (TASK_COLS[k]) row[TASK_COLS[k]] = patch[k]
   const { error } = await supabase.from('cp_tasks').update(row).eq('id', id)
-  if (error) throw error
+  if (!error) return
+  // reschedule_count ships ahead of its migration (20260712130000). If the column
+  // isn't there yet, drop it and retry rather than failing the user's edit — a
+  // missing drift counter is a lost stat; a failed update is a lost task change.
+  if (error.code === '42703' && 'reschedule_count' in row) {
+    const { reschedule_count, ...rest } = row
+    const retry = await supabase.from('cp_tasks').update(rest).eq('id', id)
+    if (!retry.error) return
+    throw retry.error
+  }
+  throw error
 }
 export async function deleteTask(id) {
   const { error } = await supabase.from('cp_tasks').delete().eq('id', id)

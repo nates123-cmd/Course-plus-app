@@ -13,6 +13,7 @@ import {
 } from '../kit'
 import { createNote, deleteInbox, updateProject, createUpdate } from '../lib/db'
 import { HoldSheet } from './HoldSheet'
+import { ThinkItThrough } from '../components/ThinkItThrough'
 
 // Today as the prototype's "Mon D, YYYY" string (e.g. "Jun 9, 2026").
 const todayStr = () => `${MONTHS[TODAY.m]} ${TODAY.d}, ${TODAY.y}`
@@ -58,35 +59,72 @@ function AssignPopover({ projects, onPick, onClose }) {
 // days". A project with no signal at all can't be aged, so it's left out (no
 // false "archive this").
 const STALL_DAYS = 14
+const DECAY_DAYS = 60   // a hold this old has stopped being a plan
+const DRIFT_PUSHES = 3  // pushed forward 3+ times = you are avoiding it
 const MS_DAY = 86400000
 
-function buildNudges(projects, lastTouchAt) {
+function buildNudges(projects, lastTouchAt, isQuiet) {
   const out = []
   for (const p of projects) {
-    if (p.status === 'on-hold' && holdDue(p.hold)) {
+    if (isQuiet(p.id)) continue // consciously waved off — stay waved off
+    if (p.status === 'on-hold') {
       const hv = holdView(p.hold)
-      const when = hv?.resurfaceText ? `Hold ended ${hv.resurfaceText}` : 'Hold ended'
-      out.push({ kind: 'checkin', proj: p, text: hv?.reason ? `${when} — ${hv.reason}` : `${when}.` })
+      if (holdDue(p.hold)) {
+        const when = hv?.resurfaceText ? `Hold ended ${hv.resurfaceText}` : 'Hold ended'
+        out.push({ kind: 'checkin', proj: p, days: 0, text: hv?.reason ? `${when} — ${hv.reason}` : `${when}.` })
+        continue
+      }
+      // Long-hold decay: a hold that keeps getting pushed quietly becomes a
+      // graveyard. Designed in the old Course prototype, never built. Surface it
+      // once it's been parked ~2 months so it has to be re-decided, not inherited.
+      const setAt = hv?.setAt ? Date.parse(hv.setAt) : 0
+      if (setAt) {
+        const held = Math.floor((Date.now() - setAt) / MS_DAY)
+        if (held >= DECAY_DAYS) {
+          const months = Math.round(held / 30)
+          out.push({ kind: 'decay', proj: p, days: held, text: `On hold ${months} month${months > 1 ? 's' : ''} — still real, or drop it?` })
+        }
+      }
     } else if (p.status === 'active') {
+      // Drift beats staleness: a project you keep touching but whose one task you
+      // keep pushing is stuck in a way "last activity" can never see.
+      const drift = (p.tasks || []).filter((tk) => !tk.done && (tk.rescheduleCount || 0) >= DRIFT_PUSHES)
+        .sort((a, b) => (b.rescheduleCount || 0) - (a.rescheduleCount || 0))[0]
+      if (drift) {
+        out.push({ kind: 'drift', proj: p, days: 0, drift,
+          text: `Pushed "${drift.label}" ${drift.rescheduleCount} times.` })
+        continue
+      }
       const touched = lastTouchAt(p)
       if (!touched) continue
       const days = Math.floor((Date.now() - touched) / MS_DAY)
       if (days >= STALL_DAYS) out.push({ kind: 'stall', proj: p, days, text: `No activity in ${days} days.` })
     }
   }
-  // most-overdue first: stalls by age desc, then check-ins
-  return out.sort((a, b) => (a.kind === b.kind ? (b.days || 0) - (a.days || 0) : a.kind === 'stall' ? -1 : 1))
+  // Decisions you promised to make first (check-ins), then avoidance, then rot.
+  const rank = { checkin: 0, drift: 1, decay: 2, stall: 3 }
+  return out.sort((a, b) => (rank[a.kind] - rank[b.kind]) || ((b.days || 0) - (a.days || 0)))
 }
 
 function ProjectNudges() {
   const { t, f, go } = useApp()
-  const { allProjects, reload, lastTouchAt } = useData()
+  const { allProjects, reload, lastTouchAt, nudgeStates, snoozeNudge } = useData()
   const [busy, setBusy] = useState(null)
-  const [dismissed, setDismissed] = useState(() => new Set())
+  const [dismissed, setDismissed] = useState(() => new Set()) // this-session only; the durable half is cp_nudge_states
   const [holdFor, setHoldFor] = useState(null) // project pending the on-hold popup
   const [pickFor, setPickFor] = useState(null) // project id whose status picker is open
+  const [stuckFor, setStuckFor] = useState(null) // project id with Think-it-through open
 
-  const nudges = buildNudges(allProjects(), lastTouchAt).filter((n) => !dismissed.has(n.proj.id))
+  // A project is quiet if it was consciously waved off and the snooze hasn't
+  // lapsed. This is the durable memory the old in-memory Set never had — a
+  // dismiss used to die on reload, so the same nudge nagged forever.
+  const isQuiet = (id) => {
+    if (dismissed.has(id)) return true
+    const st = nudgeStates.find((n) => n.project === id)
+    return !!(st?.snoozedUntil && Date.parse(st.snoozedUntil) > Date.now())
+  }
+
+  const nudges = buildNudges(allProjects(), lastTouchAt, isQuiet)
   if (!nudges.length) return null
 
   // Run an action, hide the row immediately, then reload from the spine.
@@ -114,7 +152,9 @@ function ProjectNudges() {
   // activity and the project stops re-nagging.
   const setStatus = (p) => async (k) => {
     setPickFor(null)
-    if (k === p.status) { setDismissed((s) => new Set(s).add(p.id)); return } // re-affirming = "leave it alone"
+    // Re-affirming the current status IS a decision ("leave it alone") — snooze it
+    // for real rather than just hiding the row until the next reload.
+    if (k === p.status) { setDismissed((s) => new Set(s).add(p.id)); snoozeNudge(p.id, 14); return }
     if (k === 'on-hold') { setHoldFor(p); return }
     await act(p, async () => {
       await updateProject(p.id, p.hold ? { status: k, hold: null } : { status: k })
@@ -134,26 +174,38 @@ function ProjectNudges() {
         {nudges.map((n) => {
           const p = n.proj
           const open = pickFor === p.id
+          const stuck = stuckFor === p.id
           return (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <span onClick={() => go({ screen: 'project', id: p.id })}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.body, fontSize: 14, fontWeight: 600, color: t.t1, cursor: 'pointer' }}>
-                  <AreaDot areaId={p.area} s={7} />{p.name}
-                </span>
-                <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div>
+            <div key={p.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <span onClick={() => go({ screen: 'project', id: p.id })}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.body, fontSize: 14, fontWeight: 600, color: t.t1, cursor: 'pointer' }}>
+                    <AreaDot areaId={p.area} s={7} />{p.name}
+                  </span>
+                  <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
+                  {/* The other half of the decision: the pill answers "what is this?",
+                      Stuck? answers "why isn't it moving?" and ends in a real write. */}
+                  <Btn kind="ghost" size="sm" icon="sparkles" onClick={() => setStuckFor(stuck ? null : p.id)}>Stuck?</Btn>
+                  <span style={{ position: 'relative' }}>
+                    <StatusPill id={p.status} open={open} onClick={() => setPickFor(open ? null : p.id)} />
+                    {open && (
+                      <Popover onClose={() => setPickFor(null)} width={210}>
+                        {Object.keys(STATUS).map((k) => (
+                          <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint}
+                            on={p.status === k} onClick={() => setStatus(p)(k)} />
+                        ))}
+                      </Popover>
+                    )}
+                  </span>
+                </div>
               </div>
-              <span style={{ position: 'relative', flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
-                <StatusPill id={p.status} open={open} onClick={() => setPickFor(open ? null : p.id)} />
-                {open && (
-                  <Popover onClose={() => setPickFor(null)} width={210}>
-                    {Object.keys(STATUS).map((k) => (
-                      <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint}
-                        on={p.status === k} onClick={() => setStatus(p)(k)} />
-                    ))}
-                  </Popover>
-                )}
-              </span>
+              {stuck && (
+                <ThinkItThrough project={p} idleDays={n.days || null}
+                  onClose={() => setStuckFor(null)} onHold={(proj) => setHoldFor(proj)} />
+              )}
             </div>
           )
         })}

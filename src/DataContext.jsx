@@ -2,7 +2,7 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateTask, deleteTask, updateNote } from './lib/db'
+import { loadAll, seedIfEmpty, updateProject, createUpdate, createInbox, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
 import { blocksToText } from './lib/blocks'
 import { holdView, holdDue } from './kit'
 
@@ -89,6 +89,7 @@ export function DataProvider({ children }) {
   const [inbox, setInbox] = useState([])
   const [assets, setAssets] = useState([])
   const [series, setSeries] = useState([])
+  const [nudgeStates, setNudgeStates] = useState([]) // cp_nudge_states — [] when un-migrated
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
@@ -105,6 +106,7 @@ export function DataProvider({ children }) {
       // Pull any un-materialized meeting action items into the project Backlogs.
       if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
+      setNudgeStates(data.nudgeStates || [])
       setStatus('ready')
     } catch (e) {
       if (!silent) { setError(e); setStatus('error') }
@@ -123,12 +125,30 @@ export function DataProvider({ children }) {
     areaTasks: (a.areaTasks || []).map((t) => (t.id === id ? fn(t) : t)),
     projects: a.projects.map((p) => ({ ...p, tasks: (p.tasks || []).map((t) => (t.id === id ? fn(t) : t)) })),
   }))
+  const _findTask = (list, id) => {
+    for (const a of list) {
+      const loose = (a.areaTasks || []).find((t) => t.id === id); if (loose) return loose
+      for (const p of a.projects) { const t = (p.tasks || []).find((x) => x.id === id); if (t) return t }
+    }
+    return null
+  }
+  const _ms = (d) => (d && d.y != null ? new Date(d.y, d.m, d.d).getTime() : null)
   const patchTask = async (id, patch) => {
+    // Pushing a due date FORWARD is the avoidance signal — count it. (The old
+    // Course app counted this via a Postgres trigger and then never read it;
+    // here the drift nudge reads it.) Only forward moves count: pulling a date
+    // earlier is commitment, not drift.
+    const cur = _findTask(areas, id)
+    let out = { ...patch }
+    if (cur && 'dueDate' in patch) {
+      const before = _ms(cur.dueDate), after = _ms(patch.dueDate)
+      if (before != null && after != null && after > before) out.rescheduleCount = (cur.rescheduleCount || 0) + 1
+    }
     // Mirror the updated_at that db.updateTask stamps, so the edit counts as
     // project activity (lastTouchAt) immediately rather than only after a reload.
-    const touched = { ...patch, updatedAt: new Date().toISOString() }
+    const touched = { ...out, updatedAt: new Date().toISOString() }
     setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...touched })))
-    try { await updateTask(id, patch) } catch (e) { reload(); throw e }
+    try { await updateTask(id, out) } catch (e) { reload(); throw e }
   }
   const removeTask = async (id) => {
     setAreas((prev) => prev.map((a) => ({
@@ -138,6 +158,29 @@ export function DataProvider({ children }) {
     })))
     try { await deleteTask(id) } catch (e) { reload(); throw e }
   }
+  // ── Nudge memory ────────────────────────────────────────────────────
+  // Snoozing writes through to cp_nudge_states so a project waved off in the
+  // Inbox STAYS waved off across reloads (the old in-memory Set forgot every
+  // refresh, so the same nudge nagged forever). Optimistic + tolerant: if the
+  // table isn't migrated the write throws, we swallow it, and the row still
+  // disappears for this session — i.e. it degrades to exactly the old behaviour.
+  const snoozeNudge = async (projectId, days = 14) => {
+    const until = new Date(Date.now() + days * 86400000).toISOString()
+    const at = new Date().toISOString()
+    setNudgeStates((prev) => [
+      ...prev.filter((n) => n.project !== projectId),
+      { ...(prev.find((n) => n.project === projectId) || {}), project: projectId, snoozedUntil: until, dismissedAt: at },
+    ])
+    try { await upsertNudgeState(projectId, { snoozedUntil: until, dismissedAt: at }) } catch {}
+  }
+  const rememberQuestion = async (projectId, question) => {
+    setNudgeStates((prev) => [
+      ...prev.filter((n) => n.project !== projectId),
+      { ...(prev.find((n) => n.project === projectId) || {}), project: projectId, lastQuestion: question },
+    ])
+    try { await upsertNudgeState(projectId, { lastQuestion: question }) } catch {}
+  }
+
   // Insert a task into its target project (or pillar when projectId is null and
   // task.area is set) immediately, then persist. Returns the (stable) id.
   const addTask = async (projectId, task = {}) => {
@@ -371,7 +414,8 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, assets, series, status, error, reload, recordUndo, canUndo,
+      areas, notes, inbox, assets, series, nudgeStates, status, error, reload, recordUndo, canUndo,
+      snoozeNudge, rememberQuestion,
       patchTask, addTask, removeTask,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
