@@ -41,7 +41,7 @@ function mapTask(r) {
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
     priority: r.priority ?? undefined,
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined, sort: r.sort ?? 0,
-    createdAt: r.created_at,
+    createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }
 function mapMilestone(r) {
@@ -266,7 +266,11 @@ export async function createTask(projectId, task = {}) {
   return id
 }
 export async function updateTask(id, patch) {
-  const row = {}
+  // Stamp updated_at on every edit — this is the ONLY record that a task was
+  // touched (completed, re-prioritized, relabelled). Without it those edits left
+  // no timestamp anywhere and a project you were actively working still read as
+  // stale to the "Pending decisions" nudge (see lastTouchAt in DataContext).
+  const row = { updated_at: new Date().toISOString() }
   for (const k in patch) if (TASK_COLS[k]) row[TASK_COLS[k]] = patch[k]
   const { error } = await supabase.from('cp_tasks').update(row).eq('id', id)
   if (error) throw error

@@ -124,7 +124,10 @@ export function DataProvider({ children }) {
     projects: a.projects.map((p) => ({ ...p, tasks: (p.tasks || []).map((t) => (t.id === id ? fn(t) : t)) })),
   }))
   const patchTask = async (id, patch) => {
-    setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...patch })))
+    // Mirror the updated_at that db.updateTask stamps, so the edit counts as
+    // project activity (lastTouchAt) immediately rather than only after a reload.
+    const touched = { ...patch, updatedAt: new Date().toISOString() }
+    setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...touched })))
     try { await updateTask(id, patch) } catch (e) { reload(); throw e }
   }
   const removeTask = async (id) => {
@@ -203,10 +206,9 @@ export function DataProvider({ children }) {
     //   updates[].at     — logged update (cp_updates.created_at)
     //   artifacts[].at   — artifact produced (cp_artifacts.created_at)
     //   tasks[].createdAt— task added to the project (cp_tasks.created_at)
+    //   tasks[].updatedAt— task completed / re-prioritized / edited
+    //                      (cp_tasks.updated_at, stamped by db.updateTask)
     //   notes            — a note authored/edited for the project (owned or linked)
-    // NOT covered: completing / re-prioritizing a task — cp_tasks has no
-    // updated_at column, so that edit leaves no timestamp anywhere. Needs a
-    // migration to catch (see supabase/migrations, task_touched_at).
     const noteTs = (n) => (Date.parse(n.date || '') || Date.parse(n.updatedAt || '') || 0)
     const lastTouchAt = (p) => {
       if (!p) return 0
@@ -214,7 +216,7 @@ export function DataProvider({ children }) {
       const bump = (v) => { const t = typeof v === 'number' ? v : (Date.parse(v || '') || 0); if (t > ms) ms = t }
       for (const u of p.updates || []) bump(u.at)
       for (const x of p.artifacts || []) bump(x.at)
-      for (const tk of p.tasks || []) bump(tk.createdAt)
+      for (const tk of p.tasks || []) { bump(tk.createdAt); bump(tk.updatedAt) }
       for (const n of notes) if (n.project === p.id || (n.projects || []).includes(p.id)) bump(noteTs(n))
       return ms
     }
