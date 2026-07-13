@@ -9,7 +9,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, Card, AreaDot, Tag, Popover, PopRow, MONTHS, TODAY,
-  holdDue, holdView, addDays, fmtDate,
+  StatusPill, STATUS, statusSkin, holdDue, holdView, fmtDate,
 } from '../kit'
 import { createNote, deleteInbox, updateProject, createUpdate } from '../lib/db'
 import { HoldSheet } from './HoldSheet'
@@ -38,10 +38,17 @@ function AssignPopover({ projects, onPick, onClose }) {
   )
 }
 
-// ── Project nudges — derived "pending decisions" alerts (ported from /course
-// triage.jsx). Two kinds, pooled into one card above the captures:
-//   stall   — an active project with no update logged in 14+ days
-//   checkin — an on-hold project whose resurface date has arrived
+// ── Project nudges — derived "pending decisions" alerts. Two kinds, pooled into
+// one card above the captures:
+//   checkin — an on-hold project whose resurface date has arrived (the point of
+//             the card: a hold is a promise to look again on a date, and this is
+//             where that promise comes due)
+//   stall   — an active project with no activity in 14+ days
+// The ONE action on a row is a status change (StatusPill + picker, same control
+// and semantics as the project page). The old fixed button trio per row
+// (Archive / On hold / Keep active, Reactivate / +1 wk / Keep on hold) is gone —
+// it hard-coded a few paths through a decision that is really just "what is this
+// project's status now?", and couldn't reach Idea/Sent at all.
 // Staleness is measured off `lastTouchAt` (DataContext) — the newest of ANY
 // activity signal on the project: an update logged, a task added, a note
 // written, an artifact produced. It used to read the update log (cp_updates)
@@ -58,10 +65,8 @@ function buildNudges(projects, lastTouchAt) {
   for (const p of projects) {
     if (p.status === 'on-hold' && holdDue(p.hold)) {
       const hv = holdView(p.hold)
-      out.push({
-        kind: 'checkin', proj: p,
-        text: hv?.reason ? `Check-in due — ${hv.reason}` : `Check-in due${hv?.resurfaceText ? ` (set for ${hv.resurfaceText})` : ''}.`,
-      })
+      const when = hv?.resurfaceText ? `Hold ended ${hv.resurfaceText}` : 'Hold ended'
+      out.push({ kind: 'checkin', proj: p, text: hv?.reason ? `${when} — ${hv.reason}` : `${when}.` })
     } else if (p.status === 'active') {
       const touched = lastTouchAt(p)
       if (!touched) continue
@@ -79,6 +84,7 @@ function ProjectNudges() {
   const [busy, setBusy] = useState(null)
   const [dismissed, setDismissed] = useState(() => new Set())
   const [holdFor, setHoldFor] = useState(null) // project pending the on-hold popup
+  const [pickFor, setPickFor] = useState(null) // project id whose status picker is open
 
   const nudges = buildNudges(allProjects(), lastTouchAt).filter((n) => !dismissed.has(n.proj.id))
   if (!nudges.length) return null
@@ -100,18 +106,21 @@ function ProjectNudges() {
     await createUpdate(p.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
   })
 
-  const stallActions = (p, days) => [
-    { label: 'Archive', icon: 'archive', kind: 'primary', run: () => act(p, async () => {
-        await updateProject(p.id, { status: 'archived' }); await createUpdate(p.id, `Archived — inactive ${days} days`) }) },
-    { label: 'On hold', icon: 'player-pause', kind: 'outline', run: () => setHoldFor(p) },
-    { label: 'Keep active', icon: 'check', kind: 'ghost', run: () => act(p, () => createUpdate(p.id, 'Checked in — keeping active')) },
-  ]
-  const checkinActions = (p) => [
-    { label: 'Reactivate', icon: 'player-play', kind: 'primary', run: () => act(p, async () => {
-        await updateProject(p.id, { status: 'active', hold: null }); await createUpdate(p.id, 'Reactivated from hold') }) },
-    { label: '+1 wk', icon: 'alarm', kind: 'ghost', run: () => act(p, () => updateProject(p.id, { hold: { ...p.hold, resurfaceOn: addDays(TODAY, 7), reason: holdView(p.hold)?.reason || '' } })) },
-    { label: 'Keep on hold', icon: 'player-pause', kind: 'ghost', run: () => act(p, () => updateProject(p.id, { hold: { ...p.hold, resurfaceOn: addDays(TODAY, 30), reason: holdView(p.hold)?.reason || '' } })) },
-  ]
+  // The one action on a nudge row. Same semantics as the project page's picker:
+  // on-hold is a gated flow (reason + resurface date via HoldSheet, never a bare
+  // label flip), and leaving hold clears the hold payload so a stale reason/date
+  // can't linger. Every flip is logged to the update feed so the decision is
+  // auditable — and, now that lastTouchAt reads that feed, deciding counts as
+  // activity and the project stops re-nagging.
+  const setStatus = (p) => async (k) => {
+    setPickFor(null)
+    if (k === p.status) { setDismissed((s) => new Set(s).add(p.id)); return } // re-affirming = "leave it alone"
+    if (k === 'on-hold') { setHoldFor(p); return }
+    await act(p, async () => {
+      await updateProject(p.id, p.hold ? { status: k, hold: null } : { status: k })
+      await createUpdate(p.id, `Status → ${STATUS[k]?.label || k}`)
+    })
+  }
 
   return (
     <Card style={{ padding: '15px 18px', marginBottom: 20, border: '1px solid ' + t.riskLine, background: t.riskBg }}>
@@ -124,7 +133,7 @@ function ProjectNudges() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {nudges.map((n) => {
           const p = n.proj
-          const actions = n.kind === 'stall' ? stallActions(p, n.days) : checkinActions(p)
+          const open = pickFor === p.id
           return (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 180 }}>
@@ -134,9 +143,17 @@ function ProjectNudges() {
                 </span>
                 <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</div>
               </div>
-              <div style={{ display: 'flex', gap: 7, flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
-                {actions.map((a) => <Btn key={a.label} kind={a.kind} size="sm" icon={a.icon} onClick={a.run}>{a.label}</Btn>)}
-              </div>
+              <span style={{ position: 'relative', flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
+                <StatusPill id={p.status} open={open} onClick={() => setPickFor(open ? null : p.id)} />
+                {open && (
+                  <Popover onClose={() => setPickFor(null)} width={210}>
+                    {Object.keys(STATUS).map((k) => (
+                      <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint}
+                        on={p.status === k} onClick={() => setStatus(p)(k)} />
+                    ))}
+                  </Popover>
+                )}
+              </span>
             </div>
           )
         })}
