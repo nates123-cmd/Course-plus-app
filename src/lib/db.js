@@ -41,6 +41,7 @@ function mapTask(r) {
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
     priority: r.priority ?? undefined,
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined, sort: r.sort ?? 0,
+    createdAt: r.created_at,
   }
 }
 function mapMilestone(r) {

@@ -42,12 +42,18 @@ function AssignPopover({ projects, onPick, onClose }) {
 // triage.jsx). Two kinds, pooled into one card above the captures:
 //   stall   — an active project with no update logged in 14+ days
 //   checkin — an on-hold project whose resurface date has arrived
-// "No work logged" reads the project's update log (cp_updates); a project with
-// no updates yet can't be aged, so it's left out (no false "archive this").
+// Staleness is measured off `lastTouchAt` (DataContext) — the newest of ANY
+// activity signal on the project: an update logged, a task added, a note
+// written, an artifact produced. It used to read the update log (cp_updates)
+// ALONE, which only gets a row from an explicit "log an update" / archive /
+// hold action — never from doing the actual work. Result: projects Nate was
+// working daily via tasks + meeting notes were nagging "No work logged in 33
+// days". A project with no signal at all can't be aged, so it's left out (no
+// false "archive this").
 const STALL_DAYS = 14
 const MS_DAY = 86400000
 
-function buildNudges(projects) {
+function buildNudges(projects, lastTouchAt) {
   const out = []
   for (const p of projects) {
     if (p.status === 'on-hold' && holdDue(p.hold)) {
@@ -57,10 +63,10 @@ function buildNudges(projects) {
         text: hv?.reason ? `Check-in due — ${hv.reason}` : `Check-in due${hv?.resurfaceText ? ` (set for ${hv.resurfaceText})` : ''}.`,
       })
     } else if (p.status === 'active') {
-      const latest = (p.updates || [])[0]      // updates are sorted newest-first
-      if (!latest) continue
-      const days = Math.floor((Date.now() - new Date(latest.at).getTime()) / MS_DAY)
-      if (days >= STALL_DAYS) out.push({ kind: 'stall', proj: p, days, text: `No work logged in ${days} days.` })
+      const touched = lastTouchAt(p)
+      if (!touched) continue
+      const days = Math.floor((Date.now() - touched) / MS_DAY)
+      if (days >= STALL_DAYS) out.push({ kind: 'stall', proj: p, days, text: `No activity in ${days} days.` })
     }
   }
   // most-overdue first: stalls by age desc, then check-ins
@@ -69,12 +75,12 @@ function buildNudges(projects) {
 
 function ProjectNudges() {
   const { t, f, go } = useApp()
-  const { allProjects, reload } = useData()
+  const { allProjects, reload, lastTouchAt } = useData()
   const [busy, setBusy] = useState(null)
   const [dismissed, setDismissed] = useState(() => new Set())
   const [holdFor, setHoldFor] = useState(null) // project pending the on-hold popup
 
-  const nudges = buildNudges(allProjects()).filter((n) => !dismissed.has(n.proj.id))
+  const nudges = buildNudges(allProjects(), lastTouchAt).filter((n) => !dismissed.has(n.proj.id))
   if (!nudges.length) return null
 
   // Run an action, hide the row immediately, then reload from the spine.

@@ -145,6 +145,7 @@ export function DataProvider({ children }) {
       waiting: task.waiting, due: task.due, dueDate: task.dueDate,
       workType: task.workType, taskStatus: task.taskStatus, priority: task.priority ?? undefined,
       notes: task.notes, srcMeeting: task.srcMeeting, meetingId: task.meetingId, sort: task.sort ?? 0,
+      createdAt: task.createdAt || new Date().toISOString(), // counts as project activity right away
     }
     setAreas((prev) => prev.map((a) => {
       if (projectId == null && task.area && a.id === task.area) return { ...a, areaTasks: [...(a.areaTasks || []), opt] }
@@ -192,6 +193,31 @@ export function DataProvider({ children }) {
     const ownedNotes = (id) => notes.filter((n) => n.project === id)
     const linkedMeetings = (id) => notes.filter((n) => n.project !== id && (n.projects || []).includes(id))
     const notesInArea = (areaId) => notes.filter((n) => n.area === areaId)
+    // ── project activity ────────────────────────────────────────────────
+    // Newest epoch (ms) of ANY signal that a project was worked on; 0 when the
+    // project has no signal at all. The staleness nudge used to read only the
+    // update log (cp_updates), which is written solely by explicit "log an
+    // update"/archive/hold actions — so a project you were actively working via
+    // tasks and meeting notes still read "No work logged in 33 days".
+    // Signals, all the timestamps the schema actually carries:
+    //   updates[].at     — logged update (cp_updates.created_at)
+    //   artifacts[].at   — artifact produced (cp_artifacts.created_at)
+    //   tasks[].createdAt— task added to the project (cp_tasks.created_at)
+    //   notes            — a note authored/edited for the project (owned or linked)
+    // NOT covered: completing / re-prioritizing a task — cp_tasks has no
+    // updated_at column, so that edit leaves no timestamp anywhere. Needs a
+    // migration to catch (see supabase/migrations, task_touched_at).
+    const noteTs = (n) => (Date.parse(n.date || '') || Date.parse(n.updatedAt || '') || 0)
+    const lastTouchAt = (p) => {
+      if (!p) return 0
+      let ms = 0
+      const bump = (v) => { const t = typeof v === 'number' ? v : (Date.parse(v || '') || 0); if (t > ms) ms = t }
+      for (const u of p.updates || []) bump(u.at)
+      for (const x of p.artifacts || []) bump(x.at)
+      for (const tk of p.tasks || []) bump(tk.createdAt)
+      for (const n of notes) if (n.project === p.id || (n.projects || []).includes(p.id)) bump(noteTs(n))
+      return ms
+    }
     // ── series (recurring meetings) ──
     const seriesById = (id) => series.find((s) => s.id === id) || null
     const activeSeries = series.filter((s) => !s.archived)
@@ -346,7 +372,7 @@ export function DataProvider({ children }) {
       areas, notes, inbox, assets, series, status, error, reload, recordUndo, canUndo,
       patchTask, addTask, removeTask,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
-      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest,
+      ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,
       seriesById, activeSeries, instancesForSeries, openThreadsForSeries,
     }
