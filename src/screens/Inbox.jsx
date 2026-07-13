@@ -1,8 +1,16 @@
-// Inbox triage (Direction B) — each captured item carries an AI-suggested home.
-// Accept files it into the suggested project as a real note (createNote), then
-// drops it from the inbox (deleteInbox) and reloads. Assign opens a project
-// picker to choose a different home. Leave keeps it untriaged. Multi-home
-// suggestions file under the area home and record the route breakdown.
+// Inbox triage — each captured item carries an AI-suggested home.
+//
+// The Inbox is STATUS-first, not filing-first. A captured email is usually the
+// very thing that unblocks the project it belongs to ("Cedric's back from
+// leave"), so the prominent control on a card is the suggested project's STATUS
+// pill — change it right here and the project moves. Re-homing still exists but
+// is demoted onto the project chip itself (click it to file elsewhere), because
+// picking a folder is bookkeeping, not a decision.
+//
+// Accept files the item into the suggested project as a real note (createNote),
+// then drops the inbox row (deleteInbox) and reloads. Leave keeps it untriaged.
+// Multi-home suggestions file under the area home and record the route breakdown.
+// On-hold always routes through HoldSheet (reason + resurface date).
 // No window.* — useApp() for theme/route/nav, useData() for the spine, db.js for writes.
 import { useState } from 'react'
 import { useApp } from '../ctx'
@@ -246,10 +254,40 @@ export function InboxScreen() {
   const { inbox, allProjects, projectById, projectName, areaOfProject, reload } = useData()
   const projects = allProjects()
   const [busy, setBusy] = useState(null)      // id currently filing
-  const [assignFor, setAssignFor] = useState(null) // id with picker open
+  const [assignFor, setAssignFor] = useState(null) // id with the re-home picker open
+  const [statusFor, setStatusFor] = useState(null) // id with the status picker open
+  const [holdFor, setHoldFor] = useState(null)     // project pending the on-hold sheet
   const [err, setErr] = useState(null)
 
   const live = inbox
+
+  // Status, straight off the capture card. A captured email is usually the very
+  // thing that unblocks the project it belongs to ("Cedric's back") — so the
+  // Inbox's job is to move the PROJECT, not just file the paperwork. On-hold stays
+  // gated through the HoldSheet (reason + resurface date, never a bare label flip),
+  // exactly as on the project page.
+  const setProjectStatus = (proj) => async (k) => {
+    setStatusFor(null)
+    if (k === proj.status) return
+    if (k === 'on-hold') { setHoldFor(proj); return }
+    setBusy(proj.id); setErr(null)
+    try {
+      await updateProject(proj.id, proj.hold ? { status: k, hold: null } : { status: k })
+      await createUpdate(proj.id, `Status → ${STATUS[k]?.label || k}`)
+      await reload()
+    } catch (e) { setErr(e) }
+    setBusy(null)
+  }
+
+  const commitHold = (proj) => async ({ reason, resurfaceOn, setAt }) => {
+    setBusy(proj.id); setErr(null)
+    try {
+      await updateProject(proj.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
+      await createUpdate(proj.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+      await reload()
+    } catch (e) { setErr(e) }
+    setBusy(null)
+  }
 
   // File `item` into project `pid` as a note, then drop the inbox row + reload.
   // A null `pid` with `areaOverride` files at an area home (multi-home Accept).
@@ -329,6 +367,7 @@ export function InboxScreen() {
           const conf = it.suggest ? it.suggest.confidence : (m ? m.confidence : null)
           const loading = busy === it.id
           const assignOpen = assignFor === it.id
+          const statusOpen = statusFor === it.id
 
           return (
             <Card key={it.id} style={{ padding: '15px 17px' }}>
@@ -359,9 +398,21 @@ export function InboxScreen() {
                   <Icon n="sparkles" s={11} />Suggested
                 </span>
 
+                {/* The chip IS the re-home control now — click it to file this
+                    somewhere else. That frees the action row to be about the
+                    project's STATUS, which is the decision actually worth making
+                    here; picking a folder is just bookkeeping. */}
                 {sp && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 7, padding: '4px 10px' }}>
-                    <AreaDot areaId={sp.area} s={6} />{sp.name}
+                  <span style={{ position: 'relative', display: 'inline-flex' }}>
+                    <span onClick={() => setAssignFor(assignOpen ? null : it.id)} title="File somewhere else"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
+                        color: t.t1, background: assignOpen ? t.tagBg : t.sel, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
+                      <AreaDot areaId={sp.area} s={6} />{sp.name}<Icon n="chevron-down" s={11} c={t.t3} />
+                    </span>
+                    {assignOpen && (
+                      <AssignPopover projects={projects} onClose={() => setAssignFor(null)}
+                        onPick={(p) => { setAssignFor(null); file(it, p.id) }} />
+                    )}
                   </span>
                 )}
 
@@ -390,17 +441,30 @@ export function InboxScreen() {
                     {loading ? 'Dismissing…' : 'Dismiss'}
                   </Btn>
 
-                  {/* Assign — pick a different home */}
-                  <span style={{ position: 'relative', display: 'inline-flex' }}>
-                    <Btn kind="outline" size="sm" icon="folder" onClick={() => setAssignFor(assignOpen ? null : it.id)}>Assign</Btn>
-                    {assignOpen && (
-                      <AssignPopover
-                        projects={projects}
-                        onClose={() => setAssignFor(null)}
-                        onPick={(p) => { setAssignFor(null); file(it, p.id) }}
-                      />
-                    )}
-                  </span>
+                  {/* Status of the suggested project — the real decision on this card.
+                      With no suggestion there's no project to have a status, so fall
+                      back to the folder picker. */}
+                  {sp ? (
+                    <span style={{ position: 'relative', display: 'inline-flex' }}>
+                      <StatusPill id={sp.status} open={statusOpen} onClick={() => setStatusFor(statusOpen ? null : it.id)} />
+                      {statusOpen && (
+                        <Popover onClose={() => setStatusFor(null)} width={210}>
+                          {Object.keys(STATUS).map((k) => (
+                            <PopRow key={k} dot={statusSkin(t, k).dot} label={STATUS[k].label} hint={STATUS[k].hint}
+                              on={sp.status === k} onClick={() => setProjectStatus(sp)(k)} />
+                          ))}
+                        </Popover>
+                      )}
+                    </span>
+                  ) : (
+                    <span style={{ position: 'relative', display: 'inline-flex' }}>
+                      <Btn kind="outline" size="sm" icon="folder" onClick={() => setAssignFor(assignOpen ? null : it.id)}>Assign</Btn>
+                      {assignOpen && (
+                        <AssignPopover projects={projects} onClose={() => setAssignFor(null)}
+                          onPick={(p) => { setAssignFor(null); file(it, p.id) }} />
+                      )}
+                    </span>
+                  )}
 
                   {/* Accept — file into the suggested home (multi → area home) */}
                   {(sp || m) && (
@@ -421,6 +485,7 @@ export function InboxScreen() {
           </div>
         )}
       </div>
+      {holdFor && <HoldSheet project={holdFor} onConfirm={commitHold(holdFor)} onClose={() => setHoldFor(null)} />}
     </div>
   )
 }
