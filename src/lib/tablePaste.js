@@ -1,5 +1,5 @@
-// Turn a copied table (from Excel / Google Sheets / Word / a web page) into
-// structured text — a GFM markdown table for rich editors, or CSV for raw "file"
+// Turn copied content (from Excel / Google Sheets / Word / a web page) into
+// structured text — GFM markdown for rich editors, or CSV for raw "file"
 // artifacts — instead of dumping tab-separated junk that doesn't read as a table
 // and that the AI can't reliably parse.
 //
@@ -8,6 +8,13 @@
 //   - text/plain → tab-separated rows (Excel, Sheets fallback)
 // We prefer HTML (keeps cell structure even with line-wrapped cells), fall back
 // to TSV.
+//
+// IMPORTANT: a pasted *document* is usually prose AND tables, not one bare
+// table. Serializing only the first <table> silently threw away every heading,
+// paragraph and later table in the doc — the AI then reasoned over a fragment.
+// So the HTML path walks the whole document in order (see htmlToText) and only
+// the tables inside it become markdown. Getting everything across matters more
+// than formatting it prettily.
 
 // --- clipboard → normalized rows -------------------------------------------
 
@@ -21,31 +28,104 @@ export function clipboardRows(e) {
   if (html && /<table[\s>]/i.test(html)) rows = parseHtmlTable(html)
   if (!rows) rows = parseTsv(cd.getData('text/plain'))
   if (!rows || !rows.length) return null
-  const cols = Math.max(...rows.map((r) => r.length))
-  if (cols < 2) return null // single column isn't worth a table
-  return rows.map((r) => {
-    const c = r.slice()
-    while (c.length < cols) c.push('')
-    return c
-  })
+  if (Math.max(...rows.map((r) => r.length)) < 2) return null // single column isn't worth a table
+  return rectangular(rows)
 }
 
 function parseHtmlTable(html) {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html')
     const table = doc.querySelector('table')
-    if (!table) return null
-    const rows = Array.from(table.querySelectorAll('tr'))
-      .map((tr) =>
-        Array.from(tr.querySelectorAll('th,td')).map((c) =>
-          (c.textContent || '').replace(/\s+/g, ' ').trim()
-        )
-      )
-      .filter((r) => r.length)
-    return rows.length ? rows : null
+    return table ? tableRows(table) : null
   } catch {
     return null
   }
+}
+
+// Rows of THIS table only — a nested table's <tr>s belong to the inner table and
+// would otherwise be hoisted into the outer one by querySelectorAll.
+function tableRows(table) {
+  const rows = Array.from(table.querySelectorAll('tr'))
+    .filter((tr) => tr.closest('table') === table)
+    .map((tr) =>
+      Array.from(tr.querySelectorAll('th,td'))
+        .filter((c) => c.closest('table') === table)
+        .map((c) => (c.textContent || '').replace(/\s+/g, ' ').trim())
+    )
+    .filter((r) => r.length)
+  return rows.length ? rows : null
+}
+
+// --- clipboard HTML → whole-document text -----------------------------------
+
+const BLOCK = /^(P|DIV|SECTION|ARTICLE|HEADER|FOOTER|MAIN|ASIDE|NAV|BLOCKQUOTE|UL|OL|DL|DT|DD|FIGURE|FIGCAPTION|ADDRESS|FORM|CAPTION)$/
+
+// Serialize a clipboard HTML fragment to plain text in document order, turning
+// each table into a GFM markdown table and leaving everything else as lines.
+// Deliberately lossy on styling — the point is that no content goes missing.
+function htmlToText(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.querySelectorAll('script,style,noscript,meta,link,title').forEach((n) => n.remove())
+  const out = []
+  serialize(doc.body, out)
+  return tidy(out.join(''))
+}
+
+function serialize(node, out) {
+  if (node.nodeType === 3) { out.push((node.nodeValue || '').replace(/\s+/g, ' ')); return }
+  if (node.nodeType !== 1) return
+  const tag = node.tagName
+
+  if (tag === 'TABLE') {
+    const rows = tableRows(node)
+    const md = rows ? rowsToMarkdown(rectangular(rows)) : (node.textContent || '').trim()
+    if (md) out.push('\n\n' + md + '\n\n')
+    return
+  }
+  if (tag === 'BR') { out.push('\n'); return }
+  if (tag === 'HR') { out.push('\n\n---\n\n'); return }
+  if (tag === 'PRE') {
+    const code = (node.textContent || '').replace(/\s+$/, '')
+    if (code) out.push('\n\n```\n' + code + '\n```\n\n')
+    return
+  }
+  if (/^H[1-6]$/.test(tag)) {
+    out.push('\n\n' + '#'.repeat(Number(tag[1])) + ' ')
+    node.childNodes.forEach((c) => serialize(c, out))
+    out.push('\n\n')
+    return
+  }
+  if (tag === 'LI') {
+    const ol = node.parentElement?.tagName === 'OL'
+    const n = ol ? Array.from(node.parentElement.children).indexOf(node) + 1 : 0
+    out.push('\n' + (ol ? n + '. ' : '- '))
+    node.childNodes.forEach((c) => serialize(c, out))
+    return
+  }
+
+  const block = BLOCK.test(tag)
+  if (block) out.push('\n')
+  node.childNodes.forEach((c) => serialize(c, out))
+  if (block) out.push('\n')
+}
+
+function tidy(s) {
+  return s
+    .replace(/ /g, ' ')       // Word/Outlook pad text with nbsp
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')      // strip the spaces our block markers stranded
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// Pad every row to the widest so the markdown table's columns line up.
+function rectangular(rows) {
+  const cols = Math.max(...rows.map((r) => r.length))
+  return rows.map((r) => {
+    const c = r.slice()
+    while (c.length < cols) c.push('')
+    return c
+  })
 }
 
 function parseTsv(text) {
@@ -79,6 +159,43 @@ export function clipboardToMarkdownTable(e) {
   return rows ? rowsToMarkdown(rows) : null
 }
 
+// What the clipboard should become in a rich editor:
+//   { kind: 'doc',   text }  — an HTML document containing at least one table:
+//                              everything, in order, tables as markdown.
+//   { kind: 'table', text }  — a bare table (Excel/Sheets copy, or HTML that is
+//                              only a table): markdown table, nothing else.
+//   null                     — not tabular; let the browser paste it normally.
+export function clipboardDocument(e) {
+  const cd = e.clipboardData || e.nativeEvent?.clipboardData
+  if (!cd) return null
+  const html = cd.getData('text/html')
+  if (html && /<table[\s>]/i.test(html)) {
+    let text = null
+    try { text = htmlToText(html) } catch { text = null }
+    // Never let a serializer failure eat the paste — fall back to the old
+    // table-only path, and past that to the browser's own plain-text paste.
+    if (!text) {
+      const md = clipboardToMarkdownTable(e)
+      return md ? { kind: 'table', text: md } : null
+    }
+    return { kind: hasProseOutsideTables(text) ? 'doc' : 'table', text }
+  }
+  const rows = parseTsv(cd.getData('text/plain'))
+  if (!rows || Math.max(...rows.map((r) => r.length)) < 2) return null
+  return { kind: 'table', text: rowsToMarkdown(rectangular(rows)) }
+}
+
+// Is there real content outside the markdown tables? Drives whether a capture is
+// a "table" or a document that happens to contain one.
+export function hasProseOutsideTables(text) {
+  const rest = text
+    .split('\n')
+    .filter((l) => !/^\s*\|.*\|\s*$/.test(l))
+    .join(' ')
+    .trim()
+  return rest.length > 40
+}
+
 // --- paste handlers (for controlled textareas) ------------------------------
 
 function insertAtCursor(e, value, onChange, text, blankLines) {
@@ -94,22 +211,31 @@ function insertAtCursor(e, value, onChange, text, blankLines) {
   onChange(before + pre + text + post + after)
 }
 
-// Rich-editor paste: clipboard table → GFM markdown table. Returns true if it ran.
+// Rich-editor paste: clipboard → markdown. A bare table becomes a GFM table; a
+// whole document keeps its prose and gets its tables converted in place.
+// Returns the kind it inserted ('doc' | 'table'), or false to let the paste
+// through untouched — truthy either way for callers that only care that it ran.
 export function handleTablePaste(e, value, onChange) {
-  const md = clipboardToMarkdownTable(e)
-  if (md == null) return false
-  insertAtCursor(e, value, onChange, md, true)
-  return true
+  const res = clipboardDocument(e)
+  if (!res) return false
+  insertAtCursor(e, value, onChange, res.text, true)
+  return res.kind
 }
 
-// Raw "file"/CSV artifact paste: clipboard table → clean CSV so the AI reads it
-// like a spreadsheet and the viewer can render it as a real table. Returns true
-// if it ran (otherwise let the default paste through).
+// Raw "file"/CSV artifact paste: a bare clipboard table → clean CSV so the AI
+// reads it like a spreadsheet and the viewer can render it as a real table.
+// A pasted *document* is not a spreadsheet — CSV-ing it would keep only its
+// table and drop the prose, so it lands whole as text instead. Returns the kind
+// it inserted, or false to let the default paste through.
 export function handleCsvPaste(e, value, onChange) {
-  const rows = clipboardRows(e)
-  if (!rows) return false
-  insertAtCursor(e, value, onChange, rowsToCsv(rows), false)
-  return true
+  const res = clipboardDocument(e)
+  if (!res) return false
+  if (res.kind === 'table') {
+    const rows = clipboardRows(e)
+    if (rows) { insertAtCursor(e, value, onChange, rowsToCsv(rows), false); return 'table' }
+  }
+  insertAtCursor(e, value, onChange, res.text, true)
+  return res.kind
 }
 
 // --- delimited text → rows (for rendering a saved file artifact as a table) --

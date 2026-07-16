@@ -15,6 +15,7 @@ import {
 } from '../kit'
 
 import { handleTablePaste } from '../lib/tablePaste'
+import { classifyCapture, textToBlocks, captureTitle } from '../lib/capture'
 import { composeDeliverable, updateGuide, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
@@ -508,52 +509,13 @@ const CAP_TYPES = [
 ]
 const CAP_LABEL = Object.fromEntries(CAP_TYPES.map(([id, label]) => [id, label]))
 
-// Guess what a capture is — biased AWAY from meeting. The user almost never
-// pastes a real transcript here, so 'transcript' needs a strong multi-speaker
-// signal, and even then the confirm bar lets them override before it files.
-function classifyCapture(text, sawTable) {
-  const s = (text || '').trim(); const lower = s.toLowerCase()
-  if (sawTable || /(^|\n)\s*\|.*\|.*\|/.test(s)) return 'table'
-  if (/(^|\n)\s*(from|to|cc|subject|sent):\s/i.test(s) || /\bon .+ wrote:\s*$/im.test(s)) return 'email'
-  const chatLines = (s.match(/(^|\n)[A-Z][\w .'-]{1,28}\s+\d{1,2}:\d{2}\b/g) || []).length
-  if (chatLines >= 2) return 'teams'
-  const speakerTurns = (s.match(/(^|\n)\s*[A-Z][\w .'-]{1,28}:\s/g) || []).length
-  if (speakerTurns >= 4) return 'transcript'
-  if (/\b(update|status|fyi|heads[- ]up|shipped|blocked|in progress|next steps?|eta)\b/i.test(lower) && s.split(/\s+/).length <= 90) return 'update'
-  return 'note'
-}
-
-// Turn capture text into note blocks, converting any GFM table region (Excel
-// paste is normalized to one by handleTablePaste) into a { table: rows } block
-// so it renders as a real table when the note is opened.
-function textToBlocks(text) {
-  const lines = String(text || '').replace(/\r/g, '').split('\n')
-  const blocks = []; let para = [], tbl = []
-  const flushPara = () => { const p = para.join('\n').trim(); if (p) blocks.push({ p }); para = [] }
-  const flushTbl = () => {
-    if (tbl.length >= 2) {
-      const rows = tbl
-        .map((l) => l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.replace(/\\\|/g, '|').trim()))
-        .filter((r, i) => !(i === 1 && r.every((c) => /^:?-{2,}:?$/.test(c)))) // drop |---| separator
-      blocks.push({ table: rows })
-    } else para.push(...tbl)
-    tbl = []
-  }
-  const isTblRow = (l) => /^\s*\|.*\|\s*$/.test(l)
-  for (const l of lines) {
-    if (isTblRow(l)) { if (!tbl.length) flushPara(); tbl.push(l) }
-    else { if (tbl.length) flushTbl(); para.push(l) }
-  }
-  flushTbl(); flushPara()
-  return blocks.length ? blocks : [{ p: String(text || '').trim() }]
-}
 function Capture({ project, reload }) {
   const { t, f } = useApp()
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
   const [status, setStatus] = useState(null)
-  const [sawTable, setSawTable] = useState(false)
+  const [pasteKind, setPasteKind] = useState(null) // what the last paste was: 'table' | 'doc' | null
   const [pending, setPending] = useState(null) // confirm-type step: the guessed type id
   const fileRef = useRef(null)
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -566,14 +528,16 @@ function Capture({ project, reload }) {
     catch (e) { flash('Upload failed: ' + (e?.message || e)) } finally { setBusy(false) }
   }
   // Excel/Sheets paste → GFM markdown table in the box (so it reads as a table
-  // and stores as one). Falls through to a normal paste otherwise.
-  const onPaste = (e) => { if (handleTablePaste(e, text, setText)) setSawTable(true) }
+  // and stores as one). A pasted document lands whole — prose plus its tables —
+  // and isn't flagged as a table, so it classifies on its prose. Falls through
+  // to a normal paste otherwise.
+  const onPaste = (e) => { const kind = handleTablePaste(e, text, setText); if (kind) setPasteKind(kind) }
 
   // Step 1: don't file blindly — classify and ask the user to confirm the type
   // (so a pasted email/update/table never gets auto-turned into a meeting).
   const submit = () => {
     const s = text.trim(); if (!s || busy) return
-    setPending(classifyCapture(s, sawTable))
+    setPending(classifyCapture(s, pasteKind))
   }
 
   // Step 2: file it as the confirmed type. Only 'transcript' synthesizes a meeting.
@@ -589,11 +553,11 @@ function Capture({ project, reload }) {
         await createNote({ kind: 'meeting', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2,
           transcript: s, summary: synth.summary || '', nextSteps: synth.nextSteps || null, tags: synth.tags || [],
           actions: (synth.actions || []).map((a) => ({ text: a.text, owner: a.owner || 'me', src: 'this meeting' })) })
-        setText(''); setSawTable(false); await reload(); flash('Transcript synthesized. Any action items are landing in Backlog.')
+        setText(''); setPasteKind(null); await reload(); flash('Transcript synthesized. Any action items are landing in Backlog.')
       } else {
-        const ttl = s.split('\n')[0].replace(/^\|/, '').replace(/\|.*$/, '').trim().slice(0, 60) || CAP_LABEL[type] || 'Note'
+        const ttl = captureTitle(s) || CAP_LABEL[type] || 'Note'
         await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: textToBlocks(s), tags: [type] })
-        setText(''); setSawTable(false); await reload(); flash((CAP_LABEL[type] || 'Note') + ' saved to the library.')
+        setText(''); setPasteKind(null); await reload(); flash((CAP_LABEL[type] || 'Note') + ' saved to the library.')
       }
     } catch (e) { flash('Could not file that: ' + (e?.message || e)) } finally { setBusy(false) }
   }
@@ -601,7 +565,7 @@ function Capture({ project, reload }) {
   return <div onDragOver={(e) => { e.preventDefault(); if (!drag) setDrag(true) }} onDragLeave={() => setDrag(false)}
     onDrop={(e) => { e.preventDefault(); setDrag(false); doFiles(e.dataTransfer.files) }}
     style={{ border: '1px solid ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, borderRadius: 12, padding: 12, transition: 'border-color .14s, background .14s' }}>
-    <textarea value={text} onChange={(e) => { setText(e.target.value); if (pending) setPending(null); if (!e.target.value.trim()) setSawTable(false) }} onPaste={onPaste}
+    <textarea value={text} onChange={(e) => { setText(e.target.value); if (pending) setPending(null); if (!e.target.value.trim()) setPasteKind(null) }} onPaste={onPaste}
       onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
       placeholder="Throw something in: paste an email, Teams thread, a table, an update, or jot a note."
       style={{ width: '100%', minHeight: 66, border: 0, outline: 0, resize: 'vertical', background: 'transparent', fontFamily: f.body, fontSize: 14.5, lineHeight: 1.55, color: t.t1 }} />
@@ -828,7 +792,7 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
         : <>
             <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Document title…"
               style={{ width: '100%', marginBottom: 6, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }} />
-            <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} onPaste={(e) => handleCsvPaste(e, docBody, setDocBody)} placeholder="Paste the current document here…"
+            <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} onPaste={(e) => handleTablePaste(e, docBody, setDocBody)} placeholder="Paste the current document here…"
               style={{ width: '100%', minHeight: 110, marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
           </>}
       {/* meeting source */}
