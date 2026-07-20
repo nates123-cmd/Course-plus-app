@@ -351,6 +351,24 @@ export async function createUpdate(projectId, body) {
   return id
 }
 
+// ── reMarkable push queue ──────────────────────────────────────────
+// Course+ is a static site and the tablet sleeps, so there is nothing to push
+// to directly. Queue it instead: the Beelink poller renders the markdown to a
+// reMarkable-sized PDF and Syncthing delivers on the device's next wake.
+// id and user_id both come from column defaults (gen_random_uuid / auth.uid).
+export async function queueRemarkablePush(push = {}) {
+  const row = {
+    title: push.title || 'Untitled',
+    body: push.body || '',
+    dest: push.dest || 'markup',
+    source_app: 'course-plus',
+    source_kind: push.sourceKind ?? null,
+    source_ref: push.sourceRef ?? null,
+  }
+  const { error } = await supabase.from('rm_push_queue').insert(row)
+  if (error) throw error
+}
+
 // ── artifacts ──────────────────────────────────────────────────────
 export async function createArtifact(projectId, art = {}) {
   const id = art.id || uuid()
