@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Markish } from '../kit'
-import { deleteArtifact, updateArtifact } from '../lib/db'
+import { deleteArtifact, updateArtifact, queueRemarkablePush } from '../lib/db'
 import { DocChat } from '../components/DocChat'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
@@ -35,6 +35,7 @@ const ART_KIND = {
   file: { icon: 'file-text', label: 'File' },
   // current compose types
   auto: { icon: 'sparkles', label: 'Document' },
+  brief: { icon: 'book', label: 'Study brief' },
   document: { icon: 'file-text', label: 'Document' },
   message: { icon: 'message', label: 'Message' },
   csv: { icon: 'table', label: 'CSV' },
@@ -57,6 +58,9 @@ export function ArtifactScreen() {
   const [eBody, setEBody] = useState('')
   const [saving, setSaving] = useState(false)
   const [rawView, setRawView] = useState(false)
+  // 'idle' | 'sending' | 'sent'. The device may be asleep, so "sent" means
+  // queued, not delivered — the label says so.
+  const [rmState, setRmState] = useState('idle')
   const a = artifactById(route.id)
 
   if (!a) return <div style={{ padding: 40, fontFamily: f.body, color: t.t3 }}>Artifact not found.</div>
@@ -66,6 +70,20 @@ export function ArtifactScreen() {
   const when = a.at ? new Date(a.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : null
 
   const copy = () => { try { navigator.clipboard.writeText(a.body || '') } catch {} setCopied(true); setTimeout(() => setCopied(false), 1800) }
+  const sendToRm = async () => {
+    if (rmState !== 'idle') return
+    setRmState('sending')
+    try {
+      await queueRemarkablePush({
+        title: a.title || 'Untitled', body: a.body || '',
+        sourceKind: 'artifact', sourceRef: a.id,
+      })
+      setRmState('sent'); setTimeout(() => setRmState('idle'), 3000)
+    } catch (e) {
+      setRmState('idle')
+      window.alert('Could not queue for reMarkable: ' + (e?.message || e))
+    }
+  }
   const del = async () => {
     if (!window.confirm(`Delete “${a.title || 'this artifact'}”? This can’t be undone.`)) return
     try { await deleteArtifact(a.id); await reload(); go(proj ? { screen: 'project', id: a.project } : { screen: 'overview' }) }
@@ -108,6 +126,12 @@ export function ArtifactScreen() {
             </>
           : <>
               <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setChatOpen(true)}>Ask {aiName}</Btn>
+              <Btn kind="outline" size="sm"
+                icon={rmState === 'sent' ? 'check' : rmState === 'sending' ? 'loader-2' : 'device-tablet'}
+                title="Render to a reMarkable-sized PDF and deliver it to the tablet"
+                onClick={rmState === 'idle' ? sendToRm : undefined}>
+                {rmState === 'sent' ? 'Queued' : rmState === 'sending' ? 'Sending…' : 'reMarkable'}
+              </Btn>
               <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
               <Btn kind="outline" size="sm" icon={copied ? 'check' : 'copy'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Btn>
               <IconBtn n="trash" s={17} title="Delete" onClick={del} />

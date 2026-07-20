@@ -341,6 +341,7 @@ export const TOPICS = ['novation', 'pricing', 'arm', 'proposal', 'review']
 export const COMPOSE_TYPES = [
   { id: 'auto', icon: 'sparkles', name: 'Auto', desc: 'Claude picks the best format' },
   { id: 'document', icon: 'file-text', name: 'Document', desc: 'Clean written document' },
+  { id: 'brief', icon: 'book', name: 'Study brief', desc: 'Long-form brief to read on the reMarkable' },
   { id: 'message', icon: 'message', name: 'Message', desc: 'Email or Teams, in your voice' },
   { id: 'csv', icon: 'table', name: 'CSV', desc: 'Pipe-separated table ( | )' },
   { id: 'copilot', icon: 'prompt', name: 'Copilot prompt', desc: 'Ready-to-paste M365 Copilot prompt' },

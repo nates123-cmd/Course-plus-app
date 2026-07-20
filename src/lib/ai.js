@@ -78,6 +78,19 @@ export async function briefingFor(projectName, notes) {
 const TYPE_BRIEF = {
   auto: 'the single most useful deliverable for this material — choose the best format yourself (document, table, list, email, etc.)',
   document: 'a clean, well-structured written document',
+  brief: 'a long-form STUDY BRIEF to be read away from a screen, on paper, with a pen. '
+    + 'Not a status report: explain what this thing actually is, how to think about it, and where the leverage sits. '
+    + 'Assume the reader owns the work but is buried in the detail and needs the shape of it. '
+    + 'Open by establishing what the thing is and why it exists. Then give an explicit mental model or framing for holding it in the head. '
+    + 'Then the detail, organized by that framing rather than by source document. '
+    + 'Name the open questions, the tensions, and anything unowned — those matter more than the parts that are going fine. '
+    + 'Close with a short ordered list of what to actually do next. '
+    + 'Be specific and use real names, real numbers and real dates from the material; a vague brief is useless. '
+    + 'Say plainly when something is unresolved rather than papering over it. '
+    + 'FORMAT (this matters, it gets typeset for e-ink): use ## and ### headings, '
+    + '**bold** on key terms and on the lead-in phrase of a paragraph that makes a distinct point, '
+    + '> blockquotes for direct quotes worth preserving verbatim, and - bullets only for genuinely list-shaped content. '
+    + 'Write in full paragraphs, not fragments. NO tables and NO em dashes',
   message: 'a ready-to-send message - either an email or a Teams/chat message as the instructions imply - that is concise, natural, and written in Nate\'s own voice (see the WRITING VOICE brief below). Lead with the point, keep it skimmable.',
   csv: 'a CSV table whose columns are ALWAYS separated by the pipe character "|" (never commas). First line is the header row, then one record per line. Output raw pipe-delimited text only — no markdown table syntax, no code fences, no commentary',
   copilot: 'a single ready-to-paste Microsoft 365 Copilot prompt that, given this context, will generate the intended deliverable inside Office (Word / Excel / PowerPoint / Outlook). Output ONLY the prompt text the user would paste into Copilot',
@@ -121,7 +134,9 @@ export async function composeDeliverable(typeId, instructions, sourceLabel, note
   const ctx = contextText && contextText.trim()
   const scopeWord = scope === 'pillar' ? 'pillar / area' : 'project'
   // Escalate to the heavy model for big inputs OR whenever the whole pillar is in scope.
-  const big = (corpus.length + (ctx ? ctx.length : 0)) > 12000 || notes.length > 6 || scope === 'pillar'
+  // A study brief always earns it: it is long-form synthesis, not a quick reformat.
+  const big = (corpus.length + (ctx ? ctx.length : 0)) > 12000 || notes.length > 6
+    || scope === 'pillar' || typeId === 'brief'
   const model = pickModel(big ? 'heavy' : 'light')
   const system =
     'You compose clean, paste-ready business deliverables. Work from the FULL source material ' +
