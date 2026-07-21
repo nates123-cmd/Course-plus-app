@@ -3,11 +3,28 @@
 // a full markdown string (headings, tables, indent — things the legacy block
 // shape can't express). blocksToText flattens either to a markdown string.
 const OL_LINE = /^\d+[.)]\s+/ // "1. " or "1) "
+
+// A legacy { table: rows } block back to a GFM table (first row = header). A
+// cell's own "|" would end the cell early, so escape it; newlines inside a cell
+// become <br> because a markdown table row cannot span lines.
+const cell = (v) => String(v ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>').trim()
+const tableToMd = (rows) => {
+  if (!rows || !rows.length) return ''
+  const width = rows.reduce((n, r) => Math.max(n, (r || []).length), 0)
+  if (!width) return ''
+  const line = (r) => '| ' + Array.from({ length: width }, (_, i) => cell((r || [])[i])).join(' | ') + ' |'
+  const [head, ...body] = rows
+  return [line(head), '| ' + Array(width).fill('---').join(' | ') + ' |', ...body.map(line)].join('\n')
+}
+
 export const blocksToText = (blocks = []) => blocks.map((b) => {
   if (b.md != null) return b.md
   if (b.p) return b.p
   if (b.ul) return b.ul.map((i) => '- ' + i).join('\n')
   if (b.ol) return b.ol.map((i, n) => (n + 1) + '. ' + i).join('\n')
+  // Without this a legacy table block flattened to '' — the note read as empty
+  // and an edit+save would have written that emptiness back over the data.
+  if (b.table) return tableToMd(b.table)
   if (b.links) return b.links.map((l) => `[[${l}]]`).join(' ')
   return ''
 }).join('\n\n')

@@ -167,24 +167,12 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
    900px mobile breakpoint. Kills focus-zoom across every input/textarea/select. */
 @media (max-width: 900px) {
   input, textarea, select { font-size: 16px !important; }
-  /* The MD editor is a transparent <textarea> caret-layer over a visible <pre>
-     render-layer. The rule above bumps ONLY the textarea to 16px, leaving the
-     <pre> at 14px → the caret advances on 16px metrics while text renders at
-     14px, so the caret drifts ahead of the text ("5-6 spaces in front"). Bump
-     BOTH layers together so they stay aligned (iOS still won't focus-zoom).
-     Prefixed with .w-md-editor to outrank the library's own
-     `.w-md-editor-text-pre > code { font-size:14px !important }`: same
-     specificity + both !important means SOURCE ORDER decides, and the lib CSS
-     is lazy-loaded AFTER styles.css so it'd otherwise win and keep <pre> at
-     14px while the textarea sits at 16px → caret drifts. The extra class makes
-     these rules higher-specificity, so they win regardless of load order. */
-  .w-md-editor .w-md-editor-text,
-  .w-md-editor .w-md-editor-text-pre,
-  .w-md-editor .w-md-editor-text-pre > code,
-  .w-md-editor .w-md-editor-text-input {
-    font-size: 16px !important;
-    line-height: 22px !important;
-  }
+  /* The note editor is a contenteditable, not an <input>, so the rule above
+     misses it — bump it separately or iOS zooms the page on focus. (The old
+     caret-drift hack for the markdown-source editor's textarea/<pre> layers
+     died with that editor; TipTap renders one layer, so there is no second
+     layer to keep in sync.) */
+  .tt-content { font-size: 16px !important; }
 }
 .auth-btn {
   margin-top: 4px;
@@ -227,3 +215,64 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 .md-body ol { list-style: decimal; }
 .md-body ol ol { list-style: lower-alpha; }
 .md-body ol ol ol { list-style: lower-roman; }
+
+/* ── Note editor (TipTap) ──────────────────────────────────────
+   The editing surface should read like the finished note, so these mirror the
+   .md-body reading styles above. Everything is a theme var so light/dark and
+   the per-app accent come along for free. */
+.tt-content {
+  outline: 0;
+  padding: 14px 16px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--t1);
+  min-height: 100%;
+}
+.tt-content > * + * { margin-top: 10px; }
+.tt-content p { margin: 0; }
+.tt-content h1 { font-size: 20px; font-weight: 700; margin: 18px 0 0; }
+.tt-content h2 { font-size: 17px; font-weight: 700; margin: 16px 0 0; }
+.tt-content h3 { font-size: 15px; font-weight: 700; margin: 14px 0 0; }
+.tt-content ul, .tt-content ol { padding-left: 24px; margin: 0; }
+.tt-content li { margin: 3px 0; }
+.tt-content li > p { margin: 0; }
+/* Nested levels change marker shape so depth is readable at a glance. */
+.tt-content ul { list-style: disc; }
+.tt-content ul ul { list-style: circle; }
+.tt-content ul ul ul { list-style: square; }
+.tt-content ol { list-style: decimal; }
+.tt-content ol ol { list-style: lower-alpha; }
+.tt-content ol ol ol { list-style: lower-roman; }
+.tt-content ul[data-type='taskList'] { list-style: none; padding-left: 4px; }
+.tt-content ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 8px; }
+.tt-content ul[data-type='taskList'] li > label { margin-top: 2px; }
+.tt-content ul[data-type='taskList'] li > div { flex: 1; }
+.tt-content blockquote {
+  margin: 0; padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--line2); color: var(--t2); font-style: italic;
+}
+.tt-content pre {
+  background: var(--sel); border: 1px solid var(--line); border-radius: 9px;
+  padding: 11px 13px; overflow-x: auto;
+  font-family: ui-monospace, monospace; font-size: 12.5px;
+}
+.tt-content code { font-family: ui-monospace, monospace; font-size: 12.5px; }
+.tt-content :not(pre) > code { background: var(--sel); border-radius: 5px; padding: 1px 5px; }
+.tt-content a { color: var(--accent); text-decoration: underline; }
+.tt-content hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+/* Wide pasted tables must scroll inside the editor, never widen the page. */
+.tt-content table {
+  border-collapse: collapse; width: 100%; table-layout: fixed; margin: 0;
+  font-size: 13.5px;
+}
+.tt-content table td, .tt-content table th {
+  border: 1px solid var(--line2); padding: 6px 9px; vertical-align: top;
+  min-width: 90px; position: relative;
+}
+.tt-content table th { background: var(--sel); font-weight: 700; color: var(--t2); text-align: left; }
+.tt-content .tableWrapper { overflow-x: auto; }
+.tt-content .selectedCell::after {
+  content: ''; position: absolute; inset: 0; background: var(--selection); pointer-events: none;
+}
+.tt-content .ProseMirror-gapcursor + * { caret-color: var(--t1); }
