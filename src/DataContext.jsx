@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { loadAll, seedIfEmpty, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
 import { blocksToText } from './lib/blocks'
 import { holdView } from './kit'
+import { seriesForTitle } from './lib/seriesAgenda'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'On hold: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
@@ -262,6 +263,9 @@ export function DataProvider({ children }) {
     const openThreadsForSeries = (id) => instancesForSeries(id)
       .filter((n) => n.nextSteps && n.nextSteps.trim())
       .map((n) => ({ noteId: n.id, title: n.title, date: n.date, text: n.nextSteps.trim() }))
+    // The series that owns a calendar block's title — how a meeting opened from
+    // the Agenda (or the imminent-meeting popup) finds its series.
+    const seriesForMeetingTitle = (title) => seriesForTitle(series, title)
     // Still-open tasks that were born in one of this series' meetings — the
     // actions[] that already materialized into cp_tasks. These are the real
     // carry-forward: they have status, so a done task drops out on its own and
@@ -424,7 +428,7 @@ export function DataProvider({ children }) {
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,
-      seriesById, activeSeries, instancesForSeries, openThreadsForSeries, openTasksForSeries,
+      seriesById, activeSeries, instancesForSeries, openThreadsForSeries, openTasksForSeries, seriesForMeetingTitle,
     }
   }, [areas, notes, inbox, assets, series, status, error, canUndo])
 

@@ -6,6 +6,7 @@
 // Click any block → opens the meeting composer with the title pre-filled.
 import { useEffect, useState } from 'react'
 import { useApp } from '../ctx'
+import { useData } from '../DataContext'
 import { supabase } from '../lib/supabase'
 import { Icon, Card, TODAY, MONTHS } from '../kit'
 
@@ -74,8 +75,8 @@ function groupByDay(blocks) {
   return [...map.keys()].sort().map((iso) => ({ iso, blocks: map.get(iso) }))
 }
 
-function BlockRow({ block, onOpen, onDelete }) {
-  const { t, f } = useApp()
+function BlockRow({ block, series, onOpen, onDelete }) {
+  const { t, f, go } = useApp()
   const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
   const badge =
@@ -97,6 +98,12 @@ function BlockRow({ block, onOpen, onDelete }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1 }}>{block.title}</div>
+        {/* This block belongs to a series, so starting it here carries the
+            standing agenda and the open items forward. Say so. */}
+        {series && <span onClick={(e) => { e.stopPropagation(); go({ screen: 'series', id: series.id }) }}
+          title="Part of a recurring series — starting it here files the meeting there"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent }}>
+          <Icon n="repeat" s={12} c={t.accent} />{series.name}</span>}
       </div>
       <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />
       <span style={{ flex: 'none', fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t2,
@@ -116,7 +123,7 @@ function BlockRow({ block, onOpen, onDelete }) {
   )
 }
 
-function DaySection({ iso, blocks, onOpen, onDelete }) {
+function DaySection({ iso, blocks, seriesFor, onOpen, onDelete }) {
   const { t, f } = useApp()
   const m = dayMeta(iso)
   return (
@@ -130,7 +137,7 @@ function DaySection({ iso, blocks, onOpen, onDelete }) {
         </span>
       </div>
       <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-        {blocks.map((b) => <BlockRow key={b.id} block={b} onOpen={onOpen} onDelete={onDelete} />)}
+        {blocks.map((b) => <BlockRow key={b.id} block={b} series={seriesFor(b)} onOpen={onOpen} onDelete={onDelete} />)}
       </Card>
     </div>
   )
@@ -138,6 +145,7 @@ function DaySection({ iso, blocks, onOpen, onDelete }) {
 
 export function AgendaScreen() {
   const { t, f, go } = useApp()
+  const { seriesForMeetingTitle } = useData()
   const [blocks, setBlocks] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
@@ -217,7 +225,9 @@ export function AgendaScreen() {
       )}
 
       {status === 'ready' && days.map((d) => (
-        <DaySection key={d.iso} iso={d.iso} blocks={d.blocks} onOpen={openMeeting} onDelete={deleteBlock} />
+        <DaySection key={d.iso} iso={d.iso} blocks={d.blocks}
+          seriesFor={(b) => (b.type === 'meeting' ? seriesForMeetingTitle(b.title) : null)}
+          onOpen={openMeeting} onDelete={deleteBlock} />
       ))}
     </div>
   )

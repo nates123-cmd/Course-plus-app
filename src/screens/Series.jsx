@@ -3,16 +3,53 @@
 // attendees/links, rolls up open next-steps across instances, and offers AI prep
 // for the next meeting + cross-instance synthesis (the arc, open threads,
 // commitments). New meetings launch the composer pre-filled from the defaults.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, IconBtn, Card, Label, Person, AreaDot, areaColor, Popover, PopRow, STATUS } from '../kit'
+import { Icon, Btn, IconBtn, Card, Label, Person, AreaDot, areaColor, Popover, PopRow, STATUS, TODAY, MONTHS } from '../kit'
 import { createSeries, updateSeries, deleteSeries, updateNote } from '../lib/db'
 import { prepFromSeries, synthesizeSeries, askAcrossSeries } from '../lib/ai'
+import { buildSeriesAgenda, titlesForSeries, normalizeTitle } from '../lib/seriesAgenda'
+import { supabase } from '../lib/supabase'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
 
 const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
+
+// ── the real recurrence: this user's calendar ───────────────────────
+// placed_blocks is written by the Today app's ical ingest and read by the
+// Agenda screen. A series binds to it BY TITLE (see lib/seriesAgenda) because
+// Today regenerates the rows, so block ids aren't stable — the same reason
+// cp_tasks.meeting_id stores a title.
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const fmtHour = (h) => {
+  const hr = Math.floor(h), m = String(Math.round((h - hr) * 60)).padStart(2, '0')
+  return `${hr > 12 ? hr - 12 : hr === 0 ? 12 : hr}:${m}${hr < 12 ? 'a' : 'p'}`
+}
+const fmtWhen = (b) => {
+  const [y, m, d] = (b.date || '').split('-').map(Number)
+  if (!y) return ''
+  return `${MONTHS[m - 1]} ${d} · ${fmtHour(b.hour)}`
+}
+function useUpcomingMeetings(days = 42) {
+  const [blocks, setBlocks] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    const start = new Date(TODAY.y, TODAY.m, TODAY.d)
+    const end = new Date(TODAY.y, TODAY.m, TODAY.d + days)
+    supabase.from('placed_blocks').select('*').eq('type', 'meeting')
+      .gte('date', isoLocal(start)).lte('date', isoLocal(end))
+      .order('date', { ascending: true }).order('hour', { ascending: true })
+      .then(({ data, error }) => {
+        // A calendar read failing must never break the series screen — it only
+        // costs the "next meeting" line and the title suggestions.
+        if (cancelled || error) return
+        setBlocks((data || []).map((r) => ({ id: r.id, date: r.date, hour: Number(r.hour), title: (r.title || '').trim() })))
+      })
+    return () => { cancelled = true }
+  }, [days])
+  return blocks
+}
 
 export function SeriesScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
@@ -39,6 +76,11 @@ export function SeriesScreen() {
   const [synBusy, setSynBusy] = useState(false)
   const [err, setErr] = useState(null)
 
+  const [calTitles, setCalTitles] = useState([])
+  const [calOpen, setCalOpen] = useState(false)
+  const [calDraft, setCalDraft] = useState('')
+  const upcoming = useUpcomingMeetings()
+
   const [pickOpen, setPickOpen] = useState(false)
   const [pickSel, setPickSel] = useState(() => new Set())
   const [pickQ, setPickQ] = useState('')
@@ -51,11 +93,20 @@ export function SeriesScreen() {
   const instances = instancesForSeries(s.id)
   const openThreads = openThreadsForSeries(s.id)
   const openTasks = openTasksForSeries(s.id)
+  // The calendar side of this series: its own upcoming blocks, and the distinct
+  // meeting titles on the calendar that could be bound to it.
+  const myTitles = titlesForSeries(s)
+  const mine = upcoming.filter((b) => myTitles.has(normalizeTitle(b.title)))
+  const nextBlock = mine[0] || null
+  const suggestTitles = [...new Map(upcoming
+    .filter((b) => b.title && !myTitles.has(normalizeTitle(b.title)))
+    .map((b) => [normalizeTitle(b.title), b.title])).values()]
   const pickerProjects = [...allProjects()].sort((a, b) => (STATUS_RANK[a.status] ?? 5) - (STATUS_RANK[b.status] ?? 5))
 
   const startEdit = () => {
     setName(s.name || ''); setCadence(s.cadence || ''); setStand(s.standingContext || ''); setTpl(s.standingAgenda || '')
     setPeople(s.people || []); setEProject(s.project || null); setEProjects(s.projects || [])
+    setCalTitles(s.calendarTitles || []); setCalDraft('')
     setEditing(true)
   }
   const addPerson = () => { const nm = personDraft.trim(); setPersonDraft(''); if (nm && !people.includes(nm)) setPeople([...people, nm]) }
@@ -67,7 +118,7 @@ export function SeriesScreen() {
       const linked = [...new Set([eProject, ...eProjects].filter(Boolean))]
       await updateSeries(s.id, {
         name: name.trim() || 'Untitled series', cadence: cadence.trim() || null,
-        standingContext: stand, standingAgenda: tpl, people, project: eProject || null,
+        standingContext: stand, standingAgenda: tpl, calendarTitles: calTitles, people, project: eProject || null,
         area: eProject ? (areaOfProject(eProject)?.id || null) : (s.area || null),
         projects: linked,
       })
@@ -100,22 +151,13 @@ export function SeriesScreen() {
       setSyn(r)
     } catch (e) { setErr(e) } finally { setSynBusy(false) }
   }
-  // What the composer opens with. Three layers, all no-AI except the last:
-  //   1. the standing agenda — the checklist you always walk, verbatim
-  //   2. still-open tasks born in earlier meetings of THIS series
-  //   3. the AI prep if you generated one, else the raw next-steps rollup
-  // Any layer that's empty is skipped, so a bare series still behaves as before.
-  const buildAgenda = () => {
-    const parts = []
-    if (s.standingAgenda && s.standingAgenda.trim()) parts.push(s.standingAgenda.trim())
-    if (openTasks.length) parts.push('## Open from earlier meetings\n' +
-      openTasks.map((tk) => `- [ ] ${tk.label}${tk.projectName ? ` _(${tk.projectName})_` : ''}`).join('\n'))
-    if (prep && prep.trim()) parts.push('## Prep\n' + prep.trim())
-    else if (openThreads.length) parts.push('## Carried over\n' +
-      openThreads.map((o) => `From ${o.date || 'last time'}:\n${o.text}`).join('\n\n'))
-    return parts.join('\n\n')
-  }
-  const newMeeting = () => go({ screen: 'meeting', series: s.id, agenda: buildAgenda() })
+  // Composition of the pre-fill lives in lib/seriesAgenda so the composer builds
+  // the identical agenda when a meeting is opened from the calendar instead.
+  const newMeeting = () => go({
+    screen: 'meeting', series: s.id,
+    title: nextBlock?.title || undefined,
+    agenda: buildSeriesAgenda({ series: s, openTasks, openThreads, prep }),
+  })
 
   // Existing meeting notes not already in THIS series — candidates to attach.
   const candidates = notes
@@ -210,6 +252,9 @@ export function SeriesScreen() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>{instances.length} meeting{instances.length === 1 ? '' : 's'}</span>
       {s.cadence && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 7, padding: '2px 9px' }}>{s.cadence}</span>}
+      {nextBlock && <span onClick={() => go({ screen: 'agenda' })} title="On your calendar"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
+        <Icon n="calendar" s={12} c={t.accent} />Next {fmtWhen(nextBlock)}</span>}
       {defProj && <span onClick={() => go({ screen: 'project', id: defProj.id })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, color: t.t2, cursor: 'pointer' }}>
         · <AreaDot areaId={defProj.area} s={6} />{defProj.name}</span>}
       {!editing && (s.people || []).map((p) => <Person key={p} size="sm">{p}</Person>)}
@@ -221,6 +266,35 @@ export function SeriesScreen() {
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Cadence</span>
         <input value={cadence} onChange={(e) => setCadence(e.target.value)} placeholder="weekly, biweekly…"
           style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 180 }} />
+      </div>
+      {/* calendar binding — the series' link to the REAL recurring meeting */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9, flexWrap: 'wrap' }}>
+          <Label style={{ margin: 0 }}>On the calendar</Label>
+          <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>opening this meeting from the Agenda files it here</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          {calTitles.map((ct) => <span key={ct} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+            <Icon n="calendar" s={13} c={t.t3} />{ct}
+            <span onClick={() => setCalTitles(calTitles.filter((x) => x !== ct))} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span>)}
+          <span style={{ position: 'relative' }}>
+            <span onClick={() => setCalOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+              <Icon n="plus" s={13} />Link a calendar meeting</span>
+            {calOpen && <Popover onClose={() => setCalOpen(false)} width={280} maxHeight={300}>
+              {suggestTitles.length === 0
+                ? <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No other meetings on the next 6 weeks of your calendar.</div>
+                : suggestTitles.filter((ct) => !calTitles.includes(ct)).map((ct) => <PopRow key={ct} icon="calendar" label={ct}
+                    onClick={() => { setCalTitles([...calTitles, ct]); setCalOpen(false) }} />)}
+            </Popover>}
+          </span>
+          <input value={calDraft} onChange={(e) => setCalDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = calDraft.trim(); setCalDraft(''); if (v && !calTitles.includes(v)) setCalTitles([...calTitles, v]) } }}
+            placeholder="or type the exact title…"
+            style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 190 }} />
+        </div>
+        <span style={{ display: 'block', fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 8 }}>
+          The series name itself always matches, so a series named exactly like the calendar block needs nothing here.
+        </span>
       </div>
       {/* default project */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -282,6 +356,17 @@ export function SeriesScreen() {
     {err && <div style={{ marginTop: 14, fontFamily: f.ui, fontSize: 12.5, color: t.risk }}>{String(err?.message || err)}</div>}
 
     {!editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* calendar reconciliation — a series nobody linked stays a parallel
+          universe: meetings started from the Agenda never reach it. */}
+      {!nextBlock && upcoming.length > 0 && <Card style={{ ...cardP, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Icon n="calendar-off" s={17} c={t.t3} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Not linked to your calendar</div>
+          <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>Link the recurring block and starting it from the Agenda files the meeting here, with this agenda.</span>
+        </div>
+        <Btn kind="outline" size="sm" icon="link" onClick={startEdit}>Link it</Btn>
+      </Card>}
+
       {/* standing agenda — what every instance opens with */}
       {s.standingAgenda && s.standingAgenda.trim()
         ? <Card style={cardP}>

@@ -26,6 +26,7 @@ function mapSeries(r) {
     id: r.id, name: r.name, people: r.people || [], project: r.project || null, area: r.area || null,
     projects: r.projects || [], standingContext: r.standing_context || '',
     standingAgenda: r.standing_agenda || '', cadence: r.cadence || '',
+    calendarTitles: r.calendar_titles || [],
     archived: !!r.archived, created: r.created, updated: r.updated, updatedAt: r.updated_at,
   }
 }
@@ -246,7 +247,7 @@ function seriesRow(s) {
     id: s.id, name: s.name || 'Untitled series', people: s.people || [],
     project: s.project ?? null, area: s.area ?? null, projects: s.projects || [],
     standing_context: s.standingContext ?? null, standing_agenda: s.standingAgenda ?? null,
-    cadence: s.cadence ?? null,
+    calendar_titles: s.calendarTitles || [], cadence: s.cadence ?? null,
     archived: !!s.archived, created: s.created ?? null, updated: s.updated ?? 'now',
   }
 }
@@ -259,7 +260,7 @@ export async function createSeries(series = {}) {
 const SERIES_COLS = {
   name: 'name', people: 'people', project: 'project', area: 'area', projects: 'projects',
   standingContext: 'standing_context', standingAgenda: 'standing_agenda',
-  cadence: 'cadence', archived: 'archived',
+  calendarTitles: 'calendar_titles', cadence: 'cadence', archived: 'archived',
 }
 export async function updateSeries(id, patch) {
   const row = { updated: patch.updated ?? 'now', updated_at: new Date().toISOString() }

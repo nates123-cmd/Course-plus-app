@@ -15,6 +15,7 @@ import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 import { MdEditor } from '../components/MdEditor'
+import { buildSeriesAgenda } from '../lib/seriesAgenda'
 
 // Voice enrollment — records ~10s of just the user, hands the clip to the
 // diarizer to store a voiceprint (on-device; never uploaded). Used to label
@@ -198,7 +199,8 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks, patchTask } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks, patchTask,
+    seriesForMeetingTitle, openTasksForSeries, openThreadsForSeries } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
   // Pickers prioritize active → on-hold → ideas (archived last).
@@ -276,6 +278,34 @@ export function RecordScreen() {
     const clean = route.title
     const draftEmpty = !notes && !transcriptText && actions.length === 0
     if (clean !== title && (draftEmpty || !title)) rec.setMeta({ title: clean })
+
+    // Reconcile the calendar with the series. A recurring meeting opened from
+    // the Agenda or the imminent-meeting popup arrives as a bare title, so
+    // without this it would save with no series_id — no standing agenda, no
+    // carry-forward, and invisible on the series page. Bind it here, at the one
+    // point every launch path passes through, rather than in each launcher.
+    // Only on an untouched draft, and never over an explicit series binding.
+    // route.series means a launcher already bound this deliberately (and its
+    // agenda may carry AI prep) — rec.seriesId is still unset on this first
+    // commit, so check the route, not just state, or we'd overwrite it.
+    if (!route.series && !rec.seriesId && draftEmpty) {
+      const s = seriesForMeetingTitle(clean)
+      if (s) {
+        const patch = { seriesId: s.id }
+        if (s.project) patch.home = s.project
+        else if (s.area) patch.pillar = s.area
+        if ((s.projects || []).length) patch.projects = s.projects
+        if ((s.people || []).length) patch.people = s.people
+        // Don't overwrite an agenda the user already has in front of them.
+        if (!agenda) {
+          const built = buildSeriesAgenda({
+            series: s, openTasks: openTasksForSeries(s.id), openThreads: openThreadsForSeries(s.id),
+          })
+          if (built) patch.agenda = built
+        }
+        rec.setMeta(patch)
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.title])
 
