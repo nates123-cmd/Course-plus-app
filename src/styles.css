@@ -214,3 +214,16 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 
 /* Readable content (note body, AI answers/output) — selectable incl children. */
 .selectable, .selectable * { user-select: text; -webkit-user-select: text; }
+
+/* Nested outline levels. The list styles in RichText are inline (theme tokens),
+   so overriding them for sub-lists needs !important. A nested list sits inside
+   its parent item, so it drops the block spacing a top-level list carries, and
+   the marker changes shape per depth the way an outline should. */
+.md-body :is(ul, ol) :is(ul, ol) { margin: 4px 0 0 !important; }
+.md-body li > p:last-child { margin-bottom: 0 !important; }
+.md-body ul { list-style: disc; }
+.md-body ul ul { list-style: circle; }
+.md-body ul ul ul { list-style: square; }
+.md-body ol { list-style: decimal; }
+.md-body ol ol { list-style: lower-alpha; }
+.md-body ol ol ol { list-style: lower-roman; }

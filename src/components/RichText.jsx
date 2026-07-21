@@ -49,7 +49,7 @@ export function RichText({ text, style }) {
     },
   }
 
-  return <div className="selectable" style={style}>
+  return <div className="selectable md-body" style={style}>
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{wikiToLinks(text)}</ReactMarkdown>
   </div>
 }
