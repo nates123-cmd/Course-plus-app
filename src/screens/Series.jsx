@@ -16,7 +16,7 @@ const STATUS_RANK = { active: 0, sent: 1, 'on-hold': 2, idea: 3, archived: 4 }
 
 export function SeriesScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { seriesById, instancesForSeries, openThreadsForSeries, projectById, areaOfProject, allProjects, notes, reload } = useData()
+  const { seriesById, instancesForSeries, openThreadsForSeries, openTasksForSeries, projectById, areaOfProject, allProjects, notes, reload } = useData()
   if (!route.id) return <SeriesIndex />
   const s = seriesById(route.id)
 
@@ -24,6 +24,7 @@ export function SeriesScreen() {
   const [name, setName] = useState('')
   const [cadence, setCadence] = useState('')
   const [stand, setStand] = useState('')
+  const [tpl, setTpl] = useState('')
   const [people, setPeople] = useState([])
   const [eProject, setEProject] = useState(null)
   const [eProjects, setEProjects] = useState([])
@@ -49,10 +50,11 @@ export function SeriesScreen() {
 
   const instances = instancesForSeries(s.id)
   const openThreads = openThreadsForSeries(s.id)
+  const openTasks = openTasksForSeries(s.id)
   const pickerProjects = [...allProjects()].sort((a, b) => (STATUS_RANK[a.status] ?? 5) - (STATUS_RANK[b.status] ?? 5))
 
   const startEdit = () => {
-    setName(s.name || ''); setCadence(s.cadence || ''); setStand(s.standingContext || '')
+    setName(s.name || ''); setCadence(s.cadence || ''); setStand(s.standingContext || ''); setTpl(s.standingAgenda || '')
     setPeople(s.people || []); setEProject(s.project || null); setEProjects(s.projects || [])
     setEditing(true)
   }
@@ -65,7 +67,7 @@ export function SeriesScreen() {
       const linked = [...new Set([eProject, ...eProjects].filter(Boolean))]
       await updateSeries(s.id, {
         name: name.trim() || 'Untitled series', cadence: cadence.trim() || null,
-        standingContext: stand, people, project: eProject || null,
+        standingContext: stand, standingAgenda: tpl, people, project: eProject || null,
         area: eProject ? (areaOfProject(eProject)?.id || null) : (s.area || null),
         projects: linked,
       })
@@ -84,7 +86,10 @@ export function SeriesScreen() {
   const genPrep = async () => {
     setPrepBusy(true); setErr(null)
     try {
-      const r = await prepFromSeries({ name: s.name, standingContext: s.standingContext, cadence: s.cadence, instances: aiInstances })
+      const r = await prepFromSeries({
+        name: s.name, standingContext: s.standingContext, standingAgenda: s.standingAgenda,
+        cadence: s.cadence, instances: aiInstances, openTasks: openTasks.map((tk) => tk.label),
+      })
       setPrep(r.agenda || '')
     } catch (e) { setErr(e) } finally { setPrepBusy(false) }
   }
@@ -95,11 +100,22 @@ export function SeriesScreen() {
       setSyn(r)
     } catch (e) { setErr(e) } finally { setSynBusy(false) }
   }
-  const newMeeting = () => {
-    const fallback = openThreads.map((o) => `From ${o.date || 'last time'}:\n${o.text}`).join('\n\n')
-    const agenda = (prep && prep.trim()) || fallback || ''
-    go({ screen: 'meeting', series: s.id, agenda })
+  // What the composer opens with. Three layers, all no-AI except the last:
+  //   1. the standing agenda — the checklist you always walk, verbatim
+  //   2. still-open tasks born in earlier meetings of THIS series
+  //   3. the AI prep if you generated one, else the raw next-steps rollup
+  // Any layer that's empty is skipped, so a bare series still behaves as before.
+  const buildAgenda = () => {
+    const parts = []
+    if (s.standingAgenda && s.standingAgenda.trim()) parts.push(s.standingAgenda.trim())
+    if (openTasks.length) parts.push('## Open from earlier meetings\n' +
+      openTasks.map((tk) => `- [ ] ${tk.label}${tk.projectName ? ` _(${tk.projectName})_` : ''}`).join('\n'))
+    if (prep && prep.trim()) parts.push('## Prep\n' + prep.trim())
+    else if (openThreads.length) parts.push('## Carried over\n' +
+      openThreads.map((o) => `From ${o.date || 'last time'}:\n${o.text}`).join('\n\n'))
+    return parts.join('\n\n')
   }
+  const newMeeting = () => go({ screen: 'meeting', series: s.id, agenda: buildAgenda() })
 
   // Existing meeting notes not already in THIS series — candidates to attach.
   const candidates = notes
@@ -249,10 +265,16 @@ export function SeriesScreen() {
             style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 130 }} />
         </div>
       </div>
+      {/* standing agenda — the literal template, not AI fuel */}
+      <div>
+        <Label style={{ marginBottom: 9 }}>Standing agenda</Label>
+        <span style={{ display: 'block', fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginBottom: 8 }}>The checklist you walk every time. Copied into every new meeting as-is — no AI, no rewriting.</span>
+        <MdEditor value={tpl} onChange={setTpl} minHeight={160} />
+      </div>
       {/* standing context */}
       <div>
         <Label style={{ marginBottom: 9 }}>Standing context</Label>
-        <span style={{ display: 'block', fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginBottom: 8 }}>Who they are, the standing agenda, ongoing threads — fed to every prep + synthesis.</span>
+        <span style={{ display: 'block', fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginBottom: 8 }}>Who they are and what matters to them — background fed to every prep + synthesis, not printed into the meeting.</span>
         <MdEditor value={stand} onChange={setStand} minHeight={200} />
       </div>
     </div>}
@@ -260,6 +282,23 @@ export function SeriesScreen() {
     {err && <div style={{ marginTop: 14, fontFamily: f.ui, fontSize: 12.5, color: t.risk }}>{String(err?.message || err)}</div>}
 
     {!editing && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* standing agenda — what every instance opens with */}
+      {s.standingAgenda && s.standingAgenda.trim()
+        ? <Card style={cardP}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Label style={{ margin: 0, flex: 1 }}>Standing agenda</Label>
+              <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>copied into every new meeting</span>
+            </div>
+            <RichText text={s.standingAgenda} />
+          </Card>
+        : <Card style={{ ...cardP, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Label style={{ marginBottom: 4 }}>Standing agenda</Label>
+              <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>The checklist you walk every time. Set one and every new meeting opens with it.</span>
+            </div>
+            <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Set one</Btn>
+          </Card>}
+
       {/* standing context */}
       {s.standingContext && s.standingContext.trim() && <Card style={cardP}>
         <Label style={{ marginBottom: 10 }}>Standing context</Label>
@@ -273,9 +312,21 @@ export function SeriesScreen() {
           <Btn kind="outline" size="sm" icon={prepBusy ? 'loader-2' : 'sparkles'} onClick={() => !prepBusy && genPrep()}>{prepBusy ? 'Thinking…' : prep ? 'Regenerate' : `Draft agenda with ${aiName}`}</Btn>
           <Btn kind="primary" size="sm" icon="plus" onClick={newMeeting}>Start meeting</Btn>
         </div>
-        {prep
-          ? <RichText text={prep} />
-          : <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>Generate a focused agenda from open threads + prior commitments, or start a meeting now (open threads carry forward automatically).</span>}
+        {prep && <RichText text={prep} />}
+        {/* Spell out exactly what "Start meeting" will put in the composer, so the
+            pre-fill is never a surprise. */}
+        <div style={{ marginTop: prep ? 12 : 0, fontFamily: f.ui, fontSize: 12.5, color: t.t2, lineHeight: 1.6 }}>
+          {(() => {
+            const bits = []
+            if (s.standingAgenda && s.standingAgenda.trim()) bits.push('your standing agenda')
+            if (openTasks.length) bits.push(`${openTasks.length} open task${openTasks.length === 1 ? '' : 's'} from earlier meetings`)
+            if (prep && prep.trim()) bits.push('this prep')
+            else if (openThreads.length) bits.push(`next steps from ${openThreads.length} past meeting${openThreads.length === 1 ? '' : 's'}`)
+            return bits.length
+              ? <>Starting a meeting opens the composer with {bits.join(', ')}.</>
+              : <>Nothing to carry forward yet. Set a standing agenda, or draft an agenda with {aiName}.</>
+          })()}
+        </div>
       </Card>
 
       {/* series synthesis */}
@@ -309,6 +360,23 @@ export function SeriesScreen() {
             </div></div>}
         </div>}
       </Card>
+
+      {/* open tasks born in this series — the carry-forward that already has
+          status, so finishing one anywhere drops it from here and from the
+          next meeting's pre-fill. */}
+      {openTasks.length > 0 && <div>
+        <Label style={{ marginBottom: 9 }}>Open from earlier meetings · {openTasks.length}</Label>
+        <Card style={{ padding: '4px 0' }}>
+          {openTasks.map((tk, i) => <div key={tk.id}
+            onClick={() => tk.project && go({ screen: 'project', id: tk.project })}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 16px', borderTop: i ? '1px solid ' + t.line : 'none', cursor: tk.project ? 'pointer' : 'default' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+            <Icon n="circle" s={14} c={t.t3} style={{ marginTop: 2 }} />
+            <span style={{ flex: 1, fontFamily: f.ui, fontSize: 13.5, color: t.t1 }}>{tk.label}</span>
+            {tk.projectName && <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, flex: 'none' }}>{tk.projectName}</span>}
+          </div>)}
+        </Card>
+      </div>}
 
       {/* open threads carry-forward (cheap, no-AI rollup) */}
       {openThreads.length > 0 && <div>

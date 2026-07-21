@@ -262,6 +262,22 @@ export function DataProvider({ children }) {
     const openThreadsForSeries = (id) => instancesForSeries(id)
       .filter((n) => n.nextSteps && n.nextSteps.trim())
       .map((n) => ({ noteId: n.id, title: n.title, date: n.date, text: n.nextSteps.trim() }))
+    // Still-open tasks that were born in one of this series' meetings — the
+    // actions[] that already materialized into cp_tasks. These are the real
+    // carry-forward: they have status, so a done task drops out on its own and
+    // nothing has to be ticked off twice.
+    const openTasksForSeries = (id) => {
+      const fromMeeting = new Set(instancesForSeries(id).map((n) => n.id))
+      if (!fromMeeting.size) return []
+      const out = []
+      for (const a of areas) {
+        for (const tk of a.areaTasks || []) if (!tk.done && fromMeeting.has(tk.srcMeeting)) out.push({ ...tk, projectName: null })
+        for (const p of a.projects) {
+          for (const tk of p.tasks || []) if (!tk.done && fromMeeting.has(tk.srcMeeting)) out.push({ ...tk, projectName: p.name })
+        }
+      }
+      return out
+    }
     const assetsForProject = (id) => assets.filter((a) => a.projectId === id)
     const assetsForNote = (id) => assets.filter((a) => a.noteId === id)
     // Every asset that belongs to a project either directly or via one of its
@@ -408,7 +424,7 @@ export function DataProvider({ children }) {
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,
-      seriesById, activeSeries, instancesForSeries, openThreadsForSeries,
+      seriesById, activeSeries, instancesForSeries, openThreadsForSeries, openTasksForSeries,
     }
   }, [areas, notes, inbox, assets, series, status, error, canUndo])
 

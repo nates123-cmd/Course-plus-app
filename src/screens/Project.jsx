@@ -16,7 +16,7 @@ import {
 
 import { handleTablePaste } from '../lib/tablePaste'
 import { classifyCapture, textToBlocks, captureTitle } from '../lib/capture'
-import { composeDeliverable, updateGuide, synthesizeMeeting } from '../lib/ai'
+import { composeDeliverable, updateGuide, reviseDocument, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
 
@@ -688,6 +688,33 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
   const [meetingId, setMeetingId] = useState(meetings[0]?.id || null)
   const [uInstr, setUInstr] = useState('')
 
+  // Revise an existing artifact: hand off to the artifact screen, which owns the
+  // draft → diff → apply → version-history flow. Nothing is generated here.
+  const openRevise = () => {
+    const art = rows.find((r) => r.id === docArtId)
+    if (!art) { setToast('Pick a document.'); setTimeout(() => setToast(null), 3000); return }
+    setUpdating(false)
+    go({ screen: 'artifact', id: art.id, revise: meetingId || true })
+  }
+
+  // Revise a PASTED document. There's no artifact to write back to, so the
+  // revision lands as a new one.
+  const runRevisePaste = async () => {
+    const mtg = meetings.find((m) => m.id === meetingId)
+    const dTitle = docTitle.trim() || 'Document'
+    if (!docBody.trim() || !mtg) { setToast('Paste a document and pick a meeting.'); setTimeout(() => setToast(null), 3000); return }
+    setUpdating(false); setBusy(true)
+    try {
+      const tx = mtg.transcript || [mtg.summary, (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.join('; ') : (b.ol ? b.ol.join('; ') : ''))).join(' ')].filter(Boolean).join('\n')
+      const noteText = (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n')
+      const { body, usage } = await reviseDocument({ documentTitle: dTitle, document: docBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
+      const cost = usdRough(usage)
+      const id = await createArtifact(project.id, { title: dTitle, artType: 'document', body, provenance: `✦ ${aiName} · revised · from ${mtg.title}${cost ? ' · ' + cost : ''}` })
+      await reload(); setUInstr(''); setDocBody(''); go({ screen: 'artifact', id })
+    } catch (e) { setToast('Couldn’t revise — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
+    finally { setBusy(false) }
+  }
+
   const runUpdate = async () => {
     const art = rows.find((r) => r.id === docArtId)
     const mtg = meetings.find((m) => m.id === meetingId)
@@ -775,7 +802,7 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
         <Icon n="file-diff" s={14} c={t.accent} />
         <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Update doc from a meeting</span>
-        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{aiName} returns what to edit & where — not a rewrite</span>
+        <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{aiName} revises the document — you review the diff before it saves</span>
       </div>
       {/* document source */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -806,8 +833,11 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
       </div>
       <textarea value={uInstr} onChange={(e) => setUInstr(e.target.value)} placeholder="Optional — extra instructions…"
         style={{ width: '100%', minHeight: 42, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: f.body, fontSize: 13, color: t.t1, padding: '8px 10px' }} />
-      <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
-        <Btn kind="primary" size="sm" icon="file-diff" onClick={runUpdate}>Build edit guide</Btn>
+      <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+        <Btn kind="primary" size="sm" icon="wand" onClick={docSrc === 'existing' ? openRevise : runRevisePaste}>Revise the document</Btn>
+        {/* Still here for the disconnected case: editing the real file on a work
+            machine, where a list of find/replace edits beats a rewrite. */}
+        <Btn kind="outline" size="sm" icon="file-diff" title="Produce find/replace instructions to hand-apply elsewhere" onClick={runUpdate}>Edit guide instead</Btn>
         <Btn kind="ghost" size="sm" onClick={() => setUpdating(false)}>Cancel</Btn>
       </div>
     </div>}

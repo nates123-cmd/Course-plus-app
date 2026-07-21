@@ -5,8 +5,9 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, IconBtn, Card, Label, Markish } from '../kit'
-import { deleteArtifact, updateArtifact, queueRemarkablePush } from '../lib/db'
+import { deleteArtifact, updateArtifact, queueRemarkablePush, snapshotArtifact } from '../lib/db'
 import { DocChat } from '../components/DocChat'
+import { DocRevise, DocHistory } from '../components/DocRevise'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
 import { parseDelimited, handleCsvPaste } from '../lib/tablePaste'
@@ -50,9 +51,13 @@ const ART_KIND = {
 
 export function ArtifactScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { artifactById, projectById, reload, projectDigest, areaDigest } = useData()
+  const { artifactById, projectById, reload, projectDigest, areaDigest, ownedNotes, linkedMeetings } = useData()
   const [copied, setCopied] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  // route.revise carries a meeting id when the project screen sends you here to
+  // update this document — the panel opens straight away with it selected.
+  const [reviseOpen, setReviseOpen] = useState(() => !!route.revise)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [eTitle, setETitle] = useState('')
   const [eBody, setEBody] = useState('')
@@ -93,10 +98,25 @@ export function ArtifactScreen() {
   const cancelEdit = () => setEditing(false)
   const saveEdit = async () => {
     setSaving(true)
-    try { await updateArtifact(a.id, { title: eTitle.trim() || a.title || 'Untitled', body: eBody }); await reload(); setEditing(false) }
+    try {
+      // Snapshot before overwriting so a manual edit is as reversible as an AI
+      // revision — but only when the body actually moved, or every no-op save
+      // would pile up junk versions.
+      if ((a.body || '') !== eBody) {
+        await snapshotArtifact(a.id, { title: a.title || '', body: a.body || '', reason: 'manual edit' })
+      }
+      await updateArtifact(a.id, { title: eTitle.trim() || a.title || 'Untitled', body: eBody })
+      await reload(); setEditing(false)
+    }
     catch (e) { window.alert('Could not save: ' + (e?.message || e)) }
     finally { setSaving(false) }
   }
+
+  // Meetings available as a revision source: everything filed under this
+  // project plus meetings that merely reference it.
+  const meetings = a.project
+    ? [...ownedNotes(a.project), ...linkedMeetings(a.project)].filter((n) => n.kind === 'meeting')
+    : []
 
   return <div style={{ maxWidth: 840, margin: '0 auto', padding: isMobile ? '26px 18px 90px' : '30px 36px 90px' }}>
     <div onClick={() => go(proj ? { screen: 'project', id: a.project } : { screen: 'overview' })}
@@ -132,8 +152,10 @@ export function ArtifactScreen() {
                 onClick={rmState === 'idle' ? sendToRm : undefined}>
                 {rmState === 'sent' ? 'Queued' : rmState === 'sending' ? 'Sending…' : 'reMarkable'}
               </Btn>
+              <Btn kind="outline" size="sm" icon="wand" title={`Revise this document with ${aiName} from a meeting or an instruction`} onClick={() => setReviseOpen(true)}>Update</Btn>
               <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
               <Btn kind="outline" size="sm" icon={copied ? 'check' : 'copy'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Btn>
+              <IconBtn n="history" s={17} title="Version history" onClick={() => setHistoryOpen(true)} />
               <IconBtn n="trash" s={17} title="Delete" onClick={del} />
             </>}
       </div>
@@ -168,5 +190,12 @@ export function ArtifactScreen() {
       projectContext={a.project ? projectDigest(a.project) : ''} projectName={proj?.name}
       areaContext={proj?.area ? areaDigest(proj.area) : ''} areaName={proj?.areaName}
       onClose={() => setChatOpen(false)} />}
+
+    {reviseOpen && <DocRevise artifact={a} meetings={meetings}
+      initialMeetingId={typeof route.revise === 'string' ? route.revise : null}
+      onApplied={reload} onClose={() => setReviseOpen(false)} />}
+
+    {historyOpen && <DocHistory artifact={a}
+      onRestored={reload} onClose={() => setHistoryOpen(false)} />}
   </div>
 }

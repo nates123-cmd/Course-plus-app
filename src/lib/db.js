@@ -24,7 +24,8 @@ function mapNote(r) {
 function mapSeries(r) {
   return {
     id: r.id, name: r.name, people: r.people || [], project: r.project || null, area: r.area || null,
-    projects: r.projects || [], standingContext: r.standing_context || '', cadence: r.cadence || '',
+    projects: r.projects || [], standingContext: r.standing_context || '',
+    standingAgenda: r.standing_agenda || '', cadence: r.cadence || '',
     archived: !!r.archived, created: r.created, updated: r.updated, updatedAt: r.updated_at,
   }
 }
@@ -244,7 +245,8 @@ function seriesRow(s) {
   return {
     id: s.id, name: s.name || 'Untitled series', people: s.people || [],
     project: s.project ?? null, area: s.area ?? null, projects: s.projects || [],
-    standing_context: s.standingContext ?? null, cadence: s.cadence ?? null,
+    standing_context: s.standingContext ?? null, standing_agenda: s.standingAgenda ?? null,
+    cadence: s.cadence ?? null,
     archived: !!s.archived, created: s.created ?? null, updated: s.updated ?? 'now',
   }
 }
@@ -256,7 +258,8 @@ export async function createSeries(series = {}) {
 }
 const SERIES_COLS = {
   name: 'name', people: 'people', project: 'project', area: 'area', projects: 'projects',
-  standingContext: 'standing_context', cadence: 'cadence', archived: 'archived',
+  standingContext: 'standing_context', standingAgenda: 'standing_agenda',
+  cadence: 'cadence', archived: 'archived',
 }
 export async function updateSeries(id, patch) {
   const row = { updated: patch.updated ?? 'now', updated_at: new Date().toISOString() }
@@ -386,8 +389,32 @@ export async function updateArtifact(id, patch) {
   if (error) throw error
 }
 export async function deleteArtifact(id) {
+  await supabase.from('cp_artifact_versions').delete().eq('artifact_id', id)
   const { error } = await supabase.from('cp_artifacts').delete().eq('id', id)
   if (error) throw error
+}
+
+// ── artifact version history ───────────────────────────────────────
+// Snapshots of a document taken right BEFORE it is overwritten, so any update
+// (AI revision or manual edit) can be rolled back. Loaded on demand from the
+// artifact screen rather than in loadAll() — full document bodies would bloat
+// every boot for something only read when you open the history.
+function mapArtifactVersion(r) {
+  return { id: r.id, artifactId: r.artifact_id, title: r.title, body: r.body || '', reason: r.reason || '', at: r.created_at }
+}
+export async function listArtifactVersions(artifactId) {
+  const { data, error } = await supabase.from('cp_artifact_versions').select('*')
+    .eq('artifact_id', artifactId).order('created_at', { ascending: false })
+  if (error) throw error
+  return (data || []).map(mapArtifactVersion)
+}
+// Snapshot the CURRENT state of an artifact. Call before writing the new body.
+export async function snapshotArtifact(artifactId, { title = '', body = '', reason = '' } = {}) {
+  const id = uuid()
+  const { error } = await supabase.from('cp_artifact_versions')
+    .insert({ id, artifact_id: artifactId, title, body, reason })
+  if (error) throw error
+  return id
 }
 
 // ── projects ───────────────────────────────────────────────────────

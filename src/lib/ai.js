@@ -190,6 +190,37 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
   return { guide, usage }
 }
 
+// Revise a document in place. Unlike updateGuide (which describes edits for
+// hand-application on a disconnected machine), this returns the FULL rewritten
+// document so the app can swap it in — the prior body is snapshotted first, so
+// the round trip is reversible. Sources are optional and stack: a meeting
+// (transcript + notes) and/or free-text instructions.
+// Returns { body, summary, usage } — summary is a short "what changed" note.
+export async function reviseDocument({ documentTitle = '', document = '', meetingTitle = '', transcript = '', notes = '', instructions = '' } = {}) {
+  const system =
+    'You revise an existing document and return the COMPLETE updated document. ' +
+    'Preserve everything the sources do not touch — same voice, same structure, same formatting, ' +
+    'same headings and ordering. Change only what the sources actually call for; do not " improve" ' +
+    'untouched prose, do not reorganize, do not add commentary or placeholders. ' +
+    'Never drop content just because a source did not mention it. Return strict JSON only.'
+  const parts = [`CURRENT DOCUMENT — "${documentTitle || 'Untitled'}":\n${document || '(empty)'}`]
+  if (notes.trim()) parts.push(`MY NOTES from the meeting (highest priority — these are what I care about):\n${notes.trim()}`)
+  if (transcript.trim()) parts.push(`MEETING TRANSCRIPT — "${meetingTitle || 'meeting'}":\n${transcript.trim()}`)
+  if (instructions.trim()) parts.push(`INSTRUCTIONS: ${instructions.trim()}`)
+  const user = parts.join('\n\n---\n\n') + '\n\n' +
+    'Return ONLY JSON: {"body": string (the complete revised document in markdown, ready to replace ' +
+    'the current one), "summary": string (markdown "- " bullets: what you changed and why, tied to ' +
+    'the source. If nothing needed changing, return the document unchanged and say so here.)}'
+  let usage = null
+  const raw = await claudeComplete(user, { system, model: pickModel('heavy'), max_tokens: 16000, onUsage: (u) => { usage = u } })
+  const j = extractJSON(raw) || {}
+  // A revision that comes back empty would silently erase the document — treat
+  // it as a failure rather than letting the caller write it.
+  const body = typeof j.body === 'string' ? j.body.trim() : ''
+  if (!body) throw new Error('the model did not return a revised document')
+  return { body, summary: (j.summary || '').trim(), usage }
+}
+
 // Synthesize a meeting into exactly three things the user wants: a bullet-point
 // topic summary (for fast orientation), action items, and smart searchable tags.
 // The user's OWN live notes are the highest-signal input — they wrote those down
@@ -287,14 +318,21 @@ function seriesInstanceDigest(instances = [], { withActions = false } = {}) {
 // Prep the NEXT meeting in a series: a suggested agenda built from open loops,
 // follow-ups on prior commitments, and recurring topics. Light model. Returns
 // { agenda } (markdown bullets) to pre-fill the composer agenda.
-export async function prepFromSeries({ name = '', standingContext = '', cadence = '', instances = [] } = {}) {
+export async function prepFromSeries({ name = '', standingContext = '', standingAgenda = '', cadence = '', instances = [], openTasks = [] } = {}) {
   const recent = instances.slice(0, 5)
+  const hasTpl = !!(standingAgenda && standingAgenda.trim())
   const system =
     'You prep the next meeting in a recurring series for Nate (the note-taker, always a participant). ' +
     'From the standing context and prior meetings, produce a focused agenda for the UPCOMING meeting: ' +
     'open loops to close, follow-ups on what was promised, and recurring topics worth checking. ' +
+    (hasTpl
+      ? 'A STANDING AGENDA is provided — it is copied into the meeting separately, so do NOT repeat its items. ' +
+        'Your job is what to raise UNDER it: the specifics this particular meeting needs. '
+      : '') +
     'Be specific and reference what actually happened. Return strict JSON only — no preamble.'
   const parts = [`Recurring meeting: "${name}"${cadence ? ` (${cadence})` : ''}`]
+  if (hasTpl) parts.push(`Standing agenda (already in the meeting — do not repeat):\n${standingAgenda.trim()}`)
+  if (openTasks.length) parts.push(`Still-open commitments from earlier meetings:\n${openTasks.map((x) => '- ' + x).join('\n')}`)
   if (standingContext.trim()) parts.push(`Standing context (who this is / what we always cover):\n${standingContext.trim()}`)
   if (recent.length) parts.push(`Recent meetings (newest first):\n\n${seriesInstanceDigest(recent)}`)
   else parts.push('No prior meetings recorded yet — propose a sensible first-meeting agenda from the standing context.')
