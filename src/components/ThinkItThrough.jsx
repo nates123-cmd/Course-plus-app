@@ -17,7 +17,7 @@ import { Icon, Btn, Card } from '../kit'
 import { diagnoseStuck, resolveStuck, projectStateFor } from '../lib/ai'
 import { updateProject, createUpdate } from '../lib/db'
 
-const KIND_LABEL = { task: 'Add this task', pause: 'Put on hold', idea: 'Demote to Idea' }
+const KIND_LABEL = { task: 'Add this task', pause: 'Put on hold', idea: 'Move to Backlog' }
 
 export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
   const { t, f } = useApp()
@@ -62,7 +62,7 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
       onClose(); onHold(project); return // hold needs a reason + date — hand off to the HoldSheet
     } else if (r.kind === 'idea') {
       await updateProject(project.id, project.hold ? { status: 'idea', hold: null } : { status: 'idea' })
-      await createUpdate(project.id, `Think it through → demoted to Idea${r.label ? ` (${r.label})` : ''}`)
+      await createUpdate(project.id, `Think it through → moved to Backlog${r.label ? ` (${r.label})` : ''}`)
     }
     await reload()
     onClose()
@@ -130,9 +130,9 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
                 <Btn kind="ghost" size="sm" onClick={() => { onClose(); onHold(project) }}>Put on hold</Btn>
                 <Btn kind="ghost" size="sm" onClick={async () => {
                   await updateProject(project.id, project.hold ? { status: 'idea', hold: null } : { status: 'idea' })
-                  await createUpdate(project.id, 'Think it through → demoted to Idea')
+                  await createUpdate(project.id, 'Think it through → moved to Backlog')
                   await reload(); onClose()
-                }}>Demote to Idea</Btn>
+                }}>Move to Backlog</Btn>
               </div>
             </div>
           )}

@@ -109,7 +109,7 @@ function ProjectCard({ p, drag }) {
 
 // ── Reorderable live-project grid (one per Area on the Work overview) ──
 // React owns the display order; drag mutates it optimistically and the new order
-// persists via reorderProjects (sort = position). Idea/archived ids are appended
+// persists via reorderProjects (sort = position). On-hold/backlog/archived ids are appended
 // so their sort slots survive the write. Re-seeds when the persisted set changes.
 function LiveGrid({ a, live }) {
   const { reload } = useData()
@@ -135,9 +135,13 @@ function LiveGrid({ a, live }) {
     const ids = order.map((o) => o.id)
     const orig = live.map((o) => o.id)
     if (ids.join(',') === orig.join(',')) return
+    // Every project in the area has to appear in the write, in display order —
+    // reorderProjects sets sort = index, so an id left out keeps a stale slot and
+    // drifts. On-hold is no longer part of `live`, so list it explicitly.
+    const holdIds = a.projects.filter((p) => p.status === 'on-hold').map((p) => p.id)
     const ideaIds = a.projects.filter((p) => p.status === 'idea').map((p) => p.id)
     const archIds = a.projects.filter((p) => p.status === 'archived').map((p) => p.id)
-    try { await reorderProjects([...ids, ...ideaIds, ...archIds]); await reload() }
+    try { await reorderProjects([...ids, ...holdIds, ...ideaIds, ...archIds]); await reload() }
     catch (e) { window.alert('Could not reorder: ' + (e?.message || e)) }
   }
 
@@ -445,20 +449,46 @@ function NowFocus({ projects }) {
   </div>
 }
 
+// A collapsed shelf of projects that shouldn't compete with the live grid for
+// attention — Backlog (not started) and On hold (parked, waiting on something).
+// Both fold away by default; the count is visible without opening.
+function ProjectShelf({ label, projects, area, open, onToggle }) {
+  const { t, f } = useApp()
+  if (!projects.length) return null
+  return <div style={{ marginTop: 12 }}>
+    <div onClick={onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
+      fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 8 }}
+      onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+      <Icon n={open ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+      <Icon n={open ? 'folder-open' : 'folder'} s={14} c={t.t3} />
+      <span>{label}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', color: t.t3 }}>{projects.length}</span>
+    </div>
+    {open && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 10 }}>
+      {projects.map((p) => <ProjectCard key={p.id} p={{ ...p, area: area.id, areaName: area.name }} />)}
+    </div>}
+  </div>
+}
+
 export function OverviewScreen() {
   const { t, f } = useApp()
   const { areas, allProjects } = useData()
   const [sheetTask, setSheetTask] = useState(null)
   const [ideasOpen, setIdeasOpen] = useState({})
+  const [holdOpen, setHoldOpen] = useState({})
 
   // Live projects in the user's manual order (already sorted by `sort` from db);
   // no status re-rank so drag-to-reorder on the cards persists exactly as dropped.
-  const liveOf = (a) => a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived')
+  // Backlog and on-hold pull out into their own shelves — same split the sidebar
+  // already makes, so the grid only holds what's actually moving.
+  const liveOf = (a) => a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived' && p.status !== 'on-hold')
   const ideasOf = (a) => a.projects.filter((p) => p.status === 'idea')
+  const holdOf = (a) => a.projects.filter((p) => p.status === 'on-hold')
 
   const projects = allProjects().filter((p) => p.status !== 'archived')
   const totalActive = projects.filter((p) => p.status === 'active').length
-  const populatedAreas = areas.filter((a) => liveOf(a).length || ideasOf(a).length)
+  const populatedAreas = areas.filter((a) => liveOf(a).length || ideasOf(a).length || holdOf(a).length)
 
   return <div data-screen-label="Work overview" style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 6 }}>
@@ -479,7 +509,7 @@ export function OverviewScreen() {
     {populatedAreas.map((a) => {
       const live = liveOf(a)
       const ideas = ideasOf(a)
-      const ideasShown = !!ideasOpen[a.id]
+      const hold = holdOf(a)
       return <div key={a.id} style={{ marginTop: 30 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
           <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
@@ -487,20 +517,10 @@ export function OverviewScreen() {
           <div style={{ flex: 1, height: 1, background: t.line }} />
         </div>
         {live.length > 0 && <LiveGrid a={a} live={live} />}
-        {ideas.length > 0 && <div style={{ marginTop: live.length ? 12 : 0 }}>
-          <div onClick={() => setIdeasOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
-            fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 8 }}
-            onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-            <Icon n={ideasShown ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
-            <Icon n={ideasShown ? 'folder-open' : 'folder'} s={14} c={t.t3} />
-            <span>Ideas</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums', color: t.t3 }}>{ideas.length}</span>
-          </div>
-          {ideasShown && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, marginTop: 10 }}>
-            {ideas.map((p) => <ProjectCard key={p.id} p={{ ...p, area: a.id, areaName: a.name }} />)}
-          </div>}
-        </div>}
+        <ProjectShelf label="On hold" projects={hold} area={a}
+          open={!!holdOpen[a.id]} onToggle={() => setHoldOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} />
+        <ProjectShelf label="Backlog" projects={ideas} area={a}
+          open={!!ideasOpen[a.id]} onToggle={() => setIdeasOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} />
       </div>
     })}
   </div>
@@ -597,11 +617,11 @@ export function AreaScreen() {
         <Icon n={deleting ? 'loader-2' : 'trash-2'} s={14} />{deleting ? 'Deleting…' : 'Delete area'}</button>
     </div>
     <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 5 }}>
-      {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} idea${ideas.length === 1 ? '' : 's'}` : ''}</div>
+      {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} in backlog` : ''}</div>
 
     {group('Active', active)}
     {group('On hold', hold)}
-    {group('Ideas', ideas)}
+    {group('Backlog', ideas)}
     <PillarTasks area={a} />
     {shown === 0 && <div style={{ textAlign: 'center', padding: '40px 0 10px', fontFamily: f.body, fontSize: 15,
       color: t.t3, fontStyle: 'italic' }}>No projects in {a.name} yet.</div>}

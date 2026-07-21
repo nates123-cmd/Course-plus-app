@@ -503,7 +503,7 @@ export async function resolveStuck(state, question, answer) {
 Rules:
 - If the user is overwhelmed / avoiding / the next step is too big -> propose a TINY task ("Open the doc for 5 minutes", "Send one text"). One concrete action, under 60 chars.
 - If the user signals not-a-priority / no-energy / it can wait -> propose a status change instead.
-- kind "pause" = on hold, "idea" = demote to Idea, "task" = add the tiny task.
+- kind "pause" = on hold, "idea" = move to the Backlog, "task" = add the tiny task.
 
 ${stateBlock(state)}
 

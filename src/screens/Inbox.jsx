@@ -57,7 +57,7 @@ function AssignPopover({ projects, onPick, onClose }) {
 // and semantics as the project page). The old fixed button trio per row
 // (Archive / On hold / Keep active, Reactivate / +1 wk / Keep on hold) is gone —
 // it hard-coded a few paths through a decision that is really just "what is this
-// project's status now?", and couldn't reach Idea/Sent at all.
+// project's status now?", and couldn't reach Backlog/Sent at all.
 // Staleness is measured off `lastTouchAt` (DataContext) — the newest of ANY
 // activity signal on the project: an update logged, a task added, a note
 // written, an artifact produced. It used to read the update log (cp_updates)

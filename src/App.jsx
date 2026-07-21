@@ -92,7 +92,7 @@ function SidebarContent({ onClose }) {
     </div>
   }
 
-  // a collapsible folder header (Ideas per-area, or the global Archive)
+  // a collapsible folder header (Backlog per-area, or the global Archive)
   const folderRow = (key, label, count, indent = 28) => {
     const openF = !!open[key]
     return <div onClick={() => toggle(key)} style={{ display: 'flex', alignItems: 'center', gap: 7,
@@ -188,7 +188,7 @@ function SidebarContent({ onClose }) {
               }))
             })()}
             {ideas.length > 0 && <>
-              {folderRow(ideasKey, 'Ideas', ideas.length, 28)}
+              {folderRow(ideasKey, 'Backlog', ideas.length, 28)}
               {open[ideasKey] && ideas.map((p) => projRow(p, 40))}
             </>}
             {onHold.length > 0 && <>
