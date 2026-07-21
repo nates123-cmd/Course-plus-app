@@ -8,7 +8,9 @@ import { useEffect, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { supabase } from '../lib/supabase'
-import { Icon, Card, TODAY, MONTHS } from '../kit'
+import { Icon, Card, Btn, TODAY, MONTHS } from '../kit'
+import { useLongPress } from './TaskSheet'
+import { createSeries } from '../lib/db'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEK_DAYS = 7
@@ -75,22 +77,31 @@ function groupByDay(blocks) {
   return [...map.keys()].sort().map((iso) => ({ iso, blocks: map.get(iso) }))
 }
 
-function BlockRow({ block, series, onOpen, onDelete }) {
+function BlockRow({ block, series, onOpen, onHold, onDelete }) {
   const { t, f, go } = useApp()
   const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
-  const badge =
-    pillarLabel(block.pillar) ||
-    (block.type === 'meeting' ? 'Meeting' : block.type === 'routine' ? 'Routine' : 'Open')
+  const isMeeting = block.type === 'meeting'
+  // A block that belongs to a series says so IN PLACE OF its pillar/type badge —
+  // that's the fact worth surfacing here: opening it carries the standing agenda.
+  const badge = series ? 'Series'
+    : pillarLabel(block.pillar) ||
+      (isMeeting ? 'Meeting' : block.type === 'routine' ? 'Routine' : 'Open')
+  // Hold a meeting to make it recurring (or jump to the series it's already in).
+  const { pressing, handlers } = useLongPress(
+    () => { if (isMeeting) onHold(block) },
+    () => onOpen(block), 450)
   return (
     <div
-      onClick={() => onOpen(block)}
+      {...(isMeeting ? handlers : { onClick: () => onOpen(block) })}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      title="Open a meeting for this"
+      title={isMeeting ? 'Tap to start this meeting · hold to make it a series' : 'Open a meeting for this'}
       style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '12px 16px',
-        borderBottom: '1px solid ' + t.line, cursor: 'pointer',
-        background: hover ? t.tagBg : 'transparent', transition: 'background .12s' }}
+        borderBottom: '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none',
+        background: pressing ? t.sel : hover ? t.tagBg : 'transparent',
+        transform: pressing ? 'scale(0.995)' : 'none',
+        transition: 'background .12s, transform .12s' }}
     >
       <div style={{ flex: 'none', width: 96, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2,
         fontVariantNumeric: 'tabular-nums', paddingTop: 1 }}>
@@ -100,15 +111,20 @@ function BlockRow({ block, series, onOpen, onDelete }) {
         <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1 }}>{block.title}</div>
         {/* This block belongs to a series, so starting it here carries the
             standing agenda and the open items forward. Say so. */}
-        {series && <span onClick={(e) => { e.stopPropagation(); go({ screen: 'series', id: series.id }) }}
+        {series && series.name !== block.title && <span onClick={(e) => { e.stopPropagation(); go({ screen: 'series', id: series.id }) }}
           title="Part of a recurring series — starting it here files the meeting there"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent }}>
           <Icon n="repeat" s={12} c={t.accent} />{series.name}</span>}
       </div>
       <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />
-      <span style={{ flex: 'none', fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t2,
-        background: t.tagBg, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>{badge}</span>
+      <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
+        fontFamily: f.ui, fontSize: 11, fontWeight: 600,
+        color: series ? t.accent : t.t2, background: series ? t.accentBg : t.tagBg,
+        border: '1px solid ' + (series ? t.accentLine : 'transparent'),
+        borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+        {series && <Icon n="repeat" s={11} c={t.accent} />}{badge}</span>
       <span
+        className="task-grip"
         onClick={(e) => { e.stopPropagation(); onDelete(block) }}
         title="Delete from agenda"
         style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -123,7 +139,7 @@ function BlockRow({ block, series, onOpen, onDelete }) {
   )
 }
 
-function DaySection({ iso, blocks, seriesFor, onOpen, onDelete }) {
+function DaySection({ iso, blocks, seriesFor, onOpen, onHold, onDelete }) {
   const { t, f } = useApp()
   const m = dayMeta(iso)
   return (
@@ -137,15 +153,70 @@ function DaySection({ iso, blocks, seriesFor, onOpen, onDelete }) {
         </span>
       </div>
       <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-        {blocks.map((b) => <BlockRow key={b.id} block={b} series={seriesFor(b)} onOpen={onOpen} onDelete={onDelete} />)}
+        {blocks.map((b) => <BlockRow key={b.id} block={b} series={seriesFor(b)} onOpen={onOpen} onHold={onHold} onDelete={onDelete} />)}
       </Card>
     </div>
   )
 }
 
+// ── hold-a-meeting sheet ────────────────────────────────────────
+// Promote a calendar block to a recurring series without leaving the Agenda.
+// The new series binds to this block's TITLE (see lib/seriesAgenda), so every
+// future occurrence of the same event lands in it — the block itself is left
+// completely alone, since Today owns placed_blocks.
+function SeriesSheet({ block, series, onClose, onCreated }) {
+  const { t, f, go, isMobile } = useApp()
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  const create = async () => {
+    if (busy) return
+    setBusy(true); setErr(null)
+    try {
+      // Store the title explicitly even though the name alone would match —
+      // otherwise renaming the series later would silently break the link.
+      const id = await createSeries({ name: block.title, calendarTitles: [block.title] })
+      await onCreated()
+      onClose()
+      go({ screen: 'series', id })
+    } catch (e) { setErr(e); setBusy(false) }
+  }
+
+  return <div onClick={() => !busy && onClose()}
+    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex',
+      alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? 0 : 24 }}>
+    <div onClick={(e) => e.stopPropagation()}
+      style={{ background: t.bg, border: '1px solid ' + t.line, borderRadius: isMobile ? '16px 16px 0 0' : 14,
+        width: '100%', maxWidth: 460, padding: '18px 20px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
+        <Icon n="repeat" s={17} c={t.accent} />
+        <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>
+          {series ? 'Recurring meeting' : 'Make it recurring'}</span>
+      </div>
+      <div style={{ fontFamily: f.title, fontSize: 18, fontWeight: f.titleW, color: t.t1, lineHeight: 1.2 }}>{block.title}</div>
+
+      <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, lineHeight: 1.6, margin: '12px 0 18px' }}>
+        {series
+          ? <>Already a series. It keeps its standing agenda and carries open items forward, and every meeting you start from this block files into it.</>
+          : <>Creates a series for this meeting. It stays on your calendar exactly as it is — and it also gets a standing agenda, a history of every instance, and open items carried between them.</>}
+      </div>
+
+      {err && <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.risk, marginBottom: 12 }}>Couldn’t do that — {String(err?.message || err)}.</div>}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <Btn kind="ghost" size="sm" onClick={() => !busy && onClose()}>Cancel</Btn>
+        {series
+          ? <Btn kind="primary" size="sm" icon="arrow-right" onClick={() => { onClose(); go({ screen: 'series', id: series.id }) }}>Open the series</Btn>
+          : <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : 'repeat'} onClick={create}>{busy ? 'Creating…' : 'Make it a series'}</Btn>}
+      </div>
+    </div>
+  </div>
+}
+
 export function AgendaScreen() {
   const { t, f, go } = useApp()
-  const { seriesForMeetingTitle } = useData()
+  const { seriesForMeetingTitle, reload } = useData()
+  const [holdBlock, setHoldBlock] = useState(null)
   const [blocks, setBlocks] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
@@ -196,7 +267,7 @@ export function AgendaScreen() {
           <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>Agenda</div>
           <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 4 }}>
             {status === 'ready'
-              ? `${blocks.length} block${blocks.length === 1 ? '' : 's'} this week · tap one to start a meeting`
+              ? `${blocks.length} block${blocks.length === 1 ? '' : 's'} this week · tap to start a meeting, hold to make it a series`
               : 'Your week ahead'}
           </div>
         </div>
@@ -224,10 +295,13 @@ export function AgendaScreen() {
         </Card>
       )}
 
+      {holdBlock && <SeriesSheet block={holdBlock} series={seriesForMeetingTitle(holdBlock.title)}
+        onCreated={reload} onClose={() => setHoldBlock(null)} />}
+
       {status === 'ready' && days.map((d) => (
         <DaySection key={d.iso} iso={d.iso} blocks={d.blocks}
           seriesFor={(b) => (b.type === 'meeting' ? seriesForMeetingTitle(b.title) : null)}
-          onOpen={openMeeting} onDelete={deleteBlock} />
+          onOpen={openMeeting} onHold={setHoldBlock} onDelete={deleteBlock} />
       ))}
     </div>
   )
