@@ -17,7 +17,7 @@
 //    respondWith() for cross-origin or out-of-scope requests, so we can't break
 //    API calls and don't double-cache the ~40MB Whisper model (transformers.js
 //    keeps that in its own 'transformers-cache').
-const CACHE = 'course-plus-v36'
+const CACHE = 'course-plus-v37'
 const SCOPE_PATH = new URL(self.registration.scope).pathname // e.g. "/Course-plus-app/"
 
 self.addEventListener('install', () => {
