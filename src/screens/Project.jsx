@@ -16,7 +16,7 @@ import {
 
 import { handleTablePaste } from '../lib/tablePaste'
 import { classifyCapture, textToBlocks, captureTitle } from '../lib/capture'
-import { composeDeliverable, updateGuide, reviseDocument, synthesizeMeeting } from '../lib/ai'
+import { composeDeliverable, updateGuide, reviseDocumentBody, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
 import { claudeCost } from '../lib/claude'
 
@@ -707,9 +707,12 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
     try {
       const tx = mtg.transcript || [mtg.summary, (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.join('; ') : (b.ol ? b.ol.join('; ') : ''))).join(' ')].filter(Boolean).join('\n')
       const noteText = (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n')
-      const { body, usage } = await reviseDocument({ documentTitle: dTitle, document: docBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
+      const { body, failed, usage } = await reviseDocumentBody({ documentTitle: dTitle, document: docBody, meetingTitle: mtg.title, transcript: tx, notes: noteText, instructions: uInstr.trim() })
       const cost = usdRough(usage)
-      const id = await createArtifact(project.id, { title: dTitle, artType: 'document', body, provenance: `✦ ${aiName} · revised · from ${mtg.title}${cost ? ' · ' + cost : ''}` })
+      // Edits that couldn't be anchored aren't in the body — say so on the
+      // artifact itself, since this flow navigates away from any toast.
+      const miss = failed?.length ? ` · ${failed.length} change${failed.length === 1 ? '' : 's'} not placed` : ''
+      const id = await createArtifact(project.id, { title: dTitle, artType: 'document', body, provenance: `✦ ${aiName} · revised · from ${mtg.title}${cost ? ' · ' + cost : ''}${miss}` })
       await reload(); setUInstr(''); setDocBody(''); go({ screen: 'artifact', id })
     } catch (e) { setToast('Couldn’t revise — ' + String(e?.message || e)); setTimeout(() => setToast(null), 4500) }
     finally { setBusy(false) }

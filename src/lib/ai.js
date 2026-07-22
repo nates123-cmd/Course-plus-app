@@ -1,6 +1,7 @@
 // Scribe AI surfaces — real Claude calls (via the JWT-gated `claude` proxy)
 // that replace the prototype's setTimeout fakes.
 import { claudeComplete, claudeChat, extractJSON, pickModel } from './claude'
+import { parseEditBlocks, parseSummary, applyEdits } from './edits'
 
 // Ask-about-this-document — a short multi-turn conversation whose SCOPE the user
 // chooses: just the open document, its whole project, or its whole area/pillar.
@@ -190,35 +191,91 @@ export async function updateGuide({ documentTitle = '', document = '', meetingTi
   return { guide, usage }
 }
 
-// Revise a document in place. Unlike updateGuide (which describes edits for
-// hand-application on a disconnected machine), this returns the FULL rewritten
-// document so the app can swap it in — the prior body is snapshotted first, so
-// the round trip is reversible. Sources are optional and stack: a meeting
-// (transcript + notes) and/or free-text instructions.
-// Returns { body, summary, usage } — summary is a short "what changed" note.
-export async function reviseDocument({ documentTitle = '', document = '', meetingTitle = '', transcript = '', notes = '', instructions = '' } = {}) {
+// Revise a document in place — as a PATCH, never as a rewrite.
+//
+// This used to ask for the complete revised document and write back whatever
+// came out. However firmly the prompt said "preserve everything untouched", a
+// model re-emitting thousands of words rewords and loses things on the way
+// past. So the model no longer writes the document at all: it returns
+// SEARCH/REPLACE blocks, and applyEdits() splices them into the original
+// string. Every character outside an edit is the user's original character.
+//
+// Sources are optional and stack: a meeting (transcript + notes) and/or
+// free-text instructions. `retryOf` carries the edits a previous pass could not
+// place, so the model can re-anchor them instead of the app dropping them.
+// Returns { edits, summary, usage } — apply with applyEdits().
+export async function reviseDocumentEdits({ documentTitle = '', document = '', meetingTitle = '', transcript = '', notes = '', instructions = '', retryOf = [] } = {}) {
   const system =
-    'You revise an existing document and return the COMPLETE updated document. ' +
-    'Preserve everything the sources do not touch — same voice, same structure, same formatting, ' +
-    'same headings and ordering. Change only what the sources actually call for; do not " improve" ' +
-    'untouched prose, do not reorganize, do not add commentary or placeholders. ' +
-    'Never drop content just because a source did not mention it. Return strict JSON only.'
+    'You revise an existing document by emitting targeted SEARCH/REPLACE edits. You NEVER reproduce ' +
+    'the whole document — the app splices your edits into the user\'s original text, so anything you ' +
+    'do not touch stays exactly as they wrote it, character for character.\n\n' +
+    'Format — nothing but a short summary, then the blocks:\n' +
+    'SUMMARY\n- what you changed and why, tied to the source\n\n' +
+    'EDITS\n' +
+    '<<<<<<< SEARCH\n(text copied EXACTLY from the current document)\n=======\n(what it becomes)\n>>>>>>> REPLACE\n\n' +
+    'Rules:\n' +
+    '- SEARCH text must be copied verbatim from the CURRENT DOCUMENT — same words, punctuation, ' +
+    'capitalisation, markdown, indentation. If it is not a literal substring of the document the edit ' +
+    'is thrown away.\n' +
+    '- Include enough surrounding lines that the SEARCH text appears EXACTLY ONCE in the document. A ' +
+    'snippet that occurs twice is thrown away.\n' +
+    '- Keep each edit tight — the changed sentence, row, or paragraph plus just enough anchor. Do not ' +
+    'wrap a whole section around a two-word change.\n' +
+    '- To ADD a new section at the end, emit a block with an EMPTY SEARCH and the new text as REPLACE.\n' +
+    '- To DELETE, replace with nothing (leave the REPLACE side empty).\n' +
+    '- Only change what the sources actually call for. Do not tidy, restructure, or "improve" prose ' +
+    'nobody asked about, and never rewrite a passage just to say the same thing better.\n' +
+    '- If the sources call for no change at all, emit no blocks and say so in the summary.'
   const parts = [`CURRENT DOCUMENT — "${documentTitle || 'Untitled'}":\n${document || '(empty)'}`]
   if (notes.trim()) parts.push(`MY NOTES from the meeting (highest priority — these are what I care about):\n${notes.trim()}`)
   if (transcript.trim()) parts.push(`MEETING TRANSCRIPT — "${meetingTitle || 'meeting'}":\n${transcript.trim()}`)
   if (instructions.trim()) parts.push(`INSTRUCTIONS: ${instructions.trim()}`)
-  const user = parts.join('\n\n---\n\n') + '\n\n' +
-    'Return ONLY JSON: {"body": string (the complete revised document in markdown, ready to replace ' +
-    'the current one), "summary": string (markdown "- " bullets: what you changed and why, tied to ' +
-    'the source. If nothing needed changing, return the document unchanged and say so here.)}'
+  if (retryOf.length) parts.push(
+    'THESE EDITS FROM YOUR LAST PASS COULD NOT BE APPLIED — the SEARCH text did not match the document ' +
+    'exactly once. Re-emit ONLY these, copying the anchor text straight out of the CURRENT DOCUMENT ' +
+    'above and widening it until it is unique. Drop any that are no longer needed:\n' +
+    retryOf.map((e, i) => `${i + 1}. (${e.reason}) intended change: ${(e.replace || '(deletion)').slice(0, 300)}`).join('\n'))
+  const user = parts.join('\n\n---\n\n')
   let usage = null
   const raw = await claudeComplete(user, { system, model: pickModel('heavy'), max_tokens: 16000, onUsage: (u) => { usage = u } })
-  const j = extractJSON(raw) || {}
-  // A revision that comes back empty would silently erase the document — treat
-  // it as a failure rather than letting the caller write it.
-  const body = typeof j.body === 'string' ? j.body.trim() : ''
-  if (!body) throw new Error('the model did not return a revised document')
-  return { body, summary: (j.summary || '').trim(), usage }
+  return { edits: parseEditBlocks(raw), summary: parseSummary(raw), usage }
+}
+
+// The whole revise round trip: ask for edits, splice them into the original,
+// and give the model one shot at re-anchoring anything that missed. Callers get
+// a finished body plus whatever genuinely could not be placed — never a silent
+// drop. Returns { body, summary, applied, failed, usage }.
+export async function reviseDocumentBody(opts = {}) {
+  const first = await reviseDocumentEdits(opts)
+  const doc = opts.document || ''
+  let { body, applied, failed } = applyEdits(doc, first.edits)
+  let summary = first.summary
+  let usage = first.usage
+
+  if (failed.length) {
+    // Re-anchor against the ORIGINAL document (that's the text the model was
+    // shown), then re-apply the whole set so offsets stay consistent.
+    try {
+      const second = await reviseDocumentEdits({ ...opts, retryOf: failed })
+      const merged = applyEdits(doc, [...first.edits.filter((e) => !failed.includes(e)), ...second.edits])
+      body = merged.body; applied = merged.applied; failed = merged.failed
+      usage = sumUsage(usage, second.usage)
+    } catch { /* keep the first pass — its failures are already reported */ }
+  }
+
+  if (!applied) {
+    return { body: doc, summary: summary || 'Nothing needed changing.', applied: 0, failed, usage }
+  }
+  return { body, summary, applied, failed, usage }
+}
+
+function sumUsage(a, b) {
+  if (!a) return b; if (!b) return a
+  return {
+    ...a,
+    input_tokens: (a.input_tokens || 0) + (b.input_tokens || 0),
+    output_tokens: (a.output_tokens || 0) + (b.output_tokens || 0),
+  }
 }
 
 // Synthesize a meeting into exactly three things the user wants: a bullet-point
