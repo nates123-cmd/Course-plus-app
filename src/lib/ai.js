@@ -79,19 +79,20 @@ export async function briefingFor(projectName, notes) {
 const TYPE_BRIEF = {
   auto: 'the single most useful deliverable for this material — choose the best format yourself (document, table, list, email, etc.)',
   document: 'a clean, well-structured written document',
-  brief: 'a long-form STUDY BRIEF to be read away from a screen, on paper, with a pen. '
+  brief: 'a long-form STUDY BRIEF in OUTLINE form, to be read away from a screen, on paper, with a pen. '
     + 'Not a status report: explain what this thing actually is, how to think about it, and where the leverage sits. '
-    + 'Assume the reader owns the work but is buried in the detail and needs the shape of it. '
-    + 'Open by establishing what the thing is and why it exists. Then give an explicit mental model or framing for holding it in the head. '
-    + 'Then the detail, organized by that framing rather than by source document. '
-    + 'Name the open questions, the tensions, and anything unowned — those matter more than the parts that are going fine. '
-    + 'Close with a short ordered list of what to actually do next. '
+    + 'Assume the reader owns the work but is buried in the detail and needs the shape of it, and that he thinks in outlines. '
+    + 'STRUCTURE the whole thing as a nested outline under short section headings, not as flowing prose: '
+    + 'each section is a ## heading, then indented bullet points; a point that has supporting detail gets sub-bullets indented under it (two spaces per level, up to three levels deep). '
+    + 'Lead each section with what it establishes, then break the detail into points. '
+    + 'Cover, in order: what the thing is and why it exists; an explicit mental model for holding it in the head; the detail organized BY that model rather than by source document; the open questions, tensions and anything unowned (these matter more than what is going fine); and a final "What to do next" section as a flat ordered list of concrete actions. '
     + 'Be specific and use real names, real numbers and real dates from the material; a vague brief is useless. '
     + 'Say plainly when something is unresolved rather than papering over it. '
-    + 'FORMAT (this matters, it gets typeset for e-ink): use ## and ### headings, '
-    + '**bold** on key terms and on the lead-in phrase of a paragraph that makes a distinct point, '
-    + '> blockquotes for direct quotes worth preserving verbatim, and - bullets only for genuinely list-shaped content. '
-    + 'Write in full paragraphs, not fragments. NO tables and NO em dashes',
+    + 'FORMAT (this matters, it gets typeset for e-ink): ## for section headings; '
+    + '"- " bullets with two-space indentation for nesting; '
+    + '**bold** on the key term or lead-in phrase of a bullet so the point is scannable; '
+    + '> blockquotes for direct quotes worth preserving verbatim. '
+    + 'Keep each bullet to one or two sentences. NO tables and NO em dashes',
   message: 'a ready-to-send message - either an email or a Teams/chat message as the instructions imply - that is concise, natural, and written in Nate\'s own voice (see the WRITING VOICE brief below). Lead with the point, keep it skimmable.',
   csv: 'a CSV table whose columns are ALWAYS separated by the pipe character "|" (never commas). First line is the header row, then one record per line. Output raw pipe-delimited text only — no markdown table syntax, no code fences, no commentary',
   copilot: 'a single ready-to-paste Microsoft 365 Copilot prompt that, given this context, will generate the intended deliverable inside Office (Word / Excel / PowerPoint / Outlook). Output ONLY the prompt text the user would paste into Copilot',
