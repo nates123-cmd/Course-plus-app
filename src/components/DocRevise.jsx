@@ -1,7 +1,11 @@
 // DocRevise — update a document in place. Pick a meeting and/or type
-// instructions, Claude returns the COMPLETE revised document, you review it as a
-// diff, and applying it snapshots the current body into cp_artifact_versions
-// first so the change is always reversible.
+// instructions, Claude returns targeted edits, the app splices them into your
+// existing text, you review the result as a diff, and applying it snapshots the
+// current body into cp_artifact_versions first so the change is reversible.
+//
+// The model never re-emits the document (see lib/edits.js): untouched text is
+// carried over character for character rather than regenerated, so nothing gets
+// quietly reworded or dropped on the way past.
 //
 // Deliberately not the old "edit guide" flow: that produced instructions for
 // hand-editing somewhere else. This writes the document.
@@ -9,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../ctx'
 import { Icon, Btn, IconBtn, Card, Label } from '../kit'
 import { RichText } from './RichText'
-import { reviseDocument } from '../lib/ai'
+import { reviseDocumentBody } from '../lib/ai'
 import { diffLines, collapseUnchanged, diffStat } from '../lib/diff'
 import { snapshotArtifact, updateArtifact, listArtifactVersions } from '../lib/db'
 
@@ -64,7 +68,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
   const [instr, setInstr] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
-  const [result, setResult] = useState(null) // { body, summary }
+  const [result, setResult] = useState(null) // { body, summary, applied, failed }
 
   const mtg = meetings.find((m) => m.id === meetingId) || null
   const inputRow = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }
@@ -77,7 +81,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
       // transcript when there is one, else the summary + body blocks.
       const tx = mtg ? (mtg.transcript || [mtg.summary, (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.join('; ') : (b.ol ? b.ol.join('; ') : ''))).join(' ')].filter(Boolean).join('\n')) : ''
       const noteText = mtg ? (mtg.body || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, k) => (k + 1) + '. ' + i).join('\n') : ''))).filter(Boolean).join('\n') : ''
-      const r = await reviseDocument({
+      const r = await reviseDocumentBody({
         documentTitle: artifact.title || 'Untitled', document: artifact.body || '',
         meetingTitle: mtg?.title || '', transcript: tx, notes: noteText, instructions: instr.trim(),
       })
@@ -108,6 +112,17 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
       <Label style={{ color: t.accent, marginBottom: 8 }}>What changed</Label>
       <RichText text={result.summary} />
     </Card>}
+    {/* Edits whose anchor text couldn't be found in the document. They are NOT
+        in the diff below, so say so out loud rather than letting them vanish. */}
+    {result.failed?.length > 0 && <Card style={{ padding: '14px 16px', marginBottom: 16, background: t.riskBg, borderColor: t.risk }}>
+      <Label style={{ color: t.risk, marginBottom: 8 }}>{result.failed.length} change{result.failed.length === 1 ? '' : 's'} couldn’t be placed</Label>
+      <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, lineHeight: 1.55, marginBottom: 8 }}>
+        These aren’t in the diff below and won’t be applied — {aiName} couldn’t point at exactly one spot in the document for them. Make them by hand, or go back and be more specific.
+      </div>
+      {result.failed.map((e, i) => <div key={i} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11.5, color: t.t2, lineHeight: 1.5, marginTop: 6, paddingLeft: 10, borderLeft: '2px solid ' + t.line2 }}>
+        <span style={{ color: t.t3 }}>{e.reason} — </span>{(e.replace || '(deletion)').slice(0, 220)}
+      </div>)}
+    </Card>}
     <DiffView before={artifact.body || ''} after={result.body} />
     {errLine}
   </Sheet>
@@ -119,7 +134,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
       <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : 'sparkles'} onClick={() => !busy && run()}>{busy ? 'Revising…' : 'Draft the revision'}</Btn>
     </>}>
     <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2, lineHeight: 1.6, marginBottom: 16 }}>
-      {aiName} rewrites the whole document, keeping everything your sources don’t touch. You review the diff before anything is saved.
+      {aiName} edits only the lines your sources actually touch — the rest of the document is copied through word for word, not rewritten. You review the diff before anything is saved.
     </div>
 
     <Label style={{ marginBottom: 9 }}>From a meeting</Label>
