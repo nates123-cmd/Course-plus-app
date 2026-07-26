@@ -23,6 +23,8 @@ Three actions. Built by hand in the Shortcuts app on iPhone. Takes about two min
 17. Enable **Show on Apple Watch**.
 18. Optional: add the shortcut to a watch face complication, or launch it from the Shortcuts app on the watch.
 
+Building on a Mac instead works fine and iCloud syncs it, but step 17 has no equivalent there. The Mac details pane only offers Mac options (Spotlight, Quick Action, Services). Build and test on the Mac if you prefer, then open the synced shortcut on iPhone and flip **Show on Apple Watch** there.
+
 ## Things that go wrong
 
 - Step 5: **On Tap**, not After Pause. After Pause cuts you off mid-thought the moment you stop to think, and the half-sentence is what gets saved.
