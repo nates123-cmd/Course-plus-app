@@ -13,7 +13,7 @@ Three actions. Built by hand in the Shortcuts app on iPhone. Takes about two min
 7. Set the URL to `https://xsmnfcmtbpeaccnyinkr.supabase.co/functions/v1/capture`.
 8. Tap **Show More** on the Get Contents of URL action to reveal Method, Headers, and Request Body.
 9. Set **Method** to `POST`.
-10. Under **Headers**, add key `x-capture-key` with the CAPTURE_KEY value as its text.
+10. Under **Headers**, add key `x-capture-key`. Its value is the generated secret string itself, the long hex value, not the literal text `CAPTURE_KEY`. That name only identifies the secret on the Supabase side; Shortcuts never sends the name. Paste with no quotes and no trailing space.
 11. Under **Headers**, add key `content-type` with value `text/plain`.
 12. Set **Request Body** to **File**.
 13. In the Request Body field, insert the **Dictated Text** variable.
