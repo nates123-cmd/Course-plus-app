@@ -1,0 +1,9 @@
+# The shared capture secret. Never commit this.
+WatchApp/Secrets.swift
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
