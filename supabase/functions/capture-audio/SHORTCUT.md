@@ -41,7 +41,7 @@ Built in the Shortcuts app on iPhone. Two actions plus a share-sheet setting.
 | `Sent 4.2 MB — transcribing` | Accepted. The transcript is being made. | Nothing. Check Course+ in a few minutes. |
 | `Auth failed` | The `x-capture-key` header is missing or wrong. | Check step 11. Exact value, no trailing space. |
 | `Empty recording` | No file reached the endpoint. | Usually means Request Body was not set to File, or Shortcut Input was empty. Check steps 13 and 14. |
-| `Recording too large` | Over 40 MB, which is roughly three hours. | Split the recording, or raise `MAX_BYTES` in the function. |
+| `Recording too large` | Over 150 MB. | Split the recording, or raise `MAX_BYTES` in the function. |
 | `Upload failed: ...` | The transcription service rejected the audio. | Check the format is real audio. Retry once. |
 | `POST only` | Method is wrong. | Check step 10. |
 | `Server misconfigured` | A secret is missing on the function. | Check `CAPTURE_KEY`, `OWNER_ID`, and `ASSEMBLYAI_API_KEY` on the project. |

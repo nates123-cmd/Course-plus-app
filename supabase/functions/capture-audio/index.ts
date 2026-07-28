@@ -28,7 +28,10 @@ const OWNER_ID = Deno.env.get('OWNER_ID') || ''
 const CAPTURE_KEY = Deno.env.get('CAPTURE_KEY') || ''
 const AAI_KEY = Deno.env.get('ASSEMBLYAI_API_KEY') || ''
 
-const MAX_BYTES = 40 * 1024 * 1024 // ~40 MB. Watch AAC mono runs well under this for an hour.
+// Just Press Record writes mono AAC at about 144 kbps, which is roughly 62 MB
+// for an hour. 40 MB would have bounced a long meeting, so the ceiling is set
+// well above a realistic worst case rather than at it.
+const MAX_BYTES = 150 * 1024 * 1024
 const AAI = 'https://api.assemblyai.com/v2'
 const TZ = 'America/New_York'
 
