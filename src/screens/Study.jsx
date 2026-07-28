@@ -33,6 +33,23 @@ const fmtDay = (iso) => {
   try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) } catch { return '' }
 }
 
+// A project's whole record as drill material: the state digest plus the
+// documents filed under it. The digest alone is thin — it is tasks and status,
+// while the substance lives in the docs.
+//
+// Deliberately shared between BUILD time and GRADE time. If the grader checked
+// against less than the drill was built from, it could mark a correct answer
+// wrong for citing something it simply hadn't been shown.
+function projectMaterial(pid, { projectById, projectDigest, notes }) {
+  const p = projectById(pid)
+  if (!p) return null
+  const docs = notes.filter((n) => n.project === pid).slice(0, 6).map((n) => noteContext(n)).join('\n\n---\n\n')
+  return {
+    text: projectDigest(pid) + (docs ? '\n\nDOCUMENTS FILED HERE:\n' + docs : ''),
+    label: p.name, project: pid, area: p.area || null,
+  }
+}
+
 // ── Shelf ────────────────────────────────────────────────────────
 function BucketPill({ bucket }) {
   const { t, f } = useApp()
@@ -165,13 +182,9 @@ function BuildPanel({ onClose, onSaved, initial }) {
         ref: n.id, project: n.project || null, area: n.area || null }
     }
     if (tab === 'project' && pickedProject) {
-      const p = projectById(pickedProject)
-      if (!p) return null
-      // Project state alone is thin — fold in the docs filed under it so the
-      // drill can reach the substance, not just the task list.
-      const docsText = notes.filter((n) => n.project === p.id).slice(0, 6).map((n) => noteContext(n)).join('\n\n---\n\n')
-      return { text: projectDigest(p.id) + (docsText ? '\n\nDOCUMENTS FILED HERE:\n' + docsText : ''),
-        label: p.name, source: 'project', ref: null, project: p.id, area: p.area || null }
+      const m = projectMaterial(pickedProject, { projectById, projectDigest, notes })
+      if (!m) return null
+      return { text: m.text, label: m.label, source: 'project', ref: null, project: m.project, area: m.area }
     }
     return null
   }
@@ -194,9 +207,28 @@ function BuildPanel({ onClose, onSaved, initial }) {
     if (!title) { setErr('Name the thing you have to be able to explain.'); return }
     setBusy(true); setErr(null)
     try {
-      const d = await buildDiveFromTopic(title, topicCtx.trim() || null)
+      // Pointing a topic at a project is what turns it from a general-knowledge
+      // drill into a work one: "Deal reg" becomes deal reg as it actually runs
+      // on CSA. Typed notes go FIRST because they are the more specific signal;
+      // the project's record sits underneath as background.
+      const proj = pickedProject ? projectMaterial(pickedProject, { projectById, projectDigest, notes }) : null
+      const typed = topicCtx.trim()
+      const context = [
+        typed || null,
+        proj ? `THE PROJECT THIS BELONGS TO - ${proj.label}:\n${proj.text}` : null,
+      ].filter(Boolean).join('\n\n---\n\n') || null
+      const d = await buildDiveFromTopic(title, context)
       if (!d.keyPoints.length) throw new Error('could not build a drill for that')
-      setCandidates([{ ...d, source: 'manual', sourceRef: null, sourceLabel: topicCtx.trim() ? 'pasted context' : '', project: null, area: null }])
+      // source 'project' is load-bearing: Session re-derives the grader's ground
+      // truth from it, so the grade is checked against the same project record.
+      setCandidates([{
+        ...d,
+        source: proj ? 'project' : 'manual',
+        sourceRef: null,
+        sourceLabel: proj ? proj.label : (typed ? 'pasted context' : ''),
+        project: proj ? proj.project : null,
+        area: proj ? proj.area : null,
+      }])
       setChosen({ 0: true })
     } catch (e) { setErr(String(e?.message || e)) }
     setBusy(false)
@@ -267,10 +299,23 @@ function BuildPanel({ onClose, onSaved, initial }) {
           <input autoFocus value={topic} onChange={(e) => setTopic(e.target.value)} className="selectable"
             placeholder="e.g. How the CSP margin model actually works"
             style={{ ...inputStyle, marginTop: 8 }} />
-          <div style={{ marginTop: 14 }}><Label>Your own material on it (optional, but makes it real)</Label></div>
+          <div style={{ marginTop: 14 }}><Label>Any details you want to add (optional)</Label></div>
           <textarea value={topicCtx} onChange={(e) => setTopicCtx(e.target.value)} className="selectable"
-            placeholder="Paste anything you have — the drill is built from this rather than from general knowledge."
-            style={{ ...inputStyle, marginTop: 8, minHeight: 130, resize: 'vertical', lineHeight: 1.55 }} />
+            placeholder="Paste or type anything you have. Whatever you put here outranks everything else."
+            style={{ ...inputStyle, marginTop: 8, minHeight: 110, resize: 'vertical', lineHeight: 1.55 }} />
+
+          {/* Pointing a bare topic at a project is what makes it a WORK drill.
+              It grounds the key points in that project's real record AND files
+              the drill under it on the shelf. */}
+          <div style={{ marginTop: 16 }}><Label>Point it at a project (optional)</Label></div>
+          <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 5, lineHeight: 1.5 }}>
+            The drill gets built from that project's record and its filed documents, so it covers how
+            this actually works there rather than in general. It also files under that project.
+          </div>
+          <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {pickRow('__none', 'No project — keep it general', null, !pickedProject, () => setPickedProject(null))}
+            {projects.map((p) => pickRow(p.id, p.name, p.areaName, pickedProject === p.id, () => setPickedProject(p.id)))}
+          </div>
         </> : tab === 'project' ? <>
           <Label>Which project</Label>
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -317,7 +362,7 @@ function PointRow({ text, hit }) {
 
 function Session({ dive, onExit, onChanged }) {
   const { t, f } = useApp()
-  const { noteById, projectDigest } = useData()
+  const { noteById, projectDigest, projectById, notes } = useData()
   const [mode, setMode] = usePersisted('course.study.mode', 'type')
   const [phase, setPhase] = useState('setup')     // setup | answer | feedback
   const [revealed, setRevealed] = useState(false)
@@ -340,9 +385,11 @@ function Session({ dive, onExit, onChanged }) {
   // stored on the dive: notes get edited, and the record is whatever it says now.
   const sourceText = useCallback(() => {
     if (dive.sourceRef) { const n = noteById(dive.sourceRef); if (n) return noteContext(n) }
-    if (dive.source === 'project' && dive.project) return projectDigest(dive.project)
+    if (dive.source === 'project' && dive.project) {
+      return projectMaterial(dive.project, { projectById, projectDigest, notes })?.text || ''
+    }
     return ''
-  }, [dive, noteById, projectDigest])
+  }, [dive, noteById, projectDigest, projectById, notes])
 
   const startRecording = () => {
     if (!SR) return

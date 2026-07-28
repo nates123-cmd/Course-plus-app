@@ -67,11 +67,14 @@ export async function proposeDives(sourceText, sourceLabel, { max = 4, onUsage }
 export async function buildDiveFromTopic(title, contextText, { onUsage } = {}) {
   const user =
     `The user has to be able to explain this cold, in a work setting: "${title}".\n\n` +
-    (contextText ? 'Their own material on it:\n' + clip(contextText, 8000) + '\n\n' : '') +
+    (contextText ? 'Their own material on it:\n' + clip(contextText) + '\n\n' : '') +
     'Write: a "prompt" - one or two imperative sentences asking them to explain it from memory, revealing nothing; ' +
     'a one-sentence "summary"; and 3 to 6 "keyPoints" a strong explanation must hit. ' +
     (contextText
-      ? 'Draw the key points from THEIR material, not from general knowledge.'
+      ? 'Draw the key points from THEIR material, not from general knowledge. The material may hold more than ' +
+        'this one topic - a whole project record, for instance - so use only the parts that bear on "' + title + '", ' +
+        'and ignore the rest rather than padding the drill with it. Where sections are separated by ---, EARLIER ' +
+        'sections are the more specific signal and outrank later ones on any conflict.'
       : 'Keep the key points to what a competent professional would be expected to cover.') +
     '\n\nReturn JSON only: {"prompt":"...","summary":"...","keyPoints":[{"text":"..."}]}'
   const raw = await claudeComplete(user, { system: SYSTEM, model: pickModel('heavy'), max_tokens: 1200, onUsage })
