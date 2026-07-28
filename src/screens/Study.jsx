@@ -17,9 +17,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, IconBtn, Btn, Card, Label, AreaDot, usePersisted } from '../kit'
-import { listDives, createDive, deleteDive, logRun, listRuns } from '../lib/dives'
+import { listDives, createDive, deleteDive, updateDive, logRun, listRuns } from '../lib/dives'
 import { proposeDives, buildDiveFromTopic, gradeExplanation } from '../lib/study'
 import { noteContext } from '../lib/ai'
+import { TunePanel, AskPanel } from '../components/DiveTune'
 
 const MODES = [
   ['mental', 'Think it through', 'Run it in your head, reveal the points, rate yourself honestly.'],
@@ -351,13 +352,16 @@ function BuildPanel({ onClose, onSaved, initial }) {
 }
 
 // ── Session ──────────────────────────────────────────────────────
-function PointRow({ text, hit }) {
+function PointRow({ text, hit, weight }) {
   const { t, f } = useApp()
   const tag = hit == null ? null
     : <span style={{ fontFamily: f.ui, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
         color: hit ? t.good : t.risk, marginRight: 9, flex: 'none' }}>{hit ? 'hit' : 'missed'}</span>
   return <div style={{ display: 'flex', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid ' + t.line,
-    fontFamily: f.ui, fontSize: 13.5, color: t.t1, lineHeight: 1.5 }}>{tag}<span>{text}</span></div>
+    fontFamily: f.ui, fontSize: 13.5, color: weight === 'minor' ? t.t2 : t.t1, lineHeight: 1.5 }}>
+    {tag}<span style={{ flex: 1 }}>{text}</span>
+    {weight === 'core' ? <Icon n="target-arrow" s={14} c={t.accent} title="You marked this the one that matters"
+      style={{ marginLeft: 9, marginTop: 2 }} /> : null}</div>
 }
 
 function Session({ dive, onExit, onChanged }) {
@@ -372,6 +376,8 @@ function Session({ dive, onExit, onChanged }) {
   const [err, setErr] = useState(null)
   const [runs, setRuns] = useState([])
   const [recording, setRecording] = useState(false)
+  const [tuning, setTuning] = useState(false)
+  const [asking, setAsking] = useState(false)
   const recogRef = useRef(null)
   const finalRef = useRef('')
 
@@ -419,7 +425,8 @@ function Session({ dive, onExit, onChanged }) {
     if (recording) stopRecording()
     setBusy(true); setErr(null)
     try {
-      const g = await gradeExplanation({ prompt: dive.prompt, keyPoints, answer: ans, sourceText: sourceText() })
+      const g = await gradeExplanation({ prompt: dive.prompt, keyPoints, answer: ans,
+        sourceText: sourceText(), guidance: dive.guidance })
       setGraded(g)
       await logRun(dive, { mode, bucket: g.bucket, hits: g.hits, total: g.total, answer: ans, feedback: g.feedback, verdicts: g.verdicts })
       setPhase('feedback')
@@ -455,9 +462,25 @@ function Session({ dive, onExit, onChanged }) {
       <span style={{ flex: 1, minWidth: 0, fontFamily: f.title, fontSize: 22, fontWeight: f.titleW,
         letterSpacing: f.titleSpacing, color: t.t1 }}>{dive.title}</span>
       <BucketPill bucket={dive.lastBucket} />
+      {/* Available in every phase on purpose — the moment you most want to argue
+          with a drill is right after it graded you on the wrong thing. */}
+      <Btn kind="outline" size="sm" icon="adjustments" title="Tell it what this drill got wrong"
+        onClick={() => setTuning(true)}>Tune</Btn>
+      <Btn kind="outline" size="sm" icon="message-circle" title="Ask about the material behind this drill"
+        onClick={() => setAsking(true)}>Ask</Btn>
     </div>
-    {dive.sourceLabel ? <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 6, marginLeft: 39 }}>
-      from {dive.sourceLabel}</div> : null}
+    {(dive.sourceLabel || dive.guidance) ? <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
+      fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 6, marginLeft: 39 }}>
+      {dive.sourceLabel ? <span>from {dive.sourceLabel}</span> : null}
+      {dive.guidance ? <span onClick={() => setTuning(true)} title={dive.guidance}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', color: t.accent,
+          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 8px' }}>
+        <Icon n="bookmark" s={12} />Your steering is applied</span> : null}
+    </div> : null}
+
+    {tuning && <TunePanel dive={dive} sourceText={sourceText()} onClose={() => setTuning(false)}
+      onSaved={async (patch) => { await updateDive(dive.id, patch); onChanged && await onChanged() }} />}
+    {asking && <AskPanel dive={dive} sourceText={sourceText()} onClose={() => setAsking(false)} />}
 
     {phase === 'setup' && <>
       <div style={{ marginTop: 24 }}><Label>How do you want to answer</Label></div>
@@ -499,7 +522,7 @@ function Session({ dive, onExit, onChanged }) {
           ? <Btn kind="outline" icon="eye" onClick={() => setRevealed(true)}>Reveal the points</Btn>
           : <>
               <Label>What a strong answer covers</Label>
-              <div style={{ marginTop: 6 }}>{keyPoints.map((k, i) => <PointRow key={i} text={k.text} hit={null} />)}</div>
+              <div style={{ marginTop: 6 }}>{keyPoints.map((k, i) => <PointRow key={i} text={k.text} weight={k.weight} hit={null} />)}</div>
               <div style={{ marginTop: 18 }}><Label>How did you actually do</Label></div>
               <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
                 {['miss', 'hard', 'easy'].map((b) => <Btn key={b} kind={b === 'easy' ? 'primary' : 'outline'} size="sm"
@@ -548,7 +571,7 @@ function Session({ dive, onExit, onChanged }) {
       <div style={{ marginTop: 22 }}><Label>
         {graded.total != null && graded.hits != null ? `Key points — ${graded.hits} of ${graded.total}` : 'Key points'}</Label></div>
       <div style={{ marginTop: 6 }}>
-        {keyPoints.map((k, i) => { const v = verdictFor(i); return <PointRow key={i} text={k.text} hit={v ? v.hit : null} /> })}
+        {keyPoints.map((k, i) => { const v = verdictFor(i); return <PointRow key={i} text={k.text} weight={k.weight} hit={v ? v.hit : null} /> })}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 22 }}>

@@ -21,11 +21,24 @@ function translate(error) {
   return error?.code === '42P01' ? new Error(NOT_MIGRATED) : error
 }
 
+// `guidance` ships ahead of its migration (20260728140000), and Course+ applies
+// migrations by hand — so the column may genuinely not be there yet. Postgres
+// 42703 is "column does not exist": drop it and retry rather than failing the
+// write. A lost steer is a bad session; a failed insert is a lost drill. Same
+// self-heal db.js uses for cp_tasks.reschedule_count.
+async function withoutGuidance(error, row, run) {
+  if (error?.code !== '42703' || !('guidance' in row)) throw translate(error)
+  const { guidance, ...rest } = row
+  const retry = await run(rest)
+  if (retry.error) throw translate(retry.error)
+}
+
 function mapDive(r) {
   return {
     id: r.id, title: r.title, prompt: r.prompt, summary: r.summary || '',
     keyPoints: Array.isArray(r.key_points) ? r.key_points : [],
     source: r.source || 'manual', sourceRef: r.source_ref || null, sourceLabel: r.source_label || '',
+    guidance: r.guidance || '',
     project: r.project_id || null, area: r.area_id || null,
     lastReviewedAt: r.last_reviewed_at || null, lastBucket: r.last_bucket || null,
     reviewCount: r.review_count || 0, archived: !!r.archived, createdAt: r.created_at,
@@ -65,14 +78,15 @@ export async function createDive(dive = {}) {
     source_label: dive.sourceLabel ?? null,
     project_id: dive.project ?? null,
     area_id: dive.area ?? null,
+    guidance: dive.guidance ?? null,
   }
   const { error } = await supabase.from('cp_dives').insert(row)
-  if (error) throw translate(error)
+  if (error) await withoutGuidance(error, row, (r) => supabase.from('cp_dives').insert(r))
   return id
 }
 
 const DIVE_COLS = {
-  title: 'title', prompt: 'prompt', summary: 'summary', keyPoints: 'key_points',
+  title: 'title', prompt: 'prompt', summary: 'summary', keyPoints: 'key_points', guidance: 'guidance',
   project: 'project_id', area: 'area_id', archived: 'archived',
   lastReviewedAt: 'last_reviewed_at', lastBucket: 'last_bucket', reviewCount: 'review_count',
 }
@@ -81,7 +95,7 @@ export async function updateDive(id, patch = {}) {
   for (const k in patch) if (DIVE_COLS[k]) row[DIVE_COLS[k]] = patch[k]
   if (!Object.keys(row).length) return
   const { error } = await supabase.from('cp_dives').update(row).eq('id', id)
-  if (error) throw translate(error)
+  if (error) await withoutGuidance(error, row, (r) => supabase.from('cp_dives').update(r).eq('id', id))
 }
 
 export async function deleteDive(id) {

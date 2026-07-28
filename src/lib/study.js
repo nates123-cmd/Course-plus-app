@@ -8,7 +8,7 @@
 // actually said. So every call here is grounded in supplied source text, and the
 // grader is given that source — which lets it do the thing Break's grader
 // cannot: catch a confident answer that contradicts the record.
-import { claudeComplete, extractJSON, pickModel } from './claude'
+import { claudeChat, claudeComplete, extractJSON, pickModel } from './claude'
 
 const SYSTEM =
   'You are a study coach inside a personal work app. You build recall drills from a professional\'s own ' +
@@ -81,17 +81,107 @@ export async function buildDiveFromTopic(title, contextText, { onUsage } = {}) {
   return normalizeDive({ ...(extractJSON(raw) || {}), title }, title)
 }
 
+// Render the key points for a prompt, carrying their marks. A point the user
+// flagged core is not the same input as one he never touched, and the model has
+// to see the difference or his corrections evaporate on the next call.
+function pointLines(keyPoints = []) {
+  return keyPoints.map((k, i) => {
+    const mark = k.weight === 'core' ? ' [MUST HIT - he marked this the important one]'
+      : k.weight === 'minor' ? ' [minor - he says this barely matters]' : ''
+    const note = k.note ? `\n   his note on this point: "${k.note}"` : ''
+    return `${i + 1}. ${k.text}${mark}${note}`
+  }).join('\n')
+}
+
+// Standing guidance block, replayed into every rebuild and every grade. This is
+// how a correction survives — without it he would re-argue the same point every
+// time the drill regenerated.
+const guidanceBlock = (g) => (g && g.trim())
+  ? `\nHOW HE HAS TOLD YOU TO WEIGHT THIS TOPIC (standing instructions from earlier - follow them):\n${g.trim()}\n`
+  : ''
+
+// Revise a drill from feedback. `steer` is the new free-text correction; the
+// dive's existing `guidance` is everything he has already said. Returns the
+// revised drill plus the merged guidance to store back.
+export async function reviseDive({ dive, steer = '', sourceText = '', onUsage } = {}) {
+  const kept = (dive.keyPoints || []).filter((k) => !k.drop)
+  const dropped = (dive.keyPoints || []).filter((k) => k.drop)
+  const user =
+    'You are revising an existing recall drill because the user told you it is not right yet. ' +
+    'His judgement about his own work beats yours - do what he says, do not argue or hedge.\n\n' +
+    `Drill title: ${dive.title}\n` +
+    `Current prompt: ${dive.prompt}\n` +
+    `Current summary: ${dive.summary || '(none)'}\n\n` +
+    `Current key points:\n${pointLines(kept)}\n` +
+    (dropped.length ? `\nHe deleted these as NOT RELEVANT - do not bring them back or restate them in new words:\n${dropped.map((k) => '- ' + k.text).join('\n')}\n` : '') +
+    guidanceBlock(dive.guidance) +
+    (steer.trim() ? `\nWHAT HE JUST SAID TO FIX:\n${steer.trim()}\n` : '') +
+    (sourceText ? `\nTHE SOURCE RECORD (his own material - draw from this, and if he points at a document or file, find it here):\n${clip(sourceText)}\n` : '') +
+    '\nRewrite the drill. Reorder so what he says matters most comes FIRST. Add points he asked for, ' +
+    'drop or demote what he called unimportant, and edit the wording of any point his notes complain about. ' +
+    'Keep points he did not comment on unless his instructions clearly contradict them. Preserve each point\'s ' +
+    '"weight" ("core" or "minor") unless he asked to change it. Aim for 3 to 8 points.\n\n' +
+    'Also return "guidance": a merged, deduplicated restatement of ALL his standing instructions ' +
+    '(the earlier ones plus what he just said), written as short imperative lines he would recognise. ' +
+    'This is replayed every future time the drill is rebuilt or graded, so keep it durable and specific - ' +
+    'no more than about 8 lines.\n\n' +
+    'Return JSON only: {"title":"...","prompt":"...","summary":"...","keyPoints":[{"text":"...","weight":"core|normal|minor","note":"..."}],"guidance":"..."}'
+  const raw = await claudeComplete(user, { system: SYSTEM, model: pickModel('heavy'), max_tokens: 2400, onUsage })
+  const j = extractJSON(raw) || {}
+  const points = (Array.isArray(j.keyPoints) ? j.keyPoints : [])
+    .map((k) => {
+      const text = String(typeof k === 'string' ? k : (k?.text || '')).trim()
+      if (!text) return null
+      const out = { text }
+      if (k?.weight === 'core' || k?.weight === 'minor') out.weight = k.weight
+      if (k?.note && String(k.note).trim()) out.note = String(k.note).trim()
+      return out
+    })
+    .filter(Boolean)
+  return {
+    title: (j.title || dive.title || '').trim() || dive.title,
+    prompt: (j.prompt || dive.prompt || '').trim() || dive.prompt,
+    summary: (j.summary || '').trim(),
+    keyPoints: points,
+    guidance: (j.guidance || dive.guidance || '').trim(),
+  }
+}
+
+// Ask a question about the drill and the record behind it. Separate from
+// revising on purpose: asking "what did Ed's deck actually say about forecasting"
+// should never silently rewrite the drill.
+export async function askAboutDive({ dive, sourceText = '', history = [], question, onUsage } = {}) {
+  const system =
+    'You answer questions about a professional\'s own work material, inside a study tool. ' +
+    'Answer from the material given. Be concrete and brief - a few sentences unless asked for more. ' +
+    'If the material does not contain the answer, say so plainly rather than guessing, and say what ' +
+    'would need to be attached in Course+ for you to answer it.'
+  const preamble =
+    `The drill he is studying: "${dive.title}"\n` +
+    (dive.summary ? `What it covers: ${dive.summary}\n` : '') +
+    `\nIts key points:\n${pointLines(dive.keyPoints || [])}\n` +
+    guidanceBlock(dive.guidance) +
+    (sourceText ? `\nTHE SOURCE RECORD:\n${clip(sourceText)}\n` : '\n(No source record is attached to this drill.)\n')
+  const messages = history.length
+    ? [...history, { role: 'user', content: question }]
+    : [{ role: 'user', content: preamble + `\n\nHis question: ${question}` }]
+  return (await claudeChat(messages, { system, model: pickModel('heavy'), max_tokens: 1200, onUsage })).trim()
+}
+
 // Grade a from-memory explanation. `sourceText` is optional but changes the
 // grade materially when present: with the record in hand the grader can mark a
 // confidently-stated claim as WRONG rather than merely absent, which is the
 // failure mode that actually costs you in a meeting.
-export async function gradeExplanation({ prompt, keyPoints = [], answer, sourceText = '', onUsage } = {}) {
-  const points = keyPoints.map((k, i) => `${i + 1}. ${k.text}`).join('\n')
+export async function gradeExplanation({ prompt, keyPoints = [], answer, sourceText = '', guidance = '', onUsage } = {}) {
+  const points = pointLines(keyPoints)
   const user =
     'You are grading a from-memory explanation given by a professional preparing to discuss this at work. ' +
     'Be encouraging but honest - a soft grade here costs them in the actual meeting.\n\n' +
     `The prompt they answered: "${prompt}"\n\n` +
     `Key points a strong answer must hit (numbered from 1):\n${points}\n\n` +
+    guidanceBlock(guidance) +
+    'Weight the overall read by what he has told you matters: missing a point marked MUST HIT is a "miss" ' +
+    'even if he covered everything else; missing only points marked minor is not.\n\n' +
     (sourceText ? 'The source record this was drawn from (ground truth):\n' + clip(sourceText, 9000) + '\n\n' : '') +
     `Their explanation:\n"${answer}"\n\n` +
     'Return JSON only with exactly four fields:\n' +
