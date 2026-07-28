@@ -117,6 +117,60 @@ async function intake(req: Request): Promise<Response> {
   return line(`Sent ${mb} MB — transcribing`)
 }
 
+// Build and insert the meeting note. Shared by both paths so an on-device
+// transcript and an AssemblyAI one produce identically shaped notes.
+async function fileNote(paras: string[], transcript: string, extraTag: string) {
+  const now = new Date()
+  return await admin.from('cp_notes').insert({
+    id: `rec-${crypto.randomUUID()}`,
+    user_id: OWNER_ID, // auth.uid() is null under the service key
+    kind: 'meeting',
+    title: titleFor(now),
+    tags: ['watch', 'recording', extraTag],
+    date: fmt(now, { month: 'short', day: 'numeric', year: 'numeric' }),
+    updated: 'now',
+    status: 0, // Raw — not yet reviewed or triaged
+    transcript,
+    body: paras.map((p) => ({ p })),
+  })
+}
+
+// ── alternate intake: an already-transcribed capture ───────────────────
+//
+// Just Press Record transcribes on-device, free, and will share that text
+// directly. When the recording is solo there is nothing for a paid service to
+// add, so this path takes the text and skips transcription entirely. Nothing
+// leaves the device except the finished words.
+//
+// The trade is speaker labels: Apple returns one undifferentiated stream, so
+// use the audio path for anything with more than one person in the room.
+async function intakeText(req: Request): Promise<Response> {
+  const presented = req.headers.get('x-capture-key') || ''
+  if (!(await secretMatches(presented, CAPTURE_KEY))) return line('Auth failed', 401)
+
+  let body: string
+  try {
+    body = (await req.text()).trim()
+  } catch {
+    return line('Could not read transcript', 400)
+  }
+  if (!body) return line('Empty transcript', 400)
+  if (body.length > 1_000_000) return line('Transcript too long', 413)
+
+  // On-device output arrives as one long run. Split on blank lines if they are
+  // there, otherwise keep it whole rather than guessing at sentence breaks.
+  const paras = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+
+  const { error } = await fileNote(paras.length ? paras : [body], body, 'on-device')
+  if (error) {
+    console.error('cp_notes insert failed:', error.message)
+    return line('Not saved: ' + error.message.slice(0, 60), 500)
+  }
+
+  const words = body.split(/\s+/).filter(Boolean).length
+  return line(`Filed — ${words} words`)
+}
+
 // ── step 2: AssemblyAI calls back when the transcript is ready ─────────
 async function hook(req: Request): Promise<Response> {
   const presented = req.headers.get('x-capture-key') || ''
@@ -143,19 +197,7 @@ async function hook(req: Request): Promise<Response> {
     ? utts.map((u) => `Speaker ${u.speaker}: ${(u.text || '').trim()}`)
     : text.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
 
-  const now = new Date()
-  const { error } = await admin.from('cp_notes').insert({
-    id: `rec-${crypto.randomUUID()}`,
-    user_id: OWNER_ID, // auth.uid() is null under the service key
-    kind: 'meeting',
-    title: titleFor(now),
-    tags: ['watch', 'recording'],
-    date: fmt(now, { month: 'short', day: 'numeric', year: 'numeric' }),
-    updated: 'now',
-    status: 0, // Raw — it has not been reviewed or triaged yet
-    transcript: text,
-    body: paras.map((p) => ({ p })),
-  })
+  const { error } = await fileNote(paras, text, 'transcribed')
 
   if (error) {
     console.error('cp_notes insert failed:', error.message)
@@ -172,5 +214,7 @@ Deno.serve(async (req) => {
     return line('Server misconfigured', 500)
   }
   const path = new URL(req.url).pathname
-  return path.endsWith('/hook') ? await hook(req) : await intake(req)
+  if (path.endsWith('/hook')) return await hook(req)
+  if (path.endsWith('/text')) return await intakeText(req)
+  return await intake(req)
 })
