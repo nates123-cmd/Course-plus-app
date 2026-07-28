@@ -167,6 +167,11 @@ function ProjectHeader({ project, reload }) {
       {project.status !== 'archived' && (
         <Btn kind="ghost" size="sm" icon="sparkles" onClick={() => setStuck((s) => !s)}>Stuck?</Btn>
       )}
+      {/* Build recall drills from this project's whole record — the state, the
+          updates, and the documents filed under it. For the meeting where you
+          have to talk about it without notes. */}
+      <Btn kind="ghost" size="sm" icon="school" title="Drill yourself on this project"
+        onClick={() => go({ screen: 'study', build: { tab: 'project', projectId: project.id } })}>Drill</Btn>
     </div>
     {stuck && <ThinkItThrough project={project} idleDays={idleDays}
       onClose={() => setStuck(false)} onHold={() => { setStuck(false); setHoldOpen(true) }} />}

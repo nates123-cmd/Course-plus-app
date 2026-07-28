@@ -21,6 +21,7 @@ import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
 import { SeriesScreen } from './screens/Series'
+import { StudyScreen } from './screens/Study'
 import { RecorderProvider, FloatingRecorder, useRecorderCtx } from './RecorderContext'
 
 // ── Sidebar ─────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ function SidebarContent({ onClose }) {
     {nav('inbox', 'Inbox', 'inbox', inboxCount)}
     {nav('repeat', 'Series', 'series')}
     {nav('stack-2', 'Library', 'library')}
+    {nav('school', 'Study', 'study')}
 
     <div style={{ display: 'flex', alignItems: 'center', padding: '20px 10px 8px' }}>
       <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
@@ -553,6 +555,7 @@ function Screen() {
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />
+    case 'study':    return <StudyScreen key={route.id || 'shelf'} />
     case 'meeting':
     case 'record':   return <RecordScreen key={route.project || 'mtg'} />
     default:         return <OverviewScreen />
@@ -577,6 +580,7 @@ function useTabTitle() {
       case 'ask':      return 'Ask'
       case 'inbox':    return 'Inbox'
       case 'library':  return r.tag ? '#' + r.tag : 'Library'
+      case 'study':    return 'Study'
       case 'area':     return areaById(r.id)?.name || 'Area'
       case 'project':  return projectById(r.id)?.name || 'Project'
       case 'note':     return noteById(r.id)?.title || 'Note'
@@ -590,7 +594,7 @@ function useTabTitle() {
 }
 
 const TAB_ICON = { overview: 'layout-grid', agenda: 'calendar', ask: 'sparkles', inbox: 'inbox',
-  library: 'stack-2', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
+  library: 'stack-2', study: 'school', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
   meeting: 'microphone', record: 'microphone' }
 
 function TabBar() {

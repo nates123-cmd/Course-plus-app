@@ -337,6 +337,8 @@ export function NoteScreen() {
             <IconBtn n="trash" s={17} title="Delete" onClick={deleteThis} />
             <Btn kind="outline" size="sm" icon="pencil" onClick={startEdit}>Edit</Btn>
             {isMeeting && <Btn kind="outline" size="sm" icon="microphone" onClick={resumeMeeting} title="Open the recorder/composer — transcript, re-record, re-synthesize">Composer</Btn>}
+            <Btn kind="outline" size="sm" icon="school" title="Build a recall drill from this document, then explain it cold"
+              onClick={() => go({ screen: 'study', build: { tab: 'doc', noteId: n.id } })}>Drill</Btn>
             <Btn kind="outline" size="sm" icon="message-circle" onClick={() => setChatOpen(true)}>Ask</Btn>
             <Btn kind="outline" size="sm" icon="sparkles" onClick={() => setRailOpen(true)}>{aiName}</Btn>
           </span>}
