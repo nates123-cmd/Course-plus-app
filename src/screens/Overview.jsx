@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow } from '../kit'
+import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, fmtDate, TODAY, MONTHS, usePersisted, holdView, holdDue, addDays, Popover, PopRow, StateTag, stateTagFor } from '../kit'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
 import { updateTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
@@ -170,9 +170,7 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
       border: '1.5px solid ' + t.t3, background: 'transparent' }} />
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: t.t1, overflow: 'hidden',
       textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
-    {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, fontFamily: f.ui,
-      fontSize: 11, fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}>
-      <Icon n="player-pause" s={11} />{x.waiting}</span>}
+    {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk,
       fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
     {x.next && !due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.label, fontSize: 9, fontWeight: 700,
@@ -377,8 +375,7 @@ function NowRow({ x, first, onToggle, onOpen }) {
       background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
     <span style={{ width: 16, height: 16, borderRadius: 5, flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
-    {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11,
-      fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}><Icon n="player-pause" s={11} />{x.waiting}</span>}
+    {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
   </div>
 }

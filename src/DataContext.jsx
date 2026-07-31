@@ -179,7 +179,8 @@ export function DataProvider({ children }) {
       label: task.label || '', done: !!task.done, next: !!task.next,
       waiting: task.waiting, due: task.due, dueDate: task.dueDate,
       workType: task.workType, taskStatus: task.taskStatus, priority: task.priority ?? undefined,
-      notes: task.notes, srcMeeting: task.srcMeeting, meetingId: task.meetingId, sort: task.sort ?? 0,
+      notes: task.notes, srcMeeting: task.srcMeeting, meetingId: task.meetingId,
+      groupLabel: task.groupLabel, sort: task.sort ?? 0,
       createdAt: task.createdAt || new Date().toISOString(), // counts as project activity right away
     }
     setAreas((prev) => prev.map((a) => {

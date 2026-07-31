@@ -42,7 +42,8 @@ function mapTask(r) {
     waiting: r.waiting || undefined, due: r.due || undefined, dueDate: r.due_date || undefined,
     workType: r.work_type || undefined, taskStatus: r.task_status || undefined,
     priority: r.priority ?? undefined,
-    notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined, sort: r.sort ?? 0,
+    notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined,
+    groupLabel: r.group_label || undefined, sort: r.sort ?? 0,
     createdAt: r.created_at, updatedAt: r.updated_at, rescheduleCount: r.reschedule_count ?? 0,
   }
 }
@@ -71,6 +72,7 @@ function assemble(areaRows, projRows, taskRows, msRows, updRows, artRows) {
     projects: projRows.filter((p) => p.area_id === a.id).sort((x, y) => x.sort - y.sort).map((p) => ({
       id: p.id, name: p.name, status: p.status, priority: p.priority ?? null,
       due: p.due || undefined, blurb: p.blurb || undefined, hold: p.hold || undefined,
+      pinned: Array.isArray(p.pinned) ? p.pinned : [],
       tasks: (tasksByProj[p.id] || []).sort((x, y) => x.sort - y.sort),
       milestones: (msByProj[p.id] || []).sort((x, y) => x.sort - y.sort),
       updates: (updByProj[p.id] || []).sort((x, y) => (x.at < y.at ? 1 : -1)),
@@ -280,7 +282,7 @@ const TASK_COLS = {
   label: 'label', done: 'done', next: 'next', waiting: 'waiting', due: 'due',
   dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status', priority: 'priority',
   notes: 'notes', srcMeeting: 'src_meeting', meetingId: 'meeting_id', project: 'project_id', area: 'area_id', sort: 'sort',
-  rescheduleCount: 'reschedule_count',
+  rescheduleCount: 'reschedule_count', groupLabel: 'group_label',
 }
 // projectId may be null for a pillar-only task — pass the pillar via task.area.
 export async function createTask(projectId, task = {}) {
@@ -289,7 +291,8 @@ export async function createTask(projectId, task = {}) {
     label: task.label || '', done: !!task.done, next: !!task.next,
     waiting: task.waiting ?? null, due: task.due ?? null, due_date: task.dueDate ?? null,
     work_type: task.workType ?? null, task_status: task.taskStatus ?? null, priority: task.priority ?? null,
-    notes: task.notes ?? null, src_meeting: task.srcMeeting ?? null, meeting_id: task.meetingId ?? null, sort: task.sort ?? 0 }
+    notes: task.notes ?? null, src_meeting: task.srcMeeting ?? null, meeting_id: task.meetingId ?? null,
+    group_label: task.groupLabel ?? null, sort: task.sort ?? 0 }
   const { error } = await supabase.from('cp_tasks').insert(row)
   if (error) throw error
   return id
@@ -434,6 +437,7 @@ export async function updateProject(id, patch) {
   if (patch.due !== undefined) row.due = patch.due
   if (patch.blurb !== undefined) row.blurb = patch.blurb
   if (patch.hold !== undefined) row.hold = patch.hold
+  if (patch.pinned !== undefined) row.pinned = patch.pinned
   if (patch.areaId != null) row.area_id = patch.areaId
   const { error } = await supabase.from('cp_projects').update(row).eq('id', id)
   if (error) throw error

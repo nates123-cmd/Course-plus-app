@@ -50,8 +50,8 @@ export function taskStatus(x) {
 }
 const STATUS_OPTS = [
   { id: 'none', label: 'None', icon: 'circle-dotted' },
-  { id: 'next', label: 'Next', icon: 'arrow-up-right' },
   { id: 'now', label: 'Now', icon: 'player-play' },
+  { id: 'next', label: 'Next', icon: 'arrow-up-right' },
   { id: 'waiting', label: 'Waiting', icon: 'player-pause' },
   { id: 'done', label: 'Done', icon: 'circle-check' },
 ]
@@ -86,6 +86,17 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   const [mtgOpen, setMtgOpen] = useState(false)
   const [agenda, setAgenda] = useState([]) // this week's meeting blocks (from the Agenda / placed_blocks)
   const [title, setTitle] = useState(task.label || '')
+  // Groups have no table of their own — the set of groups in a project is just
+  // the distinct labels its tasks carry, so naming a new one here creates it and
+  // clearing the last task off one makes it disappear.
+  const [groupNew, setGroupNew] = useState(null) // null = closed, '' = typing
+  const projectGroups = [...new Set(((project && project.tasks) || [])
+    .map((x) => x.groupLabel).filter(Boolean))].sort()
+  const commitGroup = () => {
+    const name = (groupNew || '').trim()
+    if (name) onPatch({ groupLabel: name })
+    setGroupNew(null)
+  }
   const [pushed, setPushed] = useState(false)
   const titleRef = useRef(null)
   // The long-press that opened this sheet emits a synthetic mouse/click event on
@@ -209,6 +220,17 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
         </div>)}
         {row('Work type', <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {WORK_OPTS.map((w) => <Chip key={w.id} active={task.workType === w.id} onClick={() => chooseWork(w.id)}>{w.label}</Chip>)}
+        </div>)}
+        {row('Group', <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          {projectGroups.map((g) => <Chip key={g} active={task.groupLabel === g}
+            onClick={() => onPatch({ groupLabel: task.groupLabel === g ? null : g })}>{g}</Chip>)}
+          {groupNew === null
+            ? <Chip onClick={() => setGroupNew('')}><Icon n="plus" s={13} />{projectGroups.length ? 'New group' : 'Group these'}</Chip>
+            : <input autoFocus value={groupNew} onChange={(e) => setGroupNew(e.target.value)}
+                onBlur={commitGroup}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitGroup(); if (e.key === 'Escape') setGroupNew(null) }}
+                placeholder="Group name…" style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0,
+                  background: t.bg, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 10px' }} />}
         </div>)}
         {task.workType === 'scheduled' && row('Scheduled for', (() => {
           const assigned = task.meetingId || null

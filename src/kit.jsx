@@ -38,6 +38,35 @@ export function Tag({ children, onClick, active }) {
     borderRadius: 6, padding: '2px 9px', whiteSpace: 'nowrap', cursor: onClick ? 'pointer' : 'default' }}>{children}</span>
 }
 
+// StateTag — the row-level "why isn't this moving" marker. Two states earn one:
+// waiting (blocked on someone else) and scheduled (parked for a meeting). Both
+// used to be invisible in list views: waiting only rendered when the freeform
+// "waiting on" dependency was filled, so a status-only Waiting showed nothing,
+// and work_type never rendered at all. Waiting takes the risk tone (same read as
+// an on-hold project — parked, needs a nudge); scheduled stays neutral, because
+// it's handled, not blocked.
+export function StateTag({ kind, label }) {
+  const { t, f } = useApp()
+  const risk = kind === 'waiting'
+  return <span title={risk ? 'Waiting on someone or something' : 'Scheduled — parked for a meeting'}
+    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, maxWidth: 150,
+      fontFamily: f.ui, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+      color: risk ? t.risk : t.t2, background: risk ? t.riskBg : t.tagBg,
+      border: '1px solid ' + (risk ? t.riskLine : 'transparent'), borderRadius: 6, padding: '2px 8px' }}>
+    <Icon n={risk ? 'player-pause' : 'calendar'} s={11} />
+    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span></span>
+}
+
+// Row state for a task, in the order a list should show it. Mirrors taskStatus()
+// in TaskSheet but returns the rendered label too, so every list view agrees on
+// what "waiting" and "scheduled" look like.
+export function stateTagFor(x) {
+  if (x.done) return null
+  if (x.taskStatus === 'waiting' || x.waiting) return { kind: 'waiting', label: x.waiting || 'Waiting' }
+  if (x.workType === 'scheduled') return { kind: 'scheduled', label: x.meetingId || 'Scheduled' }
+  return null
+}
+
 export function Person({ children, size = 'md' }) {
   const { t, f } = useApp()
   const fs = size === 'sm' ? 11 : 11.5

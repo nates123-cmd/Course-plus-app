@@ -12,6 +12,7 @@ import { useData } from '../DataContext'
 import {
   Icon, Btn, IconBtn, StatusPill, Priority, AreaDot, Card, Label,
   Popover, PopRow, STATUS, statusSkin, areaColor, KIND, DatePill, fmtDate, TODAY, usePersisted,
+  StateTag, stateTagFor,
 } from '../kit'
 
 import { handleTablePaste } from '../lib/tablePaste'
@@ -218,9 +219,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: x.done ? t.t3 : t.t1,
       textDecoration: x.done ? 'line-through' : 'none' }}>{x.label}</span>
     {x.priority && !x.done && <span style={{ zIndex: 1, display: 'inline-flex' }}><Priority level={x.priority} /></span>}
-    {x.waiting && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 1, fontFamily: f.ui, fontSize: 11,
-      fontWeight: 600, color: t.t2, background: t.tagBg, borderRadius: 6, padding: '2px 8px' }}>
-      <Icon n="player-pause" s={11} />{x.waiting}</span>}
+    {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, zIndex: 1, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
     {x.next && !x.done && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', zIndex: 1,
       textTransform: 'uppercase', color: t.accent }}>Next</span>}
@@ -263,7 +262,7 @@ function Tasks({ project, reload }) {
   // live without a refresh. (Drag preview is safe: project.tasks only changes on drop.)
   const tasksSig = (project.tasks || []).map((x) => {
     const d = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m}-${x.dueDate.d}` : (x.due || '')
-    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}`
+    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}:${x.groupLabel || ''}`
   }).join('|')
   const [nowList, setNowList] = useState([])
   const [backlog, setBacklog] = useState([])
@@ -290,7 +289,10 @@ function Tasks({ project, reload }) {
   const [sheetTask, setSheetTask] = useState(null)
   const [drag, setDrag] = useState(null) // { id, from: 'now' | 'backlog' }
   const [showDone, setShowDone] = useState(false)
-  const [showScheduled, setShowScheduled] = useState(false)
+  // Open by default — a scheduled task is already off the pull board, so folding
+  // the section too made it invisible twice over.
+  const [showScheduled, setShowScheduled] = useState(true)
+  const [openGroups, setOpenGroups] = useState({}) // group name → false when collapsed (default open)
 
   const allOpen = [...nowList, ...backlog]
   const findTask = (id) => allOpen.find((o) => o.id === id) || (project.tasks || []).find((o) => o.id === id) || null
@@ -403,6 +405,18 @@ function Tasks({ project, reload }) {
   const onDragEnd = () => { finalize() }
 
   const laneHandlers = (lane) => ({ onDragStart: onDragStart(lane), onDragOver: onRowOver(lane), onDrop, onDragEnd })
+  // Grouped backlog tasks peel off into their own collapsible blocks below the
+  // loose ones. A project with no groups renders exactly as before — same rows,
+  // same drag. Grouped rows are noDrag for now (like Scheduled): the lane's drag
+  // math is index-based over the whole backlog, and splitting it across blocks
+  // would reorder the wrong rows.
+  const backlogFlat = backlog.filter((x) => !x.groupLabel)
+  const backlogGroups = (() => {
+    const m = new Map()
+    backlog.forEach((x) => { if (x.groupLabel) { if (!m.has(x.groupLabel)) m.set(x.groupLabel, []) ; m.get(x.groupLabel).push(x) } })
+    return [...m.entries()].sort((a, b) =>
+      Math.min(...a[1].map((x) => x.sort)) - Math.min(...b[1].map((x) => x.sort)))
+  })()
   const doneTasks = (project.tasks || []).filter((x) => x.done)
   const scheduledTasks = (project.tasks || []).filter((x) => !x.done && isScheduled(x))
   const over = nowList.length > nowCap
@@ -436,9 +450,28 @@ function Tasks({ project, reload }) {
     <div style={{ marginTop: 20 }}>
       <SectionHead label={`Backlog · ${backlog.length}`} action="Drag or tap ↑ Now · hold for details" />
       <div onDragOver={onLaneOver('back')} onDrop={onDrop} style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 8 }}>
-        {backlog.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
+        {backlogFlat.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
           {...backH} dragging={drag?.id === x.id} onLane={(id) => moveLane(id, 'now')} laneUp onDismiss={remove} />)}
       </div>
+      {backlogGroups.map(([name, rows]) => {
+        const open = openGroups[name] !== false
+        return <div key={name} style={{ marginTop: 12 }}>
+          <div onClick={() => setOpenGroups((g) => ({ ...g, [name]: !open }))}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12, fontWeight: 600,
+              color: t.t2, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+            onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+            <Icon n={open ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+            <Icon n="folder" s={14} c={t.t3} />
+            <span style={{ flex: 1 }}>{name}</span>
+            <span style={{ fontVariantNumeric: 'tabular-nums', color: t.t3 }}>{rows.length}</span>
+          </div>
+          {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+            {rows.map((x) => <TaskRow key={x.id} x={x} noDrag onToggle={toggle}
+              onOpen={(id) => setSheetTask(findTask(id))} onLane={(id) => moveLane(id, 'now')} laneUp onDismiss={remove} />)}
+          </div>}
+        </div>
+      })}
       <div style={{ marginTop: 6 }}>
         {adding ? <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 10,
           border: '1px solid ' + t.line2, background: t.card }}>
@@ -622,7 +655,20 @@ function Library({ project, meetings, docNotes, reload }) {
   items.sort((x, y) => y.ts - x.ts)
   const counts = { all: items.length, meeting: 0, file: 0, note: 0 }
   items.forEach((i) => { counts[i.type] += 1 })
-  const shown = filter === 'all' ? items : items.filter((i) => i.type === filter)
+  // Pins float to the top of whatever the filter left behind, in the order they
+  // were pinned. Keys that no longer resolve (row deleted) just drop out here.
+  const pinned = project.pinned || []
+  const rank = (k) => { const i = pinned.indexOf(k); return i === -1 ? Infinity : i }
+  // Compare ranks, don't subtract them: two unpinned rows are both Infinity and
+  // Infinity - Infinity is NaN, which makes the whole sort undefined.
+  const shown = (filter === 'all' ? items : items.filter((i) => i.type === filter))
+    .slice().sort((x, y) => { const a = rank(x.key), b = rank(y.key); return a === b ? 0 : a - b })
+
+  const togglePin = async (key) => {
+    const next = pinned.includes(key) ? pinned.filter((k) => k !== key) : [...pinned, key]
+    try { await updateProject(project.id, { pinned: next }); if (reload) await reload() }
+    catch (err) { window.alert('Could not pin: ' + (err?.message || err)) }
+  }
 
   return <div>
     <SectionHead label={`Library · ${items.length}`} />
@@ -637,30 +683,50 @@ function Library({ project, meetings, docNotes, reload }) {
       })}
     </div>
     {shown.length ? <Card style={{ padding: 0, overflow: 'hidden' }}>
-      {shown.map((it, i) => { const [icon, label] = LIB_BADGE[it.type]
-        return <div key={it.key} onClick={it.onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
-          cursor: 'pointer', borderTop: i ? '1px solid ' + t.line : 'none' }}
-          onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-          <Icon n={icon} s={16} c={t.t3} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
-              <span>{label}</span>
-              {it.dateLabel && <><span style={{ opacity: 0.5 }}>·</span><span>{it.dateLabel}</span></>}
-              {it.sub && <><span style={{ opacity: 0.5 }}>·</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.sub}</span></>}
-              {(it.q || []).includes('?') && <span title="Unsorted (resolve it in the inbox)" style={{ color: t.risk, fontWeight: 700 }}>?</span>}
-            </div>
-          </div>
-          {it.del && <button onClick={(e) => remove(it, e)} title="Delete from library"
-            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 26, height: 26,
-              borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
-            <Icon n="trash-2" s={14} /></button>}
-          <Icon n="chevron-right" s={15} c={t.t3} />
-        </div> })}
+      {shown.map((it, i) => <LibRow key={it.key} it={it} first={!i} pinned={pinned.includes(it.key)}
+        onPin={() => togglePin(it.key)} onRemove={(e) => remove(it, e)} />)}
     </Card> : <div style={{ fontFamily: f.body, fontSize: 13.5, color: t.t3, fontStyle: 'italic', padding: '6px 2px' }}>
       Nothing here yet. Throw something in above.</div>}
+  </div>
+}
+
+// One library row. Press-and-hold (or right-click) toggles the pin — same
+// gesture the task rows already use for their sheet, so there's nothing new to
+// learn and no always-on pin button cluttering every row.
+function LibRow({ it, first, pinned, onPin, onRemove }) {
+  const { t, f } = useApp()
+  const { pressing, handlers } = useLongPress(onPin, it.onClick)
+  const [icon, label] = LIB_BADGE[it.type]
+  return <div {...handlers} onContextMenu={(e) => { e.preventDefault(); onPin() }}
+    title="Press and hold to pin"
+    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', position: 'relative', overflow: 'hidden',
+      cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', borderTop: first ? 'none' : '1px solid ' + t.line,
+      background: pinned ? t.sel : 'transparent', transition: 'background .14s' }}
+    onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
+    onMouseLeave={(e) => e.currentTarget.style.background = pinned ? t.sel : 'transparent'}>
+    {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
+      background: t.accentBg, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
+    <Icon n={pinned ? 'pin' : icon} s={16} c={pinned ? t.accent : t.t3} style={{ zIndex: 1 }} />
+    <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
+      <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 2, fontFamily: f.ui, fontSize: 11, color: t.t3 }}>
+        <span>{label}</span>
+        {it.dateLabel && <><span style={{ opacity: 0.5 }}>·</span><span>{it.dateLabel}</span></>}
+        {it.sub && <><span style={{ opacity: 0.5 }}>·</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.sub}</span></>}
+        {(it.q || []).includes('?') && <span title="Unsorted (resolve it in the inbox)" style={{ color: t.risk, fontWeight: 700 }}>?</span>}
+      </div>
+    </div>
+    {pinned && <span onClick={(e) => { e.stopPropagation(); onPin() }} title="Unpin"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', zIndex: 1, cursor: 'pointer',
+        fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: t.accent }}>Pinned</span>}
+    {it.del && <button onClick={onRemove} onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+      title="Delete from library"
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', zIndex: 1, width: 26, height: 26,
+        borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
+      <Icon n="trash-2" s={14} /></button>}
+    <Icon n="chevron-right" s={15} c={t.t3} style={{ zIndex: 1 }} />
   </div>
 }
 
