@@ -93,13 +93,15 @@ Each is encoded in the relevant writer. They are why writers own storage.
 
 ## Deploying
 
-1. **Set the API key** (the one new secret):
+Two steps. There is **no new secret** — `ANTHROPIC_API_KEY` is already set on
+this project (the suite's `claude` proxy uses it), and Supabase secrets are
+project-wide, so this function reads the same one. `CAPTURE_KEY` and `OWNER_ID`
+are likewise already there.
 
-   ```sh
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref xsmnfcmtbpeaccnyinkr
-   ```
+Nothing runs on the Mac or the Beelink. The function executes on Supabase's
+servers and calls `api.anthropic.com` over HTTPS itself.
 
-2. **Create `capture_log`.** `supabase db push` is unusable on this shared
+1. **Create `capture_log`.** `supabase db push` is unusable on this shared
    project (~69 sibling migrations across the suite), so apply the migration
    body directly:
 
@@ -108,7 +110,7 @@ Each is encoded in the relevant writer. They are why writers own storage.
      < supabase/migrations/20260803120000_capture_log.sql
    ```
 
-3. **Deploy:**
+2. **Deploy:**
 
    ```sh
    supabase functions deploy capture --no-verify-jwt --project-ref xsmnfcmtbpeaccnyinkr
