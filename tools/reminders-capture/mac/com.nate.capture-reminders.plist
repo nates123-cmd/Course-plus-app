@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.nate.capture-reminders</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/natestephenson/.local/bin/capture-reminders.sh</string>
+	</array>
+
+	<!-- Every 60s. The work is a single AppleScript query when the list is
+	     empty, which is the overwhelmingly common case, so this is cheap. -->
+	<key>StartInterval</key>
+	<integer>60</integer>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!-- One log, appended, so `tail -f` is the whole debugging story. Not under
+	     ~/Documents: iCloud evicts files there and the log would vanish. -->
+	<key>StandardOutPath</key>
+	<string>/Users/natestephenson/.local/state/capture-reminders/poller.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/natestephenson/.local/state/capture-reminders/poller.log</string>
+
+	<!-- launchd starts agents with a near-empty PATH; curl and osascript are
+	     both in /usr/bin, but be explicit so this does not depend on defaults. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
