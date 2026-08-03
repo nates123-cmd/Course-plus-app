@@ -48,14 +48,30 @@ Then paste the new value into step 10. Nothing else needs redeploying.
 
 ## What the notification means
 
+The capture is **routed**, so the notification names where it landed rather than
+just confirming receipt. That is the point: it is the only moment a misroute is
+cheap to catch. Read it before you put your wrist down.
+
+Expect a beat before it appears — the endpoint calls a model to classify the
+text, so this takes a few seconds rather than being instant. A capture with
+several items in it returns several outcomes joined by `;`.
+
 | Notification | Meaning | What to do |
 | --- | --- | --- |
-| `Captured — 23 words` | Saved. The row is in the Course Plus inbox, untriaged. | Nothing. Triage it later. |
+| `Stock: butter -> shopping list` | On the Stock shopping list. | Nothing. |
+| `Stock: butter marked out` | Matched a pantry item by exact name and flagged it out, which auto-promotes it to the shopping list. | Nothing. |
+| `Course+ task on Riverside (due Aug 4, 2026)` | A real task, on that project. | Nothing. |
+| `Course+ note` | Filed as a note. | Nothing. |
+| `Ink: thought saved` | In Ink's Mind stream. | Nothing. |
+| `Break: look up later` | Queued in Break. | Nothing. |
+| `Inbox` | Could not route it confidently, so it fell back to the Course Plus inbox — the old behaviour. | Triage later. If this happens for something obvious, the classifier prompt needs work. |
+| `Stock: eggs -> shopping list; Course+ task` | Several items in one capture, routed separately. | Nothing. |
+| `Captured — 23 words` | **You are on the pre-router build.** | Redeploy the function. |
 | `Auth failed` | The `x-capture-key` header is missing or wrong. | Check step 10. The header name is case-insensitive but the value is exact, with no trailing space. |
 | `Empty capture` | Dictation produced nothing, or only whitespace. | Say it again. Usually means Stop Listening fired before you spoke. |
 | `Capture too long` | Body over 8 KB. | Should never happen from dictation. If it does, something upstream is wrong. |
 | `POST only` | The request was not a POST. | Check step 9. |
-| `Not saved: ...` | The endpoint got the text but the database insert failed. The thought was NOT saved. | Say it again into Notes or Ink so it is not lost, then check the function logs. |
+| `Not saved: router error` | The endpoint got the text but nothing was written. The thought was NOT saved. Should be unreachable — the router falls back to the inbox on every failure it knows about. | Say it again into Notes so it is not lost, then check the function logs. |
 | `Server misconfigured` | An environment secret is missing on the function. | Check that `CAPTURE_KEY`, `OWNER_ID`, and the service key are set on the project. |
 | No notification at all | The shortcut did not reach step 3, or the watch lost the network. | Rerun it. Assume the capture did not land. |
 
