@@ -194,7 +194,14 @@ export function useRecorder() {
       const s = await buildStream(opts)
       stream.current = s
       const mime = pickMime()
-      const rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined)
+      // Cap the encode bitrate so long meetings stay uploadable. Storage rejects
+      // files over ~50MB ("object exceeded the maximum allowed size"); the browser
+      // default (~96–128kbps) blows past that just over an hour. 40kbps mono opus
+      // is plenty for speech + AssemblyAI diarization and keeps a full 2h session
+      // (MAX_SECONDS) around ~36MB — comfortably under the cap.
+      const opts = { audioBitsPerSecond: 40000 }
+      if (mime) opts.mimeType = mime
+      const rec = new MediaRecorder(s, opts)
       chunks.current = []
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size) {
