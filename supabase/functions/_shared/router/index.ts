@@ -198,12 +198,16 @@ export async function route(
     })
   }
 
-  await recordLog(admin, ownerId, text, src, logged)
+  const logId = await recordLog(admin, ownerId, text, src, logged)
 
   // Anything that ended in the inbox is something the router could not file.
   // The capture is safe either way; this is what stops it sitting unnoticed in
   // the one app the router exists to keep him out of.
-  await escalate(text, src, logged.filter((l) => l.demoted_reason))
+  //
+  // The log id rides along so a Telegram reply can name the exact capture it
+  // is correcting. Without it the re-file has to guess from the text, which
+  // breaks the moment he says the same thing twice.
+  await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
   return logged.map((l) => l.line).join('; ')
 }
@@ -225,12 +229,20 @@ async function recordLog(
   text: string,
   src: string,
   items: LoggedItem[],
-): Promise<void> {
-  const { error } = await admin.from('capture_log').insert({
-    user_id: ownerId,
-    raw_text: text,
-    src,
-    items,
-  })
-  if (error) console.error('capture_log insert failed:', error.message)
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('capture_log')
+    .insert({
+      user_id: ownerId,
+      raw_text: text,
+      src,
+      items,
+    })
+    .select('id')
+    .single()
+  if (error) {
+    console.error('capture_log insert failed:', error.message)
+    return null
+  }
+  return data.id as string
 }

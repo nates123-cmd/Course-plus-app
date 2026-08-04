@@ -34,7 +34,12 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function buildMessage(text: string, src: string, demotions: Demotion[]): string {
+function buildMessage(
+  text: string,
+  src: string,
+  demotions: Demotion[],
+  logId: string | null,
+): string {
   const reasons = [...new Set(demotions.map((d) => d.demoted_reason).filter(Boolean))]
 
   // The verbatim text is the whole point of the message: even if the row is
@@ -47,6 +52,10 @@ function buildMessage(text: string, src: string, demotions: Demotion[]): string 
     `Filed to Inbox instead — ${esc(reasons.join(', ') || 'could not route')}.`,
     'Reply to this message with where it should go.',
   ]
+  // The ref is what the re-file skill matches on. Kept to 8 characters because
+  // it is read on a phone, and prefix-matched server-side; a full uuid on
+  // every alert is noise in a message meant to be glanceable.
+  if (logId) lines.push('', `<code>ref ${esc(logId.slice(0, 8))}</code>`)
   return lines.join('\n')
 }
 
@@ -67,6 +76,7 @@ export async function escalate(
   text: string,
   src: string,
   demotions: Demotion[],
+  logId: string | null = null,
 ): Promise<void> {
   if (!BOT_TOKEN || !CHAT_ID) return // not configured — stay silent, stay harmless
   if (demotions.length === 0) return
@@ -80,7 +90,7 @@ export async function escalate(
       body: JSON.stringify({ chat_id: CHAT_ID, ...body }),
     })
 
-  const send = post({ text: buildMessage(text, src, demotions), parse_mode: 'HTML' })
+  const send = post({ text: buildMessage(text, src, demotions, logId), parse_mode: 'HTML' })
     .then(async (res) => {
       if (res.ok) return
       console.error(`telegram ${res.status}: ${(await res.text()).slice(0, 200)}`)
@@ -89,7 +99,10 @@ export async function escalate(
       // formatting bug would silently swallow the one alert that exists to say
       // a capture needs attention. Retry unformatted: ugly beats unsent.
       const plain = await post({
-        text: `Capture needs filing (${src})\n\n${text}\n\nFiled to Inbox instead. Reply with where it should go.`,
+        text:
+          `Capture needs filing (${src})\n\n${text}\n\n` +
+          `Filed to Inbox instead. Reply with where it should go.` +
+          (logId ? `\n\nref ${logId.slice(0, 8)}` : ''),
       })
       if (!plain.ok) {
         console.error(`telegram plain retry ${plain.status}`)
