@@ -15,6 +15,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classify, CONFIDENCE_FLOOR, type RoutedItem } from './classify.ts'
+import { escalate } from './notify.ts'
 import {
   writeBreakFlashcard,
   writeBreakLookup,
@@ -198,6 +199,11 @@ export async function route(
   }
 
   await recordLog(admin, ownerId, text, src, logged)
+
+  // Anything that ended in the inbox is something the router could not file.
+  // The capture is safe either way; this is what stops it sitting unnoticed in
+  // the one app the router exists to keep him out of.
+  await escalate(text, src, logged.filter((l) => l.demoted_reason))
 
   return logged.map((l) => l.line).join('; ')
 }
