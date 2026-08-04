@@ -101,5 +101,12 @@ node -e 'console.log(JSON.stringify({action:"list"}))'
   call `list` and offer the closest match rather than retrying.
 - A 422 means the kind was rejected by its writer (most often a flashcard with
   no back). Fix the field and retry once.
+- A **409 `already re-filed`** means this capture was corrected before. Do NOT
+  retry with `force:true` just to clear the error — tell Nate what it was
+  already filed as and let him say whether he wants it changed. The usual cause
+  is the same reply being handled twice, and forcing it makes a second record.
+- **Beware duplicate captures.** He repeats himself, so several entries can
+  share identical text. The `ref` is the only thing that distinguishes them —
+  match on the ref from the message you are replying to, never on the wording.
 - The inbox row is cleared automatically on success. Do not also try to delete
   it through the `course-plus` skill.

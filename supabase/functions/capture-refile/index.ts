@@ -81,6 +81,8 @@ interface CaptureLogRow {
     record_id: string
     line: string
     demoted_reason?: string
+    /** Set by a re-file. Its presence means this capture is already corrected. */
+    refiled_at?: string
   }>
   created_at: string
   undone_at: string | null
@@ -230,10 +232,18 @@ Deno.serve(async (req) => {
 
     if (error) return json({ error: error.message }, 500)
 
-    // "Unfiled" means at least one item was demoted to the inbox. A capture
-    // that routed cleanly is not this skill's business.
+    // "Unfiled" means demoted to the inbox AND not since corrected.
+    //
+    // The second half is not optional: re-file APPENDS its item rather than
+    // clearing the demotion, so filtering on `demoted_reason` alone leaves a
+    // corrected capture in this list permanently. The bot then offers work
+    // that is already done, and re-files it again on the next reply — which is
+    // how a single capture becomes three records.
     const unfiled = (data || [])
-      .filter((r) => (r.items as CaptureLogRow['items']).some((i) => i.demoted_reason))
+      .filter((r) => {
+        const items = r.items as CaptureLogRow['items']
+        return items.some((i) => i.demoted_reason) && !items.some((i) => i.refiled_at)
+      })
       .slice(0, limit)
       .map((r) => ({
         ref: r.id.slice(0, 8),
@@ -260,6 +270,21 @@ Deno.serve(async (req) => {
     const found = await findCapture(ref)
     if ('error' in found) return json({ error: found.error }, 404)
     if (found.undone_at) return json({ error: 'that capture was already undone' }, 409)
+
+    // Already corrected once. Refuse rather than silently making a second
+    // record: the common cause is the same reply being processed twice, not a
+    // genuine change of mind. `force` exists for correcting a correction.
+    const prior = found.items.find((i) => i.refiled_at)
+    if (prior && body.force !== true) {
+      return json(
+        {
+          error: `already re-filed as "${prior.line}" at ${prior.refiled_at}. ` +
+            `Pass force:true only if this is a further correction.`,
+          already: { kind: prior.kind, table: prior.table, record_id: prior.record_id },
+        },
+        409,
+      )
+    }
 
     // The text defaults to what he actually said. An override exists because
     // dictation mangles words often enough that a correction like "it's
