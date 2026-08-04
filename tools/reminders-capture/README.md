@@ -36,10 +36,16 @@ Measured end to end on 2026-08-03:
 | --- | --- |
 | `"I'm out of butter and eggs"` | → two `extras` rows, confidence 0.97 / 0.95 |
 | `"look up what a mansard roof is"` | → `look_up_later`, rephrased to *What is a mansard roof?* |
+| `"I am out of olive oil"` | → `extras`, **routed unattended by launchd**, no manual run |
 | Empty queue | 0.27s |
 | One item | ~23s (about 6s of that is the endpoint) |
 
 Multi-item splitting works: one sentence became two separate shopping items.
+
+The olive-oil run is the one that matters — it sat pending while TCC was
+blocking the agent, then routed on its own the moment permission was granted.
+Nothing was lost while the poller was broken, because an item is only completed
+after the endpoint returns 200.
 
 ## Install
 
@@ -71,9 +77,21 @@ Log: `~/.local/state/capture-reminders/poller.log`.
   `~/.local/bin`, state in `~/.local/state`.
 - **No Python.** Homebrew venvs on this machine break on pyexpat. bash +
   osascript + curl have no install step and nothing to rot.
-- **TCC.** The poller needs Reminders access. If reads fail, grant it under
-  System Settings → Privacy & Security → Reminders. A denied read looks like an
-  empty queue, so the script fails loudly instead.
+- **TCC — a LaunchAgent has a different identity than your shell, and this will
+  bite on first install.** Running the script by hand works immediately, because
+  it inherits Terminal's already-granted Reminders access. The same script under
+  launchd has none of its own and every tick fails. It is easy to read that as
+  "the script is broken" when the script is fine.
+
+  There is no scriptable fix — it needs one human click. `launchctl kickstart -k
+  gui/$(id -u)/com.nate.capture-reminders` forces a run so the dialog appears;
+  click Allow. If no dialog comes, enable **Reminders** for `bash` under System
+  Settings → Privacy & Security → **Automation**, or add `/bin/bash` under
+  Privacy & Security → Reminders (`Cmd+Shift+G` to type the path).
+
+  Tell: AppleScript calls start hanging rather than erroring while the dialog is
+  waiting for an answer. A denied read would otherwise look like an empty queue,
+  so the script exits loudly with the remedy instead.
 - **Cold start.** The first run after Reminders has been closed can take minutes
   while the app launches and syncs. Steady state is sub-second when idle.
 
