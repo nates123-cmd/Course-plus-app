@@ -25,9 +25,21 @@ and the $99 Apple Developer Program.
 
 | Endpoint | Trigger | Lands in | Speed | Cost | Speaker labels |
 | --- | --- | --- | --- | --- | --- |
-| `/capture` | Wrist dictation, capped ~60s | `cp_inbox` | instant | free | n/a |
+| `/capture` | Wrist dictation, capped ~60s | **routed** (see below) | seconds | ~0.1c | n/a |
 | `/capture-audio/text` | Share Transcript, solo | `cp_notes` | instant | free | no |
 | `/capture-audio` | Share the recording, meetings | `cp_notes` | minutes | ~27c/hr | yes |
+
+**`/capture` is routed, not filed.** It classifies the dictation and writes a
+real record in whichever suite app it belongs to — a Course+ task or note, a
+Stock shopping item, an Ink thought, a Break look-up — because an inbox row is
+the chore the router exists to remove. Anything unroutable or low-confidence
+still falls back to `cp_inbox`, so no capture is ever lost. Full write-up,
+landmines, and deploy steps: `supabase/functions/_shared/router/README.md`.
+
+The router is a shared module rather than part of the `capture` function
+because the long-form path already produces a transcript, so funnelling a
+recorded conversation into the same destinations is the same problem with a
+longer input. That is not wired up yet.
 
 All three take the same `CAPTURE_KEY` shared secret in an `x-capture-key`
 header, compared in constant time, and all are deployed `--no-verify-jwt`
