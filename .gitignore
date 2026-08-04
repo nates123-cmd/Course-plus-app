@@ -13,8 +13,9 @@ _ref/
 mcp/node_modules
 mcp/.session.json
 
-# Supabase CLI temp
-supabase/.temp/
+# Supabase CLI temp — anywhere, not just the project root: running the CLI
+# from inside supabase/functions writes a nested copy.
+**/.temp/
 
 # Tauri desktop build artifacts
 src-tauri/target/
