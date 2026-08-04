@@ -15,13 +15,17 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classify, CONFIDENCE_FLOOR, type RoutedItem } from './classify.ts'
+import { escalate } from './notify.ts'
 import {
+  writeBreakFlashcard,
   writeBreakLookup,
   writeCourseNote,
   writeCourseTask,
   writeInbox,
   writeInkThought,
+  writeStockIdea,
   writeStockOut,
+  writeStockStaple,
   type WriteResult,
 } from './writers.ts'
 
@@ -33,15 +37,34 @@ interface LoggedItem extends WriteResult {
   demoted_reason?: string
 }
 
-async function activeProjects(
+/**
+ * Every project Nate might name out loud, best-match first.
+ *
+ * Deliberately NOT just `status = 'active'`. He captures against trips and
+ * side projects that sit at `on-hold` or `idea` for months — "Hawaii Trip" is
+ * on-hold right now — and filtering to active meant those names were never
+ * shown to the classifier, so the task silently landed with no project. That
+ * failure is invisible: the task exists, it just is not where he looked.
+ * `archived` stays out; naming a dead project is the one case where dropping
+ * the association is right.
+ */
+const OPEN_STATUSES = ['active', 'on-hold', 'idea']
+
+/** Lower is better. Used only to break duplicate-name ties. */
+const STATUS_RANK: Record<string, number> = { active: 0, 'on-hold': 1, idea: 2 }
+
+async function openProjects(
   admin: SupabaseClient,
   ownerId: string,
-): Promise<{ names: string[]; byName: Map<string, { id: string; name: string }> }> {
+): Promise<{
+  names: string[]
+  byName: Map<string, { id: string; name: string; status: string }>
+}> {
   const { data, error } = await admin
     .from('cp_projects')
-    .select('id, name')
+    .select('id, name, status')
     .eq('user_id', ownerId)
-    .eq('status', 'active')
+    .in('status', OPEN_STATUSES)
 
   // A failed project lookup is not fatal: without the list the classifier
   // simply cannot attach a project, and an unfiled task still beats no task.
@@ -50,16 +73,33 @@ async function activeProjects(
     return { names: [], byName: new Map() }
   }
 
-  const byName = new Map<string, { id: string; name: string }>()
-  for (const p of data) byName.set(p.name.toLowerCase().trim(), p)
-  return { names: data.map((p) => p.name), byName }
+  // Duplicate names are real and load-bearing: "Stock", "Crate" and "Cue" each
+  // exist twice at different statuses. Keyed on lowercased name, the last one
+  // read would silently win, so a capture could attach to the dormant twin.
+  // Rank explicitly instead — active beats on-hold beats idea.
+  const byName = new Map<string, { id: string; name: string; status: string }>()
+  for (const p of data) {
+    const key = p.name.toLowerCase().trim()
+    const seen = byName.get(key)
+    if (!seen || (STATUS_RANK[p.status] ?? 9) < (STATUS_RANK[seen.status] ?? 9)) {
+      byName.set(key, p)
+    }
+  }
+
+  // One name per line for the prompt — showing the same name three times
+  // invites the model to pick between identical strings it cannot tell apart.
+  const names = [...byName.values()]
+    .sort((a, b) => (STATUS_RANK[a.status] ?? 9) - (STATUS_RANK[b.status] ?? 9))
+    .map((p) => p.name)
+
+  return { names, byName }
 }
 
 async function dispatch(
   admin: SupabaseClient,
   ownerId: string,
   item: RoutedItem,
-  byName: Map<string, { id: string; name: string }>,
+  byName: Map<string, { id: string; name: string; status: string }>,
 ): Promise<WriteResult> {
   // The classifier returns a project NAME copied from the list we gave it;
   // resolving it to an id here means a hallucinated name degrades to "no
@@ -75,10 +115,16 @@ async function dispatch(
       return writeCourseNote(admin, ownerId, item, projectId, projectName)
     case 'stock_out':
       return writeStockOut(admin, ownerId, item)
+    case 'stock_staple':
+      return writeStockStaple(admin, ownerId, item)
+    case 'stock_idea':
+      return writeStockIdea(admin, ownerId, item)
     case 'ink_thought':
       return writeInkThought(admin, ownerId, item)
     case 'break_lookup':
       return writeBreakLookup(admin, ownerId, item)
+    case 'break_flashcard':
+      return writeBreakFlashcard(admin, ownerId, item)
     default:
       throw new Error(`unroutable kind: ${item.kind}`)
   }
@@ -99,7 +145,7 @@ export async function route(
   let items: RoutedItem[] = []
   let classifierFailed = false
   try {
-    const { names, byName } = await activeProjects(admin, ownerId)
+    const { names, byName } = await openProjects(admin, ownerId)
 
     items = await classify(text, names)
 
@@ -152,7 +198,16 @@ export async function route(
     })
   }
 
-  await recordLog(admin, ownerId, text, src, logged)
+  const logId = await recordLog(admin, ownerId, text, src, logged)
+
+  // Anything that ended in the inbox is something the router could not file.
+  // The capture is safe either way; this is what stops it sitting unnoticed in
+  // the one app the router exists to keep him out of.
+  //
+  // The log id rides along so a Telegram reply can name the exact capture it
+  // is correcting. Without it the re-file has to guess from the text, which
+  // breaks the moment he says the same thing twice.
+  await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
   return logged.map((l) => l.line).join('; ')
 }
@@ -174,12 +229,20 @@ async function recordLog(
   text: string,
   src: string,
   items: LoggedItem[],
-): Promise<void> {
-  const { error } = await admin.from('capture_log').insert({
-    user_id: ownerId,
-    raw_text: text,
-    src,
-    items,
-  })
-  if (error) console.error('capture_log insert failed:', error.message)
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from('capture_log')
+    .insert({
+      user_id: ownerId,
+      raw_text: text,
+      src,
+      items,
+    })
+    .select('id')
+    .single()
+  if (error) {
+    console.error('capture_log insert failed:', error.message)
+    return null
+  }
+  return data.id as string
 }

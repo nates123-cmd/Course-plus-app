@@ -1,0 +1,29 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.110.8"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.110.8": "3fe5b529aba9ea7d19e980feb977d4da1f9300cb5378942b32f1522c21649623"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@huggingface/transformers@^4.2.0",
+        "npm:@supabase/supabase-js@^2.106.1",
+        "npm:@tauri-apps/cli@2",
+        "npm:@tiptap/extension-table@^3.28.0",
+        "npm:@tiptap/pm@^3.28.0",
+        "npm:@tiptap/react@^3.28.0",
+        "npm:@tiptap/starter-kit@^3.28.0",
+        "npm:@vitejs/plugin-react@^6.0.1",
+        "npm:react-dom@^19.2.6",
+        "npm:react-markdown@^10.1.0",
+        "npm:react@^19.2.6",
+        "npm:remark-gfm@^4.0.1",
+        "npm:tiptap-markdown@0.9",
+        "npm:vite@^8.0.12"
+      ]
+    }
+  }
+}

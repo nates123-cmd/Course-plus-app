@@ -22,6 +22,36 @@ Tick is the only suite app in a separate project, and nothing here targets it.
 | `writers.ts` | One writer per destination, each encoding its app's storage shape and landmines. |
 | `index.ts` | `route()` — project lookup, dispatch, fallback, capture log, confirmation line. |
 
+## The kinds
+
+| Kind | Lands in | Said like |
+| --- | --- | --- |
+| `course_task` | `cp_tasks` | "course plus, hawaii trip, figure out activities for big island" |
+| `course_note` | `cp_notes` | "note for the CSA program, Mayra said the deadline moved" |
+| `stock_out` | `pantry_items` -> out, else `extras` | "I'm out of butter" |
+| `stock_staple` | `pantry_items` (`isStaple`) | "add butter to stock staples" |
+| `stock_idea` | `pipeline_ideas` | "stock idea: steak butter" |
+| `ink_thought` | `entries` + `thoughts` | "ink - I feel better in the morning when I hydrate" |
+| `break_lookup` | `look_up_later` | "look up what a mansard roof is" |
+| `break_flashcard` | `flashcards` | "add tendentious to break flashcards" |
+| `unknown` | `cp_inbox` | anything ambiguous |
+
+Three distinctions the prompt works hard to hold, because the tables are
+different and the mistake is silent:
+
+- **`stock_out` vs `stock_staple`** — one changes what he buys this week, the
+  other what he keeps permanently. Being out of butter is not the same as
+  butter being a staple, and `stock_staple` deliberately does not touch
+  `status`: marking a staple must never put a jar he already has on the list.
+- **`stock_out` vs `stock_idea`** — "steak butter" is a dish to make, not an
+  ingredient to buy. Ingredient-shaped idea names are the easy misroute.
+- **`break_lookup` vs `break_flashcard`** — the word "flashcard" is the tell.
+
+`break_flashcard` is the only kind whose content is **model-authored**: Nate
+dictates one word, so the classifier writes the answer side. `flashcards.back`
+is NOT NULL and the writer refuses a null rather than inventing a placeholder —
+an empty card enters the review rotation and has to be fixed mid-session.
+
 The split matters: table shapes in this suite are full of traps (below), and
 none of them should be re-derived by a model on every call.
 
@@ -88,8 +118,33 @@ Each is encoded in the relevant writer. They are why writers own storage.
   text is `snippet`, `title` is not-null. Composite PK `(user_id, id)` with `id`
   text and no default, and `user_id` defaults to `auth.uid()` — null under the
   service key — so both must be passed explicitly.
+- **`flashcards.user_id` is NULLABLE and defaults to `auth.uid()`** — null under
+  the service key. Omitting it inserts a card owned by nobody: no error, no
+  failed constraint, and the row is invisible to Break's RLS-filtered reads
+  forever. Every other suite table with this shape is not-null and fails loudly;
+  this one does not. `context` is separately CHECK-constrained to
+  `'fun' | 'work' | 'both'` and is the deck selector, so a wrong value files the
+  card in a deck he does not review.
+- **`pipeline_ideas.data.references` must be an array, never null.** The
+  pipeline *list* guards it (`idea.references?.length ?? 0`) so a bad row looks
+  fine there and stays hidden; the idea *detail* screen reads `.length` and
+  `.map` straight, so opening that one idea is what crashes.
+- **New `pantry_items` rows need a real `acquiredAt` and
+  `defaultFreshnessDays`.** `freshnessStatus()` does arithmetic on both, and a
+  null `acquiredAt` throws on `.getTime()`. An `isStaple` row returns 'fresh'
+  before either is read, so `writeStockStaple` is safe by luck — any future
+  writer adding a non-staple row is not. `location` genuinely is optional
+  (`row.location ?? defaultLocation(cat)` on read), but the app's own add path
+  always writes one.
 - **Relative dates resolve in `America/New_York`.** Supabase runs UTC; a 9pm
   capture saying "tomorrow" files a day late if resolved server-side.
+- **Project lookup must not filter to `status = 'active'`.** Nate captures
+  against trips and side projects sitting at `on-hold` or `idea` for months
+  ("Hawaii Trip" is on-hold), and filtering them out meant the name was never
+  offered to the classifier, so the task silently landed with no project —
+  invisible, because the task does exist. Duplicate names across statuses are
+  real ("Stock", "Crate", "Cue" each exist twice), so ties rank
+  active > on-hold > idea instead of letting read order decide.
 
 ## Deploying
 
