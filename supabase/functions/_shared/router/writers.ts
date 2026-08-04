@@ -208,6 +208,140 @@ export async function writeStockOut(
   return { table: 'extras', record_id: id, line: `Stock: ${name} -> shopping list` }
 }
 
+/**
+ * "Add butter to my staples" — make an item part of the standing pantry list.
+ *
+ * Distinct from writeStockOut: that one says "I need this now", this one says
+ * "I always keep this". If the item is already in the pantry we only flip
+ * `isStaple`, deliberately leaving `status` alone — saying something is a
+ * staple is not saying you are out of it, and overwriting a `fine` status to
+ * `out` would put a jar he already has onto the shopping list.
+ *
+ * LANDMINE — the same jsonb-blob shape as every Stock table: `data.id` must
+ * duplicate the row `id` or the app reads back an item it cannot update.
+ *
+ * LANDMINE — `defaultFreshnessDays` and `acquiredAt` must both be real values,
+ * never null. `freshnessStatus()` in Stock's `lib/pantry.ts` does arithmetic on
+ * both (`now - acquiredAt.getTime()` against the freshness budget); a null
+ * acquiredAt throws on `.getTime()`. An `isStaple` item happens to return
+ * 'fresh' before either is touched, so THIS writer is safe by luck — any
+ * future writer that adds a non-staple pantry row is not. This mirrors the
+ * shape `applyPaste()` writes for a hand-added item, which is the only shape
+ * the app is known to round-trip.
+ *
+ * `location` is genuinely optional — `pantry.ts` fills it with
+ * `row.location ?? defaultLocation(cat)` on read — but the app's own add path
+ * always writes one, so this does too.
+ */
+export async function writeStockStaple(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+): Promise<WriteResult> {
+  const name = item.text.trim()
+
+  const { data: matches, error: findErr } = await admin
+    .from('pantry_items')
+    .select('id, data')
+    .eq('user_id', ownerId)
+    .ilike('data->>canonicalName', literal(name))
+  if (findErr) throw new Error(`pantry_items lookup: ${findErr.message}`)
+
+  const hit = matches?.[0]
+  if (hit) {
+    if (hit.data?.isStaple) {
+      return {
+        table: 'pantry_items',
+        record_id: hit.id,
+        line: `Stock: ${hit.data.canonicalName} already a staple`,
+      }
+    }
+    const next = { ...hit.data, isStaple: true }
+    const { error } = await admin
+      .from('pantry_items')
+      .update({ data: next, updated_at: new Date().toISOString() })
+      .eq('user_id', ownerId)
+      .eq('id', hit.id)
+    if (error) throw new Error(`pantry_items: ${error.message}`)
+
+    return {
+      table: 'pantry_items',
+      record_id: hit.id,
+      line: `Stock: ${next.canonicalName} -> staple`,
+    }
+  }
+
+  // 'pan' matches the prefix Stock's own uid('pan') mints for pantry rows.
+  const id = stockId('pan')
+  const now = new Date()
+  // 365 = Stock's 'pantry' category budget. Staples short-circuit to 'fresh'
+  // in freshnessStatus() regardless, and anything >= 90 is treated as a
+  // long-life good that never nags, so this cannot produce a false warning.
+  const FRESHNESS_DAYS = 365
+  const { error } = await admin.from('pantry_items').insert({
+    id,
+    user_id: ownerId,
+    data: {
+      id, // must duplicate the row id — see landmine above
+      canonicalName: name,
+      isStaple: true,
+      // 'pantry' is where 55 of the 80 existing items live, and a wrong shelf
+      // is a visible one-tap fix. Guessing 'fridge' for a dry good is the same
+      // size mistake in the other direction.
+      location: 'pantry',
+      status: 'fine',
+      statusUpdatedAt: now.toISOString(),
+      acquiredAt: now.toISOString(),
+      defaultFreshnessDays: FRESHNESS_DAYS,
+      expiresAt: new Date(now.getTime() + FRESHNESS_DAYS * 86400000).toISOString(),
+      purchaseHistory: [now.toISOString()],
+      originalInstacartText: name,
+      amount: null,
+      unit: null,
+    },
+  })
+  if (error) throw new Error(`pantry_items: ${error.message}`)
+
+  return { table: 'pantry_items', record_id: id, line: `Stock: ${name} -> new staple` }
+}
+
+/**
+ * "Stock idea: steak butter" — a dish to try, not an ingredient to buy.
+ *
+ * Lands in the Bench pipeline at `captured`, the same status the in-app
+ * capture box uses, so a voice idea is indistinguishable from a typed one and
+ * flows through the same promote-to-recipe path.
+ *
+ * LANDMINE — `references` must be an array, not null. The pipeline LIST guards
+ * it (`idea.references?.length ?? 0`), so a null row looks fine there and the
+ * problem stays hidden; the idea DETAIL screen does not (`idea/[id].tsx` reads
+ * `.length` and `.map` straight), so opening that one idea is what crashes.
+ */
+export async function writeStockIdea(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+): Promise<WriteResult> {
+  const id = stockId('idea')
+  const title = (item.title || item.text).trim()
+
+  const { error } = await admin.from('pipeline_ideas').insert({
+    id,
+    user_id: ownerId,
+    data: {
+      id, // must duplicate the row id
+      title: titleFor(title),
+      note: item.text.trim() === title ? '' : item.text.trim(),
+      status: 'captured',
+      createdAt: new Date().toISOString(),
+      references: [], // never null — see landmine above
+    },
+  })
+  if (error) throw new Error(`pipeline_ideas: ${error.message}`)
+
+  return { table: 'pipeline_ideas', record_id: id, line: `Stock idea: ${title}` }
+}
+
 /* ------------------------------------------------------------------ */
 /* Ink                                                                 */
 /* ------------------------------------------------------------------ */
@@ -265,6 +399,50 @@ export async function writeBreakLookup(
   if (error) throw new Error(`look_up_later: ${error.message}`)
 
   return { table: 'look_up_later', record_id: data.id, line: 'Break: look up later' }
+}
+
+/**
+ * "Add tendentious to my Break flashcards" — a real card, answer included.
+ *
+ * The answer side is written by the classifier, not by Nate: he dictates one
+ * word. That makes this the only writer whose content is model-authored, so it
+ * refuses a null back rather than inventing a placeholder — a card with an
+ * empty back is worse than no card, because it enters the review rotation and
+ * has to be fixed mid-session.
+ *
+ * LANDMINE — `flashcards.user_id` is NULLABLE and defaults to `auth.uid()`,
+ * which is null under the service key. Omitting it inserts a card owned by
+ * nobody: no error, no failed constraint, and the row is invisible to Break's
+ * RLS-filtered reads forever. Every other suite table with this shape is
+ * not-null and fails loudly instead; this one does not.
+ *
+ * LANDMINE — `context` is CHECK-constrained to 'fun' | 'work' | 'both' and is
+ * NOT NULL. It is the Break deck selector, so a wrong value files the card in
+ * a deck he does not review. All 171 existing cards are 'fun'.
+ */
+export async function writeBreakFlashcard(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+): Promise<WriteResult> {
+  const front = item.text.trim()
+  const back = (item.back || '').trim()
+  if (!front || !back) throw new Error('flashcard needs both a front and a back')
+
+  const { data, error } = await admin
+    .from('flashcards')
+    .insert({
+      user_id: ownerId, // never omit — see landmine above
+      front,
+      back,
+      context: 'fun', // constrained value — see landmine above
+      source: 'voice capture',
+    })
+    .select('id')
+    .single()
+  if (error) throw new Error(`flashcards: ${error.message}`)
+
+  return { table: 'flashcards', record_id: data.id, line: `Break card: ${front}` }
 }
 
 /* ------------------------------------------------------------------ */
