@@ -254,8 +254,11 @@ export function RecorderProvider({ go, children }) {
   }
 
   // Recover the audio from an interrupted recording → transcribe into the draft.
+  // The audio is only cleared once a transcript actually comes back — a failed
+  // recovery (upload too large, network drop) used to delete the only copy of
+  // the recording, so on failure the card stays up and the blob stays put.
   const recoverAudio = async () => {
-    const blob = recoveredBlob; setRecoveredBlob(null)
+    const blob = recoveredBlob
     if (!blob) return
     setSource('record'); setError(null); setProc('transcribing')
     try {
@@ -263,8 +266,20 @@ export function RecorderProvider({ go, children }) {
       setTranscriptText(text)
       setLines(dl || linesFor(text))
       setProc('ready')
+      setRecoveredBlob(null)
+      clearRecovered().catch(() => {})
     } catch (e) { setError(humanize(e)); setProc('ready') }
-    clearRecovered().catch(() => {})
+  }
+  // Save the orphaned audio to disk — the escape hatch when neither engine can
+  // take it, so the recording is never trapped in IndexedDB.
+  const downloadRecovered = () => {
+    if (!recoveredBlob) return
+    const ext = (recoveredBlob.type || '').includes('mp4') ? 'm4a' : (recoveredBlob.type || '').includes('ogg') ? 'ogg' : 'webm'
+    const url = URL.createObjectURL(recoveredBlob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `course-plus-recording.${ext}`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
   const dismissRecovered = () => { setRecoveredBlob(null); clearRecovered().catch(() => {}) }
 
@@ -502,7 +517,7 @@ export function RecorderProvider({ go, children }) {
     pins, addPin, removePin,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-    finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
+    finalizeNote, discard, recoverAudio, dismissRecovered, downloadRecovered, loadDraftFromNote, renameSpeaker,
   }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>

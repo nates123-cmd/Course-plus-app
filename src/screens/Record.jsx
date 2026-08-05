@@ -10,6 +10,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
 import { fmtClock } from '../lib/recorder'
+import { UPLOAD_MAX_BYTES } from '../lib/transcribe'
 import { markdownToBlocks } from '../lib/blocks'
 import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
@@ -416,9 +417,11 @@ export function RecordScreen() {
       <Icon n="microphone" s={18} c={t.accent} />
       <div style={{ flex: 1, minWidth: 160 }}>
         <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Interrupted recording found</div>
-        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Audio from a recording that didn’t finish (~{Math.max(1, Math.round(rec.recoveredBlob.size / 1048576))} MB) — recover it to transcribe.</div>
+        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Audio from a recording that didn’t finish (~{Math.max(1, Math.round(rec.recoveredBlob.size / 1048576))} MB) — recover it to transcribe.
+          {rec.recoveredBlob.size > UPLOAD_MAX_BYTES && <> Too big for cloud transcription — switch <b>Transcribe with</b> to <b>On device</b> first, or download the audio to keep it.</>}</div>
       </div>
       <Btn kind="primary" size="sm" icon="wand" onClick={() => rec.recoverAudio()}>Recover</Btn>
+      <Btn kind="ghost" size="sm" icon="download" onClick={() => rec.downloadRecovered()}>Download</Btn>
       <Btn kind="ghost" size="sm" onClick={() => rec.dismissRecovered()}>Discard</Btn>
     </Card>}
 
