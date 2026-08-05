@@ -9,6 +9,7 @@ import { useApp } from './ctx'
 import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported } from './lib/recorder'
+import { splitInlineSpeakers } from './lib/speakerSplit'
 import { transcribeAudio } from './lib/transcribe'
 import { transcribeInBrowser, transcribeInBrowserDetailed, browserWhisperSupported } from './lib/whisper'
 import { labelChunks, enrollVoiceprint, hasVoiceprint, clearVoiceprint, diarizeSupported } from './lib/diarize'
@@ -302,8 +303,11 @@ export function RecorderProvider({ go, children }) {
     setTitle(n.title || ''); setHome(n.project || null); setPillar(n.project ? null : (n.area || null))
     setProjects(n.projects || []); setSeriesId(n.seriesId || null); setPeople(n.people || []); setAgenda(n.agenda || '')
     setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
-    setTranscriptText(n.transcript || '')
-    setLines(n.transcript ? parseLines(n.transcript, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
+    // Split inline speaker markers here too, so a note saved before this existed
+    // (one wall of text under one speaker) reads as turns when reopened.
+    const tx = splitInlineSpeakers(n.transcript || '')
+    setTranscriptText(tx)
+    setLines(tx ? parseLines(tx, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
     // Restore prior synthesis so reopening a finished meeting keeps its summary/
     // actions/tags/next-steps — and re-saving from the composer doesn't wipe them.
     const synthesized = !n.incomplete && !!(n.summary || (n.actions || []).length || (n.tags || []).length || (n.nextSteps && n.nextSteps.trim()))
@@ -436,7 +440,12 @@ export function RecorderProvider({ go, children }) {
 
   // Paste path — a transcript from Copilot / Teams (real names, no AssemblyAI).
   const setTranscriptFromPaste = (text) => {
-    const t = (text || '').trim()
+    // Tools that mark turns INLINE ("… Speaker 2 Yeah. Speaker 1 I don't know …")
+    // give parseLines nothing to split on, so the whole transcript lands as one
+    // line under one speaker. Insert the breaks first. No-op on a transcript that
+    // already has its turns on separate lines, and idempotent — this runs again
+    // on every keystroke and whenever the People list changes.
+    const t = splitInlineSpeakers((text || '').trim()).trim()
     setSource('paste'); setWarn(null)
     if (!t) { setTranscriptText(''); setLines([]); setProc(PROC_IDLE); return }
     setTranscriptText(t)
