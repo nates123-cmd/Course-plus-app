@@ -6,10 +6,21 @@
 // Audio: the recorder hands us a webm/mp4 Blob; Whisper wants a mono Float32Array
 // at 16kHz, so we decode + resample through the WebAudio API first.
 
-const MODEL = 'Xenova/whisper-tiny.en' // small + English-only; swap for whisper-base for accuracy
+// Two configs, tried in order. WebGPU is worth attempting because the WASM path
+// is single-threaded (see below) and therefore slow enough that an hour-long
+// meeting is impractical — and because on WebGPU we can afford base.en, which is
+// meaningfully more accurate on jargon-heavy speech than tiny.en. If WebGPU
+// doesn't build a session we fall straight back to the config that has always
+// worked, so this can never be worse than WASM-only.
+const MODEL_GPU = 'Xenova/whisper-base.en'
+const MODEL_WASM = 'Xenova/whisper-tiny.en' // fp32 tiny is what the WASM runtime can actually run
 const SAMPLE_RATE = 16000
 
 let _pipePromise = null // memoize the pipeline across calls
+let _backend = null     // 'webgpu' | 'wasm' — which config actually built
+
+// Which backend the loaded pipeline is using, once one has built. Null until then.
+export function activeBackend() { return _backend }
 
 // Lazy-load transformers.js + build (or reuse) the ASR pipeline. onProgress gets
 // transformers' file-download progress events while the model is fetched.
@@ -29,21 +40,45 @@ async function getPipeline(onProgress) {
     //     headers GitHub Pages can't send → the threaded backend won't register.
     // Single-threaded WASM is the one config that reliably loads on a static host.
     if (env.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1
-    // Pin fp32 weights per-module. The v4 wasm path otherwise resolves the q4
-    // weights, whose MatMulNBits op the WASM runtime can't build a session for
-    // ("Missing required scale … TransposeDQWeightsForMatMulNBits") — and passing
-    // device:'wasm' lets it override an explicit dtype:'q8' back to q4. fp32 files
-    // contain no dequant nodes at all, so that op can't appear regardless. Larger
-    // download (~150MB once, then browser-cached) but it's the one config that
-    // reliably builds a session on a static host.
-    return await pipeline('automatic-speech-recognition', MODEL, {
+
+    // Attempt 1 — WebGPU + base.en. Historically the WebGPU EP in the bundled
+    // onnxruntime-web threw "webgpuInit is not a function", which is why this
+    // used to be pinned to WASM outright. It's attempted (never assumed) now:
+    // any failure falls through to the WASM config below, so the worst case is
+    // a wasted probe. q4 is fine here — the MatMulNBits problem is specific to
+    // the WASM runtime, and WebGPU builds that op without complaint.
+    if (typeof navigator !== 'undefined' && navigator.gpu) {
+      try {
+        const p = await pipeline('automatic-speech-recognition', MODEL_GPU, {
+          device: 'webgpu',
+          dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+          progress_callback: onProgress,
+        })
+        _backend = 'webgpu'
+        return p
+      } catch (e) {
+        console.warn('[whisper] WebGPU unavailable, falling back to WASM:', e?.message || e)
+      }
+    }
+
+    // Attempt 2 — the known-good config. Pin fp32 weights per-module: the v4
+    // wasm path otherwise resolves the q4 weights, whose MatMulNBits op the WASM
+    // runtime can't build a session for ("Missing required scale …
+    // TransposeDQWeightsForMatMulNBits") — and passing device:'wasm' lets it
+    // override an explicit dtype:'q8' back to q4. fp32 files contain no dequant
+    // nodes at all, so that op can't appear regardless. Larger download (~150MB
+    // once, then browser-cached) but it's the one config that reliably builds a
+    // session on a static host.
+    const p = await pipeline('automatic-speech-recognition', MODEL_WASM, {
       device: 'wasm',
       dtype: { encoder_model: 'fp32', decoder_model_merged: 'fp32' },
       progress_callback: onProgress,
     })
+    _backend = 'wasm'
+    return p
   })()
   // Don't cache a failed load — let the next attempt retry.
-  _pipePromise.catch(() => { _pipePromise = null })
+  _pipePromise.catch(() => { _pipePromise = null; _backend = null })
   return _pipePromise
 }
 

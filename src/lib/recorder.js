@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 
 export const MAX_SECONDS = 2 * 60 * 60 // 2 hours
 
+// Opus bitrate for the recording. Left to the browser this defaults to ~128 kbps
+// (~58 MB/hr), which pushes any meeting over an hour past Supabase Storage's
+// 50 MB per-file ceiling and the upload fails with "exceeded the maximum allowed
+// size". 32 kbps mono Opus is transparent for speech — AssemblyAI and Whisper
+// both downmix to 16 kHz anyway — and lands at ~14 MB/hr, so even a full
+// MAX_SECONDS session is ~29 MB, comfortably under the cap.
+export const AUDIO_BPS = 32000
+
 function pickMime() {
   const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']
   for (const m of cands) if (window.MediaRecorder?.isTypeSupported?.(m)) return m
@@ -194,7 +202,9 @@ export function useRecorder() {
       const s = await buildStream(opts)
       stream.current = s
       const mime = pickMime()
-      const rec = new MediaRecorder(s, mime ? { mimeType: mime } : undefined)
+      const recOpts = { audioBitsPerSecond: AUDIO_BPS }
+      if (mime) recOpts.mimeType = mime
+      const rec = new MediaRecorder(s, recOpts)
       chunks.current = []
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size) {

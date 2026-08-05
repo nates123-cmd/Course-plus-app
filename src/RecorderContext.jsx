@@ -9,6 +9,7 @@ import { useApp } from './ctx'
 import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
 import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported } from './lib/recorder'
+import { splitInlineSpeakers } from './lib/speakerSplit'
 import { transcribeAudio } from './lib/transcribe'
 import { transcribeInBrowser, transcribeInBrowserDetailed, browserWhisperSupported } from './lib/whisper'
 import { labelChunks, enrollVoiceprint, hasVoiceprint, clearVoiceprint, diarizeSupported } from './lib/diarize'
@@ -254,8 +255,11 @@ export function RecorderProvider({ go, children }) {
   }
 
   // Recover the audio from an interrupted recording → transcribe into the draft.
+  // The audio is only cleared once a transcript actually comes back — a failed
+  // recovery (upload too large, network drop) used to delete the only copy of
+  // the recording, so on failure the card stays up and the blob stays put.
   const recoverAudio = async () => {
-    const blob = recoveredBlob; setRecoveredBlob(null)
+    const blob = recoveredBlob
     if (!blob) return
     setSource('record'); setError(null); setProc('transcribing')
     try {
@@ -263,8 +267,20 @@ export function RecorderProvider({ go, children }) {
       setTranscriptText(text)
       setLines(dl || linesFor(text))
       setProc('ready')
+      setRecoveredBlob(null)
+      clearRecovered().catch(() => {})
     } catch (e) { setError(humanize(e)); setProc('ready') }
-    clearRecovered().catch(() => {})
+  }
+  // Save the orphaned audio to disk — the escape hatch when neither engine can
+  // take it, so the recording is never trapped in IndexedDB.
+  const downloadRecovered = () => {
+    if (!recoveredBlob) return
+    const ext = (recoveredBlob.type || '').includes('mp4') ? 'm4a' : (recoveredBlob.type || '').includes('ogg') ? 'ogg' : 'webm'
+    const url = URL.createObjectURL(recoveredBlob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `course-plus-recording.${ext}`
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
   const dismissRecovered = () => { setRecoveredBlob(null); clearRecovered().catch(() => {}) }
 
@@ -287,8 +303,11 @@ export function RecorderProvider({ go, children }) {
     setTitle(n.title || ''); setHome(n.project || null); setPillar(n.project ? null : (n.area || null))
     setProjects(n.projects || []); setSeriesId(n.seriesId || null); setPeople(n.people || []); setAgenda(n.agenda || '')
     setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
-    setTranscriptText(n.transcript || '')
-    setLines(n.transcript ? parseLines(n.transcript, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
+    // Split inline speaker markers here too, so a note saved before this existed
+    // (one wall of text under one speaker) reads as turns when reopened.
+    const tx = splitInlineSpeakers(n.transcript || '')
+    setTranscriptText(tx)
+    setLines(tx ? parseLines(tx, n.people || []).map((l, i) => ({ ...l, at: fmtClock(i * 8 + 2) })) : [])
     // Restore prior synthesis so reopening a finished meeting keeps its summary/
     // actions/tags/next-steps — and re-saving from the composer doesn't wipe them.
     const synthesized = !n.incomplete && !!(n.summary || (n.actions || []).length || (n.tags || []).length || (n.nextSteps && n.nextSteps.trim()))
@@ -421,7 +440,12 @@ export function RecorderProvider({ go, children }) {
 
   // Paste path — a transcript from Copilot / Teams (real names, no AssemblyAI).
   const setTranscriptFromPaste = (text) => {
-    const t = (text || '').trim()
+    // Tools that mark turns INLINE ("… Speaker 2 Yeah. Speaker 1 I don't know …")
+    // give parseLines nothing to split on, so the whole transcript lands as one
+    // line under one speaker. Insert the breaks first. No-op on a transcript that
+    // already has its turns on separate lines, and idempotent — this runs again
+    // on every keystroke and whenever the People list changes.
+    const t = splitInlineSpeakers((text || '').trim()).trim()
     setSource('paste'); setWarn(null)
     if (!t) { setTranscriptText(''); setLines([]); setProc(PROC_IDLE); return }
     setTranscriptText(t)
@@ -502,7 +526,7 @@ export function RecorderProvider({ go, children }) {
     pins, addPin, removePin,
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
-    finalizeNote, discard, recoverAudio, dismissRecovered, loadDraftFromNote, renameSpeaker,
+    finalizeNote, discard, recoverAudio, dismissRecovered, downloadRecovered, loadDraftFromNote, renameSpeaker,
   }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>

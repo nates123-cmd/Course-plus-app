@@ -7,6 +7,14 @@ const anon = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const extFor = (type) => (type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm')
 
+// Supabase Storage rejects anything over the project's global file-size limit,
+// which is capped at 50 MB on the Free plan. The storage error ("The object
+// exceeded the maximum allowed size") says nothing about what to do next, so
+// check first and say it in the app's own terms. New recordings run at 32 kbps
+// (see AUDIO_BPS) so a full 2-hour session is ~29 MB; only older/imported audio
+// should ever trip this.
+export const UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
 async function callFn(payload) {
   const { data: { session } } = await supabase.auth.getSession()
   const res = await fetch(url + '/functions/v1/transcribe', {
@@ -31,6 +39,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // opts: { speakersExpected, diarize, languageDetection } tune AssemblyAI.
 export async function transcribeAudio(blob, { onStatus, speakersExpected, diarize, languageDetection } = {}) {
   if (!blob || !blob.size) throw new Error('empty recording')
+  if (blob.size > UPLOAD_MAX_BYTES) {
+    throw new Error(`This recording is ${(blob.size / 1048576).toFixed(0)} MB — cloud transcription tops out at ${UPLOAD_MAX_BYTES / 1048576} MB. `
+      + 'Switch "Transcribe with" to "On device · private" — it runs in your browser with no upload and no size limit.')
+  }
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('not signed in')
 
