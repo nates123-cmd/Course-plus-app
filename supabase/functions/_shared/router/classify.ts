@@ -65,6 +65,24 @@ export interface RoutedItem {
 /** Below this we do not trust the route and fall back to cp_inbox. */
 export const CONFIDENCE_FLOOR = 0.6
 
+/**
+ * Names Apple's dictation reliably gets wrong, because the wrong spelling is
+ * the ordinary English word and the right one is a proper noun it has never
+ * seen. No amount of context lets a model infer these — "Myra" and "Mayra" are
+ * both real names — so they have to be told.
+ *
+ * This corrects the RECORD, never the capture. `capture_log.raw_text` keeps
+ * what was actually dictated, so a bad substitution here stays traceable
+ * rather than overwriting the only copy of what he said.
+ *
+ * Add to this list as new ones show up; it is read straight into the prompt.
+ */
+export const DICTATION_FIXES: Array<{ heard: string; write: string; note?: string }> = [
+  { heard: 'Myra', write: 'Mayra', note: 'colleague; spelled Mayra, pronounced Myra' },
+  { heard: 'John', write: 'Jon', note: 'colleague; always the short spelling' },
+  { heard: 'Aerosphere', write: 'Arrowsphere', note: 'the CSP platform, not anything aerospace' },
+]
+
 // Every field is required and explicitly nullable rather than optional:
 // structured outputs enforce `required` + `additionalProperties: false`, and a
 // nullable-but-present field is far more reliable than an omitted one.
@@ -144,6 +162,11 @@ If he names an app out loud ("Course Plus...", "Stock...", "Ink...", "Break...")
 \`confidence\` is your genuine belief that this item is routed to the right kind, 0 to 1. Use the full range. Anything below ${CONFIDENCE_FLOOR} is filed to the inbox for manual triage instead, which is a good outcome when you are unsure.
 
 Today is ${today()} (America/New_York). Resolve every relative date against it and emit \`due\` as YYYY-MM-DD.
+
+Dictation spells these wrong every time, because the wrong spelling is the more common word. Whenever one is clearly what he said, write the RIGHT-hand spelling in every field you emit:
+${DICTATION_FIXES.map((f) => `- heard "${f.heard}" -> write "${f.write}"${f.note ? ` (${f.note})` : ''}`).join('\n')}
+
+Correct these ONLY when the context makes it obvious he means that person or thing. A capture genuinely about aerospace still says aerospace.
 
 Open Course+ projects — \`project\` must be one of these strings exactly, or null. Match loosely on what he says ("hawaii trip" -> "Hawaii Trip") but emit the name EXACTLY as written here:
 ${projectNames.map((n) => `- ${n}`).join('\n')}`
