@@ -40,7 +40,7 @@ export function useLongPress(onLong, onTap, ms = 450) {
 
 // derive a single status chip from real task flags. `task_status` doubles as the
 // pull-board lane: 'now' = pulled into the Now lane (the old "in progress"), any
-// other open value = Backlog. next/waiting stay their own columns.
+// other open value = Icebox. next/waiting stay their own columns.
 export function taskStatus(x) {
   if (x.done) return 'done'
   if (x.taskStatus === 'now') return 'now'
@@ -110,7 +110,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
 
   const status = taskStatus(task)
   const setStatus = (id) => {
-    // 'now' pulls the task into the Now lane; the rest leave it in Backlog with
+    // 'now' pulls the task into the Now lane; the rest leave it in Icebox with
     // their respective hint. taskStatus carries the lane, next/waiting the hints.
     if (id === 'done') onPatch({ done: true })
     else if (id === 'now') onPatch({ done: false, next: false, taskStatus: 'now', waiting: null })

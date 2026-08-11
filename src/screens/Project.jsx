@@ -1,9 +1,9 @@
 // Project detail — THE home surface (Direction B), rebuilt around Cal Newport's
-// pull method. Three regions in one column: the task pull board (Now / Backlog
+// pull method. Three regions in one column: the task pull board (Now / Icebox
 // lanes, drag + tap, long-press → TaskSheet), one open Capture input (classifies
 // after submit into Meeting / Note / File, ambiguous → inbox), and one filterable
 // Library (Meeting / File / Note; Claude deliverables show as File). Right rail =
-// scoped Ask · Related. Meeting extraction feeds Backlog directly (no holding
+// scoped Ask · Related. Meeting extraction feeds Icebox directly (no holding
 // pen). Every mutation is a real db write followed by reload(); React state stays
 // the source of truth for lane + ordering.
 import { Fragment, useEffect, useState, useRef } from 'react'
@@ -183,7 +183,7 @@ function ProjectHeader({ project, reload }) {
 
 // ── A single task row — tap toggles done, hold opens TaskSheet, ──
 //    grip handle is the only draggable affordance. On the pull board it also
-//    carries a quiet lane-move button (↑ Now / ↓ Backlog) so the board is usable
+//    carries a quiet lane-move button (↑ Now / ↓ Icebox) so the board is usable
 //    by tap on a phone, where HTML5 drag doesn't fire.
 function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, dragging, noDrag, onLane, laneUp, onDismiss }) {
   const { t, f, go } = useApp()
@@ -229,13 +229,13 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
         fontFamily: f.ui, fontSize: 10.5, fontWeight: 600, color: t.t3, background: t.tagBg, borderRadius: 6, padding: '2px 7px', maxWidth: 130 }}>
       <Icon n="users" s={11} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>meeting</span></span>}
     {onLane && !x.done && <button onClick={(e) => { e.stopPropagation(); onLane(x.id) }}
-      title={laneUp ? 'Pull into Now' : 'Send to Backlog'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+      title={laneUp ? 'Pull into Now' : 'Send to Icebox'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
       flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
       color: laneUp ? t.accent : t.t3, background: 'transparent', border: '1px solid ' + (laneUp ? t.accentLine : t.line2),
       borderRadius: 7, padding: '3px 8px', transition: 'border-color .14s, color .14s, background .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.background = laneUp ? t.accentBg : t.sel }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-      <Icon n={laneUp ? 'arrow-up' : 'arrow-down'} s={12} />{laneUp ? 'Now' : 'Backlog'}</button>}
+      <Icon n={laneUp ? 'arrow-up' : 'arrow-down'} s={12} />{laneUp ? 'Now' : 'Icebox'}</button>}
     {onDismiss && !x.done && <button onClick={(e) => { e.stopPropagation(); onDismiss(x.id) }} title="Dismiss this task"
       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', zIndex: 1, width: 24, height: 24,
         borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
@@ -245,12 +245,12 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
   </div>
 }
 
-// ── Task pull board — Now / Backlog lanes (Cal Newport pull, one level down
+// ── Task pull board — Now / Icebox lanes (Cal Newport pull, one level down
 //    from the project-level pull). Lane lives in task_status ('now' = Now lane,
-//    anything else open = Backlog); intra-lane order is `sort`. Drag between and
-//    within lanes, or tap ↑ Now / ↓ Backlog (phone-friendly). Now is soft-WIP-
+//    anything else open = Icebox); intra-lane order is `sort`. Drag between and
+//    within lanes, or tap ↑ Now / ↓ Icebox (phone-friendly). Now is soft-WIP-
 //    capped: over the line flags red, never blocks. Existing open tasks are
-//    Backlog by default (nothing is 'now'), so no migration write is needed.
+//    Icebox by default (nothing is 'now'), so no migration write is needed.
 const isNow = (x) => x.taskStatus === 'now'
 const isScheduled = (x) => x.workType === 'scheduled' // parked for a meeting → hidden from the board
 function Tasks({ project, reload }) {
@@ -265,7 +265,7 @@ function Tasks({ project, reload }) {
     return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}:${x.groupLabel || ''}`
   }).join('|')
   const [nowList, setNowList] = useState([])
-  const [backlog, setBacklog] = useState([])
+  const [icebox, setIcebox] = useState([])
   // Mirror the live lane split in a ref so the drop handler persists the final
   // order synchronously — React state closures aren't flushed yet when a native
   // drag ends, and a cross-lane drag unmounts the row (so its dragend may never
@@ -274,14 +274,14 @@ function Tasks({ project, reload }) {
   const finalizing = useRef(false)
   useEffect(() => {
     const open = (project.tasks || []).filter((x) => !x.done && !isScheduled(x)) // scheduled tasks park in their own section
-    // Priority drives placement: P1 → Now; Backlog is banded P2 → P3 → the rest.
+    // Priority drives placement: P1 → Now; Icebox is banded P2 → P3 → the rest.
     // Within a band, keep the stored drag order (stable sort over the db order),
     // so manual reordering still holds inside a priority tier.
     const nw = open.filter((x) => x.priority === 1 || isNow(x))
     const band = (x) => (x.priority === 2 ? 0 : x.priority === 3 ? 1 : 2)
     const bk = open.filter((x) => !(x.priority === 1 || isNow(x)))
       .map((x, i) => [x, i]).sort((a, b) => band(a[0]) - band(b[0]) || a[1] - b[1]).map((p) => p[0])
-    setNowList(nw); setBacklog(bk); listRef.current = { now: nw, back: bk }
+    setNowList(nw); setIcebox(bk); listRef.current = { now: nw, back: bk }
   }, [tasksSig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [adding, setAdding] = useState(false)
@@ -294,19 +294,19 @@ function Tasks({ project, reload }) {
   const [showScheduled, setShowScheduled] = useState(true)
   const [openGroups, setOpenGroups] = useState({}) // group name → false when collapsed (default open)
 
-  const allOpen = [...nowList, ...backlog]
+  const allOpen = [...nowList, ...icebox]
   const findTask = (id) => allOpen.find((o) => o.id === id) || (project.tasks || []).find((o) => o.id === id) || null
 
   const toggle = async (id) => {
     const x = findTask(id); if (!x) return
     const prevDone = x.done
     if (isNow(x)) setNowList((l) => l.filter((o) => o.id !== id)) // optimistic: completing clears the lane
-    else setBacklog((l) => l.filter((o) => o.id !== id))
+    else setIcebox((l) => l.filter((o) => o.id !== id))
     await patchTask(id, { done: !prevDone })
     recordUndo(async () => { await patchTask(id, { done: prevDone }) })
   }
   // P1 also pulls the task into Now (its priority means "now"). The rest of the
-  // priority-driven placement (P2 top of Backlog, P3 under the last P2) is done
+  // priority-driven placement (P2 top of Icebox, P3 under the last P2) is done
   // durably by the seed sort below, so it holds no matter where priority was set.
   const patch = async (id, p) => {
     const cur = findTask(id)
@@ -334,13 +334,13 @@ function Tasks({ project, reload }) {
   const commit = async () => {
     const v = text.trim(); setText(''); setAdding(false)
     if (!v) return
-    // New tasks land in Backlog (the user pulls a few up), at the end.
+    // New tasks land in Icebox (the user pulls a few up), at the end.
     await addTask(project.id, { label: v, taskStatus: 'backlog', sort: (project.tasks || []).length })
   }
 
   // Persist the current lane split + intra-lane order. Only lane-changed tasks
   // get a task_status write; sort is rewritten for the whole project (Now first,
-  // then Backlog, then the untouched done tasks) so both orderings survive reload.
+  // then Icebox, then the untouched done tasks) so both orderings survive reload.
   const persist = async () => {
     const nowIds = listRef.current.now.map((o) => o.id), backIds = listRef.current.back.map((o) => o.id)
     const wasNow = new Set((project.tasks || []).filter((x) => !x.done && isNow(x)).map((x) => x.id))
@@ -358,13 +358,13 @@ function Tasks({ project, reload }) {
 
   // Tap affordance: move one task across lanes (phone-friendly; drag is the enhancement).
   const moveLane = async (id, toLane) => {
-    const src = toLane === 'now' ? backlog : nowList
+    const src = toLane === 'now' ? icebox : nowList
     const item = src.find((o) => o.id === id); if (!item) return
-    if (toLane === 'now') { setBacklog((l) => l.filter((o) => o.id !== id)); setNowList((l) => [...l, item]) }
-    else { setNowList((l) => l.filter((o) => o.id !== id)); setBacklog((l) => [item, ...l]) }
+    if (toLane === 'now') { setIcebox((l) => l.filter((o) => o.id !== id)); setNowList((l) => [...l, item]) }
+    else { setNowList((l) => l.filter((o) => o.id !== id)); setIcebox((l) => [item, ...l]) }
     await updateTask(id, toLane === 'now' ? { taskStatus: 'now', next: false, waiting: null } : { taskStatus: 'backlog' })
     const nowIds = (toLane === 'now' ? [...nowList.map((o) => o.id), id] : nowList.filter((o) => o.id !== id).map((o) => o.id))
-    const backIds = (toLane === 'now' ? backlog.filter((o) => o.id !== id).map((o) => o.id) : [id, ...backlog.map((o) => o.id)])
+    const backIds = (toLane === 'now' ? icebox.filter((o) => o.id !== id).map((o) => o.id) : [id, ...icebox.map((o) => o.id)])
     const doneIds = (project.tasks || []).filter((x) => x.done).map((x) => x.id)
     await reorderTasks([...nowIds, ...backIds, ...doneIds]); await reload()
   }
@@ -373,20 +373,20 @@ function Tasks({ project, reload }) {
   const onDragStart = (from) => (e, id) => { setDrag({ id, from }); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id) } catch {} }
   const moveInto = (toLane, toIndex) => {
     if (!drag) return
-    const item = (drag.from === 'now' ? nowList : backlog).find((o) => o.id === drag.id)
+    const item = (drag.from === 'now' ? nowList : icebox).find((o) => o.id === drag.id)
     if (!item) return
     const nl = nowList.filter((o) => o.id !== drag.id)
-    const bl = backlog.filter((o) => o.id !== drag.id)
+    const bl = icebox.filter((o) => o.id !== drag.id)
     const target = toLane === 'now' ? nl : bl
     const idx = toIndex == null ? target.length : Math.max(0, Math.min(toIndex, target.length))
     target.splice(idx, 0, item)
-    setNowList(nl); setBacklog(bl); listRef.current = { now: nl, back: bl }
+    setNowList(nl); setIcebox(bl); listRef.current = { now: nl, back: bl }
     if (drag.from !== toLane) setDrag({ id: drag.id, from: toLane })
   }
   const onRowOver = (lane) => (e, overId) => {
     e.preventDefault()
     if (!drag || overId === drag.id) return
-    const list = lane === 'now' ? nowList : backlog
+    const list = lane === 'now' ? nowList : icebox
     const idx = list.findIndex((o) => o.id === overId)
     if (idx < 0) return
     moveInto(lane, idx)
@@ -405,15 +405,15 @@ function Tasks({ project, reload }) {
   const onDragEnd = () => { finalize() }
 
   const laneHandlers = (lane) => ({ onDragStart: onDragStart(lane), onDragOver: onRowOver(lane), onDrop, onDragEnd })
-  // Grouped backlog tasks peel off into their own collapsible blocks below the
+  // Grouped icebox tasks peel off into their own collapsible blocks below the
   // loose ones. A project with no groups renders exactly as before — same rows,
   // same drag. Grouped rows are noDrag for now (like Scheduled): the lane's drag
-  // math is index-based over the whole backlog, and splitting it across blocks
+  // math is index-based over the whole icebox, and splitting it across blocks
   // would reorder the wrong rows.
-  const backlogFlat = backlog.filter((x) => !x.groupLabel)
-  const backlogGroups = (() => {
+  const iceboxFlat = icebox.filter((x) => !x.groupLabel)
+  const iceboxGroups = (() => {
     const m = new Map()
-    backlog.forEach((x) => { if (x.groupLabel) { if (!m.has(x.groupLabel)) m.set(x.groupLabel, []) ; m.get(x.groupLabel).push(x) } })
+    icebox.forEach((x) => { if (x.groupLabel) { if (!m.has(x.groupLabel)) m.set(x.groupLabel, []) ; m.get(x.groupLabel).push(x) } })
     return [...m.entries()].sort((a, b) =>
       Math.min(...a[1].map((x) => x.sort)) - Math.min(...b[1].map((x) => x.sort)))
   })()
@@ -443,17 +443,17 @@ function Tasks({ project, reload }) {
         style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 10,
         border: '1.5px dashed ' + t.line2, fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>
         <Icon n="arrow-up" s={14} c={t.t3} />
-        <span>Slot open. Pull a task up from Backlog, or tap ↑ Now on one below.</span></div>}
+        <span>Slot open. Pull a task up from Icebox, or tap ↑ Now on one below.</span></div>}
     </div>
 
-    {/* Backlog lane */}
+    {/* Icebox lane */}
     <div style={{ marginTop: 20 }}>
-      <SectionHead label={`Backlog · ${backlog.length}`} action="Drag or tap ↑ Now · hold for details" />
+      <SectionHead label={`Icebox · ${icebox.length}`} action="Drag or tap ↑ Now · hold for details" />
       <div onDragOver={onLaneOver('back')} onDrop={onDrop} style={{ display: 'flex', flexDirection: 'column', gap: 6, minHeight: 8 }}>
-        {backlogFlat.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
+        {iceboxFlat.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
           {...backH} dragging={drag?.id === x.id} onLane={(id) => moveLane(id, 'now')} laneUp onDismiss={remove} />)}
       </div>
-      {backlogGroups.map(([name, rows]) => {
+      {iceboxGroups.map(([name, rows]) => {
         const open = openGroups[name] !== false
         return <div key={name} style={{ marginTop: 12 }}>
           <div onClick={() => setOpenGroups((g) => ({ ...g, [name]: !open }))}
@@ -530,7 +530,7 @@ const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 7, display: 'flex
 // ── Capture — one open input: paste a transcript, drop a file, or jot a note.
 //    Classification happens after submit and never blocks. A transcript-shaped
 //    or long entry becomes a Meeting (synthesized, its Nate-owned action items
-//    flow into Backlog on reload); short text becomes a Note; a file becomes a
+//    flow into Icebox on reload); short text becomes a Note; a file becomes a
 //    File; anything ambiguous is filed with a ? and dropped into the inbox to
 //    resolve with one tap (reusing the existing inbox primitive).
 // The kinds a pasted/typed capture can be. Ordered for the confirm bar. Only
@@ -591,7 +591,7 @@ function Capture({ project, reload }) {
         await createNote({ kind: 'meeting', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2,
           transcript: s, summary: synth.summary || '', nextSteps: synth.nextSteps || null, tags: synth.tags || [],
           actions: (synth.actions || []).map((a) => ({ text: a.text, owner: a.owner || 'me', src: 'this meeting' })) })
-        setText(''); setPasteKind(null); await reload(); flash('Transcript synthesized. Any action items are landing in Backlog.')
+        setText(''); setPasteKind(null); await reload(); flash('Transcript synthesized. Any action items are landing in Icebox.')
       } else {
         const ttl = captureTitle(s) || CAP_LABEL[type] || 'Note'
         await createNote({ kind: 'note', title: ttl, project: project.id, area: project.area || null, date: today, updated: 'now', status: 2, body: textToBlocks(s), tags: [type] })

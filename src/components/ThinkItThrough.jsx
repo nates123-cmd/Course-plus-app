@@ -49,7 +49,7 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
   }
 
   // Apply the resolution for real. A task goes straight into the project's
-  // backlog; a status change is written + logged (which also counts as activity,
+  // icebox; a status change is written + logged (which also counts as activity,
   // so the project stops nagging either way).
   const apply = async () => {
     const r = res?.resolution
