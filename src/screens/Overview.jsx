@@ -109,7 +109,7 @@ function ProjectCard({ p, drag }) {
 
 // ── Reorderable live-project grid (one per Area on the Work overview) ──
 // React owns the display order; drag mutates it optimistically and the new order
-// persists via reorderProjects (sort = position). On-hold/backlog/archived ids are appended
+// persists via reorderProjects (sort = position). On-hold/icebox/archived ids are appended
 // so their sort slots survive the write. Re-seeds when the persisted set changes.
 function LiveGrid({ a, live }) {
   const { reload } = useData()
@@ -447,7 +447,7 @@ function NowFocus({ projects }) {
 }
 
 // A collapsed shelf of projects that shouldn't compete with the live grid for
-// attention — Backlog (not started) and On hold (parked, waiting on something).
+// attention — Icebox (tabled / not started) and On hold (parked, waiting on something).
 // Both fold away by default; the count is visible without opening.
 function ProjectShelf({ label, projects, area, open, onToggle }) {
   const { t, f } = useApp()
@@ -477,7 +477,7 @@ export function OverviewScreen() {
 
   // Live projects in the user's manual order (already sorted by `sort` from db);
   // no status re-rank so drag-to-reorder on the cards persists exactly as dropped.
-  // Backlog and on-hold pull out into their own shelves — same split the sidebar
+  // Icebox and on-hold pull out into their own shelves — same split the sidebar
   // already makes, so the grid only holds what's actually moving.
   const liveOf = (a) => a.projects.filter((p) => p.status !== 'idea' && p.status !== 'archived' && p.status !== 'on-hold')
   const ideasOf = (a) => a.projects.filter((p) => p.status === 'idea')
@@ -516,7 +516,7 @@ export function OverviewScreen() {
         {live.length > 0 && <LiveGrid a={a} live={live} />}
         <ProjectShelf label="On hold" projects={hold} area={a}
           open={!!holdOpen[a.id]} onToggle={() => setHoldOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} />
-        <ProjectShelf label="Backlog" projects={ideas} area={a}
+        <ProjectShelf label="Icebox" projects={ideas} area={a}
           open={!!ideasOpen[a.id]} onToggle={() => setIdeasOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} />
       </div>
     })}
@@ -614,11 +614,11 @@ export function AreaScreen() {
         <Icon n={deleting ? 'loader-2' : 'trash-2'} s={14} />{deleting ? 'Deleting…' : 'Delete area'}</button>
     </div>
     <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 5 }}>
-      {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} in backlog` : ''}</div>
+      {active.length} active{hold.length ? ` · ${hold.length} on hold` : ''}{ideas.length ? ` · ${ideas.length} in icebox` : ''}</div>
 
     {group('Active', active)}
     {group('On hold', hold)}
-    {group('Backlog', ideas)}
+    {group('Icebox', ideas)}
     <PillarTasks area={a} />
     {shown === 0 && <div style={{ textAlign: 'center', padding: '40px 0 10px', fontFamily: f.body, fontSize: 15,
       color: t.t3, fontStyle: 'italic' }}>No projects in {a.name} yet.</div>}
