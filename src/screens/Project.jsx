@@ -88,7 +88,7 @@ function ProjectHeader({ project, reload }) {
   const setStatus = async (k) => {
     setOpen(false)
     if (k === project.status) return
-    // Putting on hold is a gated flow, not a bare label flip — collect a reason
+    // Moving to Waiting is a gated flow, not a bare label flip — collect a reason
     // + resurface date first (HoldSheet), then write status + hold together.
     if (k === 'on-hold') { setHoldOpen(true); return }
     // Leaving hold clears the hold payload so a stale reason/date can't linger.
@@ -97,7 +97,7 @@ function ProjectHeader({ project, reload }) {
   }
   const commitHold = async ({ reason, resurfaceOn, setAt }) => {
     await updateProject(project.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
-    await createUpdate(project.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+    await createUpdate(project.id, `Waiting — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
     await reload()
   }
   const setDue = async (d) => { await updateProject(project.id, { due: d || null }); await reload() }

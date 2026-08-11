@@ -180,7 +180,7 @@ const S = (props: any, required: string[] = []) => ({ type: 'object', properties
 const str = { type: 'string' }, bool = { type: 'boolean' }, num = { type: 'integer' }, sArr = { type: 'array', items: { type: 'string' } }
 const TOOLS = [
   { name: 'list_areas', write: false, description: 'List your areas / pillars (top-level grouping).', inputSchema: S({}) },
-  { name: 'list_projects', write: false, description: 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived). "idea" is shown in the app as Icebox: tabled or not started, no reactivation date.', inputSchema: S({ area: str, status: str }) },
+  { name: 'list_projects', write: false, description: 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived). Two labels differ from their stored values: "idea" shows as Icebox (tabled or not started, no reactivation date) and "on-hold" shows as Waiting (blocked on something, with a check-in date).', inputSchema: S({ area: str, status: str }) },
   { name: 'get_project', write: false, description: 'Get one project in full: tasks, milestones, where-it-stands updates, artifacts.', inputSchema: S({ id: str }, ['id']) },
   { name: 'list_tasks', write: false, description: 'List tasks, optionally for one project. status: open (default) | done | all. lane: now | backlog (the pull-board lane; "backlog" is shown in the app as the Icebox).', inputSchema: S({ project: str, status: { type: 'string', enum: ['open', 'done', 'all'] }, lane: { type: 'string', enum: ['now', 'backlog'] } }) },
   { name: 'list_notes', write: false, description: 'List notes/meetings, optionally by project or kind (note|meeting|knowledge|artifact).', inputSchema: S({ project: str, kind: str }) },
