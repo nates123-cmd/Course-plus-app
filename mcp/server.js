@@ -28,7 +28,7 @@ const tool = (name, desc, shape, fn, { write = false } = {}) => {
 
 // ── read ──
 tool('list_areas', 'List your areas / pillars (the top-level grouping).', {}, () => D.listAreas(sb))
-tool('list_projects', 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived).',
+tool('list_projects', 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived). "idea" is shown in the app as Icebox: tabled or not started, no reactivation date.',
   { area: z.string().optional(), status: z.string().optional() }, (a) => D.listProjects(sb, a))
 tool('get_project', 'Get one project in full: tasks, milestones, where-it-stands updates, and artifacts.',
   { id: z.string() }, (a) => D.getProject(sb, a))

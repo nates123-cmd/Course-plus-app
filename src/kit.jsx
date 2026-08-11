@@ -128,7 +128,7 @@ export function IconBtn({ n, s = 18, onClick, title, badge, active }) {
 export const STATUS = {
   active:    { label: 'Active',  hint: 'Working on it' },
   'on-hold': { label: 'On hold', hint: 'Paused / blocked' },
-  idea:      { label: 'Backlog', hint: 'Not started, not blocked' },
+  idea:      { label: 'Icebox', hint: 'Tabled or not started yet' },
   sent:      { label: 'Sent',    hint: 'Out, awaiting reply' },
   archived:  { label: 'Archived', hint: 'Out of view' },
 }
