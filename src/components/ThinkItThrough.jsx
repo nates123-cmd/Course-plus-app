@@ -17,7 +17,7 @@ import { Icon, Btn, Card } from '../kit'
 import { diagnoseStuck, resolveStuck, projectStateFor } from '../lib/ai'
 import { updateProject, createUpdate } from '../lib/db'
 
-const KIND_LABEL = { task: 'Add this task', pause: 'Put on hold', idea: 'Move to Icebox' }
+const KIND_LABEL = { task: 'Add this task', pause: 'Move to Waiting', idea: 'Move to Icebox' }
 
 export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
   const { t, f } = useApp()
@@ -127,7 +127,7 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
             <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid ' + t.line }}>
               <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginBottom: 6 }}>Or, if this isn’t the season for it</div>
               <div style={{ display: 'flex', gap: 7 }}>
-                <Btn kind="ghost" size="sm" onClick={() => { onClose(); onHold(project) }}>Put on hold</Btn>
+                <Btn kind="ghost" size="sm" onClick={() => { onClose(); onHold(project) }}>Move to Waiting</Btn>
                 <Btn kind="ghost" size="sm" onClick={async () => {
                   await updateProject(project.id, project.hold ? { status: 'idea', hold: null } : { status: 'idea' })
                   await createUpdate(project.id, 'Think it through → moved to Icebox')

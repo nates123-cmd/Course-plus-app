@@ -10,7 +10,7 @@
 // Accept files the item into the suggested project as a real note (createNote),
 // then drops the inbox row (deleteInbox) and reloads. Leave keeps it untriaged.
 // Multi-home suggestions file under the area home and record the route breakdown.
-// On-hold always routes through HoldSheet (reason + resurface date).
+// Waiting always routes through HoldSheet (reason + resurface date).
 // No window.* — useApp() for theme/route/nav, useData() for the spine, db.js for writes.
 import { useState } from 'react'
 import { useApp } from '../ctx'
@@ -55,7 +55,7 @@ function AssignPopover({ projects, onPick, onClose }) {
 //   stall   — an active project with no activity in 14+ days
 // The ONE action on a row is a status change (StatusPill + picker, same control
 // and semantics as the project page). The old fixed button trio per row
-// (Archive / On hold / Keep active, Reactivate / +1 wk / Keep on hold) is gone —
+// (Archive / Waiting / Keep active, Reactivate / +1 wk / Keep waiting) is gone —
 // it hard-coded a few paths through a decision that is really just "what is this
 // project's status now?", and couldn't reach Icebox/Sent at all.
 // Staleness is measured off `lastTouchAt` (DataContext) — the newest of ANY
@@ -90,7 +90,7 @@ function buildNudges(projects, lastTouchAt, isQuiet) {
         const held = Math.floor((Date.now() - setAt) / MS_DAY)
         if (held >= DECAY_DAYS) {
           const months = Math.round(held / 30)
-          out.push({ kind: 'decay', proj: p, days: held, text: `On hold ${months} month${months > 1 ? 's' : ''} — still real, or drop it?` })
+          out.push({ kind: 'decay', proj: p, days: held, text: `Waiting ${months} month${months > 1 ? 's' : ''} — still real, or drop it?` })
         }
       }
     } else if (p.status === 'active') {
@@ -145,14 +145,14 @@ function ProjectNudges() {
     } finally { setBusy(null) }
   }
 
-  // Putting on hold is a gated flow (same HoldSheet as the project page): collect
+  // Moving to Waiting is a gated flow (same HoldSheet as the project page): collect
   // a reason + resurface date in the popup, THEN write status + hold together.
-  // This doubles as "keep on hold" for a hold that just came due — same sheet,
+  // This doubles as "keep waiting" for a hold that just came due — same sheet,
   // prefilled with the old reason, asking for a fresh date.
   const commitHold = (p) => ({ reason, resurfaceOn, setAt }) => act(p, async () => {
     await updateProject(p.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
     const held = p.status === 'on-hold'
-    await createUpdate(p.id, `${held ? 'Still on hold' : 'On hold'} — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+    await createUpdate(p.id, `${held ? 'Still waiting' : 'Waiting'} — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
   })
 
   // The other half of a due hold. Clears the hold payload so a stale reason/date
@@ -164,7 +164,7 @@ function ProjectNudges() {
   })
 
   // The one action on a nudge row. Same semantics as the project page's picker:
-  // on-hold is a gated flow (reason + resurface date via HoldSheet, never a bare
+  // Waiting is a gated flow (reason + resurface date via HoldSheet, never a bare
   // label flip), and leaving hold clears the hold payload so a stale reason/date
   // can't linger. Every flip is logged to the update feed so the decision is
   // auditable — and, now that lastTouchAt reads that feed, deciding counts as
@@ -172,7 +172,7 @@ function ProjectNudges() {
   const setStatus = (p) => async (k) => {
     setPickFor(null)
     // On-hold ALWAYS goes through the sheet — including re-picking it on a project
-    // that's already held. That's the "keep on hold" case, and it needs a new
+    // that's already held. That's the "keep waiting" case, and it needs a new
     // resurface date; snoozing the row instead would leave the hold expired and
     // the project quietly rotting with no date to come back on.
     if (k === 'on-hold') { setHoldFor(p); return }
@@ -210,13 +210,13 @@ function ProjectNudges() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 'none', opacity: busy === p.id ? 0.5 : 1, pointerEvents: busy === p.id ? 'none' : 'auto' }}>
                   {/* A held project that came due gets the two answers its own question
-                      admits: it's back, or it isn't yet. "Keep on hold" reopens the
+                      admits: it's back, or it isn't yet. "Keep waiting" reopens the
                       HoldSheet for a fresh date rather than silently re-arming the old
                       one — a hold with no new date is just a project you've forgotten. */}
                   {p.status === 'on-hold' ? (
                     <>
                       <Btn kind="primary" size="sm" icon="player-play" onClick={() => reactivate(p)}>Reactivate</Btn>
-                      <Btn kind="ghost" size="sm" icon="player-pause" onClick={() => setHoldFor(p)}>Keep on hold</Btn>
+                      <Btn kind="ghost" size="sm" icon="player-pause" onClick={() => setHoldFor(p)}>Keep waiting</Btn>
                     </>
                   ) : (
                     /* The other half of the decision: the pill answers "what is this?",
@@ -283,7 +283,7 @@ export function InboxScreen() {
     setBusy(proj.id); setErr(null)
     try {
       await updateProject(proj.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })
-      await createUpdate(proj.id, `On hold — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
+      await createUpdate(proj.id, `Waiting — ${reason}${resurfaceOn ? ` · resurface ${fmtDate(resurfaceOn)}` : ''}`)
       await reload()
     } catch (e) { setErr(e) }
     setBusy(null)

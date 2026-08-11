@@ -194,7 +194,7 @@ function SidebarContent({ onClose }) {
               {open[ideasKey] && ideas.map((p) => projRow(p, 40))}
             </>}
             {onHold.length > 0 && <>
-              {folderRow(onHoldKey, 'On hold', onHold.length, 28)}
+              {folderRow(onHoldKey, 'Waiting', onHold.length, 28)}
               {open[onHoldKey] && onHold.map((p) => projRow(p, 40))}
             </>}
             {adding === a.id

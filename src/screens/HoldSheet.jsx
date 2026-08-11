@@ -1,5 +1,5 @@
-// HoldSheet — the gate for putting a project on hold. Ported from /course:
-// "on hold" is a timer, not a trash can. Forces TWO answers — a reason (why is
+// HoldSheet — the gate for moving a project to Waiting. Ported from /course:
+// Waiting is a timer, not a trash can. Forces TWO answers — a reason (why is
 // this set down) and a resurface date (when it should come back and force a
 // decision). Both required; confirm stays disabled until they're filled. On
 // confirm the caller writes { reason, resurfaceOn, setAt } to project.hold and
@@ -11,7 +11,7 @@ import { Icon, Btn, DatePill, fmtDate, holdView, holdDue, addDays, TODAY } from 
 export function HoldSheet({ project, onConfirm, onClose }) {
   const { t, f, isMobile } = useApp()
   const prev = holdView(project.hold)
-  // Re-opened on an already-held project = "keep on hold" (the resurface date came
+  // Re-opened on an already-held project = "keep waiting" (the resurface date came
   // due and Nate chose to keep waiting), not a fresh hold.
   const extending = project.status === 'on-hold' && !!project.hold
   const [reason, setReason] = useState(prev?.reason || '')
@@ -48,14 +48,14 @@ export function HoldSheet({ project, onConfirm, onClose }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
           <Icon n="player-pause" s={17} c={t.risk} />
           <span style={{ fontFamily: f.title, fontSize: 19, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>
-            {extending ? 'Keep on hold' : 'Put on hold'}</span>
+            {extending ? 'Keep waiting' : 'Move to Waiting'}</span>
         </div>
         <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, marginBottom: 18 }}>
           {extending
             ? `${project.name} stays off the active board. Still waiting on the same thing, or has that changed?`
             : `${project.name} steps off the active board until it resurfaces.`}</div>
 
-        <FieldLabel t={t} f={f}>{extending ? 'Still on hold because…' : 'Why on hold?'}</FieldLabel>
+        <FieldLabel t={t} f={f}>{extending ? 'Still waiting because…' : 'Waiting on what?'}</FieldLabel>
         <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') confirm() }}
           placeholder="What's it waiting on? (e.g. revised scope from Haritha)"
@@ -74,7 +74,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
                 onMouseLeave={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t3 }}>{lbl}</span>)}
           </div>
           <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 9 }}>
-            {resurfaceOn ? `Comes back ${fmtDate(resurfaceOn)} — you'll be asked to reactivate, snooze, or keep holding.` : "No date — it won't auto-resurface."}</div>
+            {resurfaceOn ? `Comes back ${fmtDate(resurfaceOn)} — you'll be asked to reactivate, snooze, or keep waiting.` : "No date — it won't auto-resurface."}</div>
         </div>
       </div>
 
@@ -82,7 +82,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
         <Btn kind="ghost" onClick={close}>Cancel</Btn>
         <div style={{ flex: 1 }} />
         <Btn kind="primary" icon={busy ? 'loader-2' : 'player-pause'} onClick={ready ? confirm : undefined}
-          style={!ready ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{extending ? 'Keep on hold' : 'Put on hold'}</Btn>
+          style={!ready ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}>{extending ? 'Keep waiting' : 'Move to Waiting'}</Btn>
       </div>
     </div>
   </div>

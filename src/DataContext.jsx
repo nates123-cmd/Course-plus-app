@@ -8,7 +8,7 @@ import { holdView } from './kit'
 import { seriesForTitle } from './lib/seriesAgenda'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
-const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'On hold: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
+const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'Waiting: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
 
 // NOTE: a due hold is NOT auto-reactivated any more.
 //
@@ -19,7 +19,7 @@ const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return
 // pre-empted the check-in nudge, which could therefore never appear.
 //
 // A due hold now surfaces as a `checkin` row in the Inbox's Pending decisions —
-// Reactivate, or Keep on hold with a new date. The project stays on-hold until
+// Reactivate, or Keep waiting with a new date. The project stays on-hold until
 // Nate says otherwise. See buildNudges() in screens/Inbox.jsx.
 
 // ── Materialize meeting action items into the project Icebox ────────

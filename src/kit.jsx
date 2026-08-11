@@ -43,7 +43,7 @@ export function Tag({ children, onClick, active }) {
 // used to be invisible in list views: waiting only rendered when the freeform
 // "waiting on" dependency was filled, so a status-only Waiting showed nothing,
 // and work_type never rendered at all. Waiting takes the risk tone (same read as
-// an on-hold project — parked, needs a nudge); scheduled stays neutral, because
+// a waiting project — parked, needs a nudge); scheduled stays neutral, because
 // it's handled, not blocked.
 export function StateTag({ kind, label }) {
   const { t, f } = useApp()
@@ -127,7 +127,7 @@ export function IconBtn({ n, s = 18, onClick, title, badge, active }) {
 // ── Status system (project status) ──────────────────────────────
 export const STATUS = {
   active:    { label: 'Active',  hint: 'Working on it' },
-  'on-hold': { label: 'On hold', hint: 'Paused / blocked' },
+  'on-hold': { label: 'Waiting', hint: 'Blocked, with a check-in date' },
   idea:      { label: 'Icebox', hint: 'Tabled or not started yet' },
   sent:      { label: 'Sent',    hint: 'Out, awaiting reply' },
   archived:  { label: 'Archived', hint: 'Out of view' },
