@@ -87,7 +87,8 @@ export async function listTasks(sb, { project, status = 'open', lane } = {}) {
   else if (status === 'done') q = q.eq('done', true)
   const { data, error } = await q; must(error)
   let rows = (data || []).map(mapTask)
-  // lane lives in task_status: 'now' = Now lane, anything else open = Backlog.
+  // lane lives in task_status: 'now' = Now lane, anything else open = the Icebox
+  // lane (still stored as 'backlog' — the rename was display-only).
   if (lane === 'now') rows = rows.filter((t) => t.status === 'now')
   else if (lane === 'backlog') rows = rows.filter((t) => t.status !== 'now')
   return rows

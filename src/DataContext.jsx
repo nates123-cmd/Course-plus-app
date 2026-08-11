@@ -22,11 +22,11 @@ const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return
 // Reactivate, or Keep on hold with a new date. The project stays on-hold until
 // Nate says otherwise. See buildNudges() in screens/Inbox.jsx.
 
-// ── Materialize meeting action items into the project Backlog ────────
+// ── Materialize meeting action items into the project Icebox ────────
 // Phase 2 of the pull-method rebuild: extraction no longer feeds a holding pen
 // with a promote button. On load, every meeting's action items that are Nate's
 // (or unassigned), read like a real deliverable, and aren't already a task,
-// become Backlog tasks tagged with their source meeting. Each processed action
+// become Icebox tasks tagged with their source meeting. Each processed action
 // is flagged `materialized` on its note so a load never double-creates, and a
 // dismissed or completed task never resurfaces.
 const OWNER_MINE = new Set(['', 'me', 'you', 'mine', 'i', 'us', 'we', 'open', 'unassigned', 'nate'])
@@ -92,7 +92,7 @@ export function DataProvider({ children }) {
       let data = await loadAll()
       // (Due holds are no longer auto-reactivated here — they surface as a
       // check-in row in Pending decisions. See the note at the top of the file.)
-      // Pull any un-materialized meeting action items into the project Backlogs.
+      // Pull any un-materialized meeting action items into the project Iceboxes.
       if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
       setNudgeStates(data.nudgeStates || [])
