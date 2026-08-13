@@ -3,6 +3,7 @@
 // inbox from Supabase (per-user RLS, cp_* tables), seed demo fixtures on first
 // run, and read/write every entity. Mirrors Scribe's db.js patterns.
 import { supabase } from './supabase'
+import { unlinkProjectEverywhere } from './goals'
 import { mapAsset } from './assets'
 import { SEED_AREAS, SEED_NOTES, SEED_INBOX } from '../data'
 
@@ -45,6 +46,7 @@ function mapTask(r) {
     notes: r.notes || undefined, srcMeeting: r.src_meeting || undefined, meetingId: r.meeting_id || undefined,
     groupLabel: r.group_label || undefined, sort: r.sort ?? 0,
     createdAt: r.created_at, updatedAt: r.updated_at, rescheduleCount: r.reschedule_count ?? 0,
+    completedAt: r.completed_at || undefined,
   }
 }
 function mapMilestone(r) {
@@ -282,7 +284,7 @@ const TASK_COLS = {
   label: 'label', done: 'done', next: 'next', waiting: 'waiting', due: 'due',
   dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status', priority: 'priority',
   notes: 'notes', srcMeeting: 'src_meeting', meetingId: 'meeting_id', project: 'project_id', area: 'area_id', sort: 'sort',
-  rescheduleCount: 'reschedule_count', groupLabel: 'group_label',
+  rescheduleCount: 'reschedule_count', groupLabel: 'group_label', completedAt: 'completed_at',
 }
 // projectId may be null for a pillar-only task — pass the pillar via task.area.
 export async function createTask(projectId, task = {}) {
@@ -292,7 +294,8 @@ export async function createTask(projectId, task = {}) {
     waiting: task.waiting ?? null, due: task.due ?? null, due_date: task.dueDate ?? null,
     work_type: task.workType ?? null, task_status: task.taskStatus ?? null, priority: task.priority ?? null,
     notes: task.notes ?? null, src_meeting: task.srcMeeting ?? null, meeting_id: task.meetingId ?? null,
-    group_label: task.groupLabel ?? null, sort: task.sort ?? 0 }
+    group_label: task.groupLabel ?? null, sort: task.sort ?? 0,
+    completed_at: task.completedAt ?? (task.done ? new Date().toISOString() : null) }
   const { error } = await supabase.from('cp_tasks').insert(row)
   if (error) throw error
   return id
@@ -304,13 +307,22 @@ export async function updateTask(id, patch) {
   // stale to the "Pending decisions" nudge (see lastTouchAt in DataContext).
   const row = { updated_at: new Date().toISOString() }
   for (const k in patch) if (TASK_COLS[k]) row[TASK_COLS[k]] = patch[k]
+  // An honest completion time. updated_at moves on every edit, so it can only
+  // say "last touched while done" — the Goals ledger needs the moment the work
+  // actually landed. Stamped here rather than at each call site so every path
+  // that flips done (board, sheet, overview, MCP) gets it for free. Explicit
+  // completedAt in the patch always wins (used by the backfill and by undo).
+  if ('done' in patch && !('completedAt' in patch)) {
+    row.completed_at = patch.done ? new Date().toISOString() : null
+  }
   const { error } = await supabase.from('cp_tasks').update(row).eq('id', id)
   if (!error) return
-  // reschedule_count ships ahead of its migration (20260712130000). If the column
-  // isn't there yet, drop it and retry rather than failing the user's edit — a
-  // missing drift counter is a lost stat; a failed update is a lost task change.
-  if (error.code === '42703' && 'reschedule_count' in row) {
-    const { reschedule_count, ...rest } = row
+  // reschedule_count ships ahead of its migration (20260712130000), completed_at
+  // ahead of 20260813120000. If a column isn't there yet, drop it and retry
+  // rather than failing the user's edit — a missing stat is a lost stat; a
+  // failed update is a lost task change.
+  if (error.code === '42703') {
+    const { reschedule_count, completed_at, ...rest } = row
     const retry = await supabase.from('cp_tasks').update(rest).eq('id', id)
     if (!retry.error) return
     throw retry.error
@@ -445,6 +457,11 @@ export async function updateProject(id, patch) {
 export async function deleteProject(id) {
   const { error } = await supabase.from('cp_projects').delete().eq('id', id)
   if (error) throw error
+  // A goal linking this project would keep a dangling id. Cosmetic, so this is
+  // best-effort — an unapplied cp_goals migration must never fail the delete it
+  // is cleaning up after. The goal EVENTS are left alone on purpose: they carry
+  // snapshot titles and record work that genuinely happened.
+  try { await unlinkProjectEverywhere(id) } catch {}
 }
 // Persist a new project ordering (sort = position). orderedIds = project ids in display order.
 export async function reorderProjects(orderedIds) {
@@ -488,6 +505,10 @@ export async function deleteAreaCascade(id) {
     const cErr = child.find((r) => r.error); if (cErr) throw cErr.error
     const pErr = (await supabase.from('cp_projects').delete().in('id', pids)).error
     if (pErr) throw pErr
+    // Same best-effort unlink as deleteProject. cp_goal_events is deliberately
+    // NOT in inDel above: deleting the record of what you accomplished because
+    // you tidied up an area is the exact failure the ledger exists to prevent.
+    for (const pid of pids) { try { await unlinkProjectEverywhere(pid) } catch {} }
   }
   // loose pillar tasks / notes attached directly to the area (note: cp_notes uses `area`)
   const loose = await Promise.all([

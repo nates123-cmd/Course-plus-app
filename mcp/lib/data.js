@@ -95,7 +95,7 @@ export async function listTasks(sb, { project, status = 'open', lane } = {}) {
 }
 export async function createTask(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) {
   const id = uuid()
-  const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99 })
+  const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null })
   must(error); return { id, project, label }
 }
 export async function updateTask(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {
@@ -104,6 +104,9 @@ export async function updateTask(sb, { id, label, done, next, waiting, due, work
   if (waiting !== undefined) row.waiting = waiting; if (due !== undefined) row.due_date = due ? toYMD(due) : null
   if (workType !== undefined) row.work_type = workType; if (notes !== undefined) row.notes = notes; if (status !== undefined) row.task_status = status
   if (priority !== undefined) row.priority = priority
+  // Stamp the honest completion time, same as src/lib/db.js updateTask. Without
+  // this a task Claude ticks off gets no date and the Goals ledger cannot place it.
+  if (done != null) row.completed_at = done ? new Date().toISOString() : null
   const { error } = await sb.from('cp_tasks').update(row).eq('id', id); must(error); return { id, ...row }
 }
 export async function deleteTask(sb, { id }) { const { error } = await sb.from('cp_tasks').delete().eq('id', id); must(error); return { id, deleted: true } }

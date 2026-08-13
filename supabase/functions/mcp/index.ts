@@ -124,13 +124,16 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     else if (lane === 'backlog') rows = rows.filter((t: any) => t.status !== 'now')
     return rows
   },
-  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99 }); must(error); return { id, project, label } },
+  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null }); must(error); return { id, project, label } },
   async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {
     const row: any = {}
     if (label != null) row.label = label; if (done != null) row.done = done; if (next != null) row.next = next
     if (waiting !== undefined) row.waiting = waiting; if (due !== undefined) row.due_date = due ? toYMD(due) : null
     if (workType !== undefined) row.work_type = workType; if (notes !== undefined) row.notes = notes; if (status !== undefined) row.task_status = status
     if (priority !== undefined) row.priority = priority
+    // Stamp the honest completion time, same as src/lib/db.js updateTask. Without
+    // this a task Claude ticks off gets no date and the Goals ledger cannot place it.
+    if (done != null) row.completed_at = done ? new Date().toISOString() : null
     const { error } = await sb.from('cp_tasks').update(row).eq('id', id); must(error); return { id, ...row }
   },
   async complete_task(sb, { id }) { return ops.update_task(sb, { id, done: true }) },

@@ -17,9 +17,10 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import {
   Icon, Btn, Card, AreaDot, Tag, Popover, PopRow, MONTHS, TODAY,
-  StatusPill, STATUS, statusSkin, holdDue, holdView, fmtDate,
+  StatusPill, STATUS, statusSkin, fmtDate,
 } from '../kit'
 import { createNote, deleteInbox, updateProject, createUpdate } from '../lib/db'
+import { buildNudges } from '../lib/nudges'
 import { HoldSheet } from './HoldSheet'
 import { ThinkItThrough } from '../components/ThinkItThrough'
 
@@ -66,53 +67,8 @@ function AssignPopover({ projects, onPick, onClose }) {
 // working daily via tasks + meeting notes were nagging "No work logged in 33
 // days". A project with no signal at all can't be aged, so it's left out (no
 // false "archive this").
-const STALL_DAYS = 14
-const DECAY_DAYS = 60   // a hold this old has stopped being a plan
-const DRIFT_PUSHES = 3  // pushed forward 3+ times = you are avoiding it
-const MS_DAY = 86400000
-
-function buildNudges(projects, lastTouchAt, isQuiet) {
-  const out = []
-  for (const p of projects) {
-    if (isQuiet(p.id)) continue // consciously waved off — stay waved off
-    if (p.status === 'on-hold') {
-      const hv = holdView(p.hold)
-      if (holdDue(p.hold)) {
-        const when = hv?.resurfaceText ? `Hold ended ${hv.resurfaceText}` : 'Hold ended'
-        out.push({ kind: 'checkin', proj: p, days: 0, text: hv?.reason ? `${when} — ${hv.reason}` : `${when}.` })
-        continue
-      }
-      // Long-hold decay: a hold that keeps getting pushed quietly becomes a
-      // graveyard. Designed in the old Course prototype, never built. Surface it
-      // once it's been parked ~2 months so it has to be re-decided, not inherited.
-      const setAt = hv?.setAt ? Date.parse(hv.setAt) : 0
-      if (setAt) {
-        const held = Math.floor((Date.now() - setAt) / MS_DAY)
-        if (held >= DECAY_DAYS) {
-          const months = Math.round(held / 30)
-          out.push({ kind: 'decay', proj: p, days: held, text: `Waiting ${months} month${months > 1 ? 's' : ''} — still real, or drop it?` })
-        }
-      }
-    } else if (p.status === 'active') {
-      // Drift beats staleness: a project you keep touching but whose one task you
-      // keep pushing is stuck in a way "last activity" can never see.
-      const drift = (p.tasks || []).filter((tk) => !tk.done && (tk.rescheduleCount || 0) >= DRIFT_PUSHES)
-        .sort((a, b) => (b.rescheduleCount || 0) - (a.rescheduleCount || 0))[0]
-      if (drift) {
-        out.push({ kind: 'drift', proj: p, days: 0, drift,
-          text: `Pushed "${drift.label}" ${drift.rescheduleCount} times.` })
-        continue
-      }
-      const touched = lastTouchAt(p)
-      if (!touched) continue
-      const days = Math.floor((Date.now() - touched) / MS_DAY)
-      if (days >= STALL_DAYS) out.push({ kind: 'stall', proj: p, days, text: `No activity in ${days} days.` })
-    }
-  }
-  // Decisions you promised to make first (check-ins), then avoidance, then rot.
-  const rank = { checkin: 0, drift: 1, decay: 2, stall: 3 }
-  return out.sort((a, b) => (rank[a.kind] - rank[b.kind]) || ((b.days || 0) - (a.days || 0)))
-}
+// Thresholds and the four nudge kinds now live in lib/nudges.js — the Goals
+// screen reports the same hindrances, so there is one definition of "stuck".
 
 function ProjectNudges() {
   const { t, f, go } = useApp()
