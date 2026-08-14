@@ -17,6 +17,7 @@ import { NoteScreen } from './screens/Note'
 import { AskScreen } from './screens/Ask'
 import { InboxScreen } from './screens/Inbox'
 import { LibraryScreen } from './screens/Library'
+import { GoalsScreen } from './screens/Goals'
 import { AgendaScreen } from './screens/Agenda'
 import { RecordScreen } from './screens/Record'
 import { ArtifactScreen } from './screens/Artifact'
@@ -136,6 +137,7 @@ function SidebarContent({ onClose }) {
     {nav('inbox', 'Inbox', 'inbox', inboxCount)}
     {nav('repeat', 'Series', 'series')}
     {nav('stack-2', 'Library', 'library')}
+    {nav('target-arrow', 'Goals', 'goals')}
     {nav('school', 'Study', 'study')}
 
     <div style={{ display: 'flex', alignItems: 'center', padding: '20px 10px 8px' }}>
@@ -555,6 +557,7 @@ function Screen() {
     case 'ask':      return <AskScreen />
     case 'inbox':    return <InboxScreen />
     case 'library':  return <LibraryScreen />
+    case 'goals':    return <GoalsScreen />
     case 'study':    return <StudyScreen key={route.id || 'shelf'} />
     case 'meeting':
     case 'record':   return <RecordScreen key={route.project || 'mtg'} />
@@ -580,6 +583,7 @@ function useTabTitle() {
       case 'ask':      return 'Ask'
       case 'inbox':    return 'Inbox'
       case 'library':  return r.tag ? '#' + r.tag : 'Library'
+      case 'goals':    return 'Goals'
       case 'study':    return 'Study'
       case 'area':     return areaById(r.id)?.name || 'Area'
       case 'project':  return projectById(r.id)?.name || 'Project'
@@ -594,7 +598,7 @@ function useTabTitle() {
 }
 
 const TAB_ICON = { overview: 'layout-grid', agenda: 'calendar', ask: 'sparkles', inbox: 'inbox',
-  library: 'stack-2', study: 'school', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
+  library: 'stack-2', goals: 'target-arrow', study: 'school', area: 'folder', project: 'folder', note: 'file-text', artifact: 'file-export', series: 'repeat',
   meeting: 'microphone', record: 'microphone' }
 
 function TabBar() {

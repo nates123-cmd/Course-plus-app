@@ -93,7 +93,13 @@ function ProjectHeader({ project, reload }) {
     if (k === 'on-hold') { setHoldOpen(true); return }
     // Leaving hold clears the hold payload so a stale reason/date can't linger.
     const patch = project.hold ? { status: k, hold: null } : { status: k }
-    await updateProject(project.id, patch); await reload()
+    await updateProject(project.id, patch)
+    // Log the flip. The Inbox picker has always done this (Inbox.jsx) but this
+    // one never did, so sending or archiving a project FROM THE PROJECT PAGE
+    // left no dated record anywhere — cp_updates is the only place a project's
+    // terminal state gets a timestamp, and lastTouchAt/Goals both read it.
+    await createUpdate(project.id, `Status → ${STATUS[k]?.label || k}`)
+    await reload()
   }
   const commitHold = async ({ reason, resurfaceOn, setAt }) => {
     await updateProject(project.id, { status: 'on-hold', hold: { reason, resurfaceOn, setAt } })

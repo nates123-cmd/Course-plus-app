@@ -136,6 +136,12 @@ export function DataProvider({ children }) {
     // Mirror the updated_at that db.updateTask stamps, so the edit counts as
     // project activity (lastTouchAt) immediately rather than only after a reload.
     const touched = { ...out, updatedAt: new Date().toISOString() }
+    // Mirror completed_at the same way — the Goals reconciler runs off local
+    // state, so a task ticked off has to carry its completion time right away
+    // or the win it produces would be dated by the next reload instead.
+    if ('done' in out && !('completedAt' in out)) {
+      touched.completedAt = out.done ? touched.updatedAt : undefined
+    }
     setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...touched })))
     try { await updateTask(id, out) } catch (e) { reload(); throw e }
   }
