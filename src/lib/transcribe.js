@@ -62,13 +62,23 @@ export async function transcribeAudio(blob, { onStatus, speakersExpected, diariz
   const { id } = await callFn(startReq)
   if (!id) throw new Error('no transcript id')
 
-  // Poll up to ~40 min. 2hr audio usually completes in a few minutes.
-  for (let i = 0; i < 300; i++) {
-    await sleep(8000)
-    const d = await callFn({ op: 'poll', id })
-    if (d.status === 'completed') return formatUtterances(d.utterances, d.text)
-    if (d.status === 'error') throw new Error('transcription failed: ' + (d.error || 'unknown'))
-    onStatus?.(d.status || 'processing')
+  // AssemblyAI has already pulled the audio by the time any terminal status
+  // lands, and nothing in the app ever reads this object again — `path` is not
+  // persisted on the note or anywhere else. Drop it on every exit path so the
+  // bucket stops accumulating unreachable recordings; it had built up 1.3 GB of
+  // them (82 files, none referenced by any row) before this cleanup existed.
+  try {
+    // Poll up to ~40 min. 2hr audio usually completes in a few minutes.
+    for (let i = 0; i < 300; i++) {
+      await sleep(8000)
+      const d = await callFn({ op: 'poll', id })
+      if (d.status === 'completed') return formatUtterances(d.utterances, d.text)
+      if (d.status === 'error') throw new Error('transcription failed: ' + (d.error || 'unknown'))
+      onStatus?.(d.status || 'processing')
+    }
+    throw new Error('transcription timed out')
+  } finally {
+    // Best effort — a failed cleanup must never mask the transcript or a real error.
+    try { await supabase.storage.from('scribe-audio').remove([path]) } catch {}
   }
-  throw new Error('transcription timed out')
 }
