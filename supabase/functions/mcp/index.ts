@@ -9,6 +9,7 @@
 // Deployed with verify_jwt=false because it implements its own auth (OAuth
 // bearer tokens + unauthenticated OAuth discovery endpoints).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { normalizeRule, nextOccurrence, recurrenceLabel, todayYmd } from '../_shared/recurrence.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -50,7 +51,17 @@ const isAllowedRedirect = (u: string) => {
 
 // ── date + markdown helpers (ported from mcp/lib/data.js) ──
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const toYMD = (s?: string | null) => { if (!s) return null; const d = new Date(s); if (isNaN(+d)) return null; return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() } }
+// A bare 'YYYY-MM-DD' is parsed by Date as UTC midnight, which is the PREVIOUS
+// day in every timezone west of Greenwich — so every due date Claude set through
+// MCP landed a day early. Read the calendar parts directly instead; only fall
+// back to Date for the fuller timestamps it actually handles correctly.
+const toYMD = (s?: string | null) => {
+  if (!s) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s).trim())
+  if (m) return { y: +m[1], m: +m[2] - 1, d: +m[3] }
+  const d = new Date(s); if (isNaN(+d)) return null
+  return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() }
+}
 const ymdStr = (o: any) => (o && o.y != null) ? `${o.y}-${String(o.m + 1).padStart(2, '0')}-${String(o.d).padStart(2, '0')}` : null
 const todayLabel = () => { const d = new Date(); return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` }
 const uuid = () => crypto.randomUUID()
@@ -74,7 +85,43 @@ function textToBlocks(text: string) {
 function blocksToText(blocks: any[] = []) {
   return (blocks || []).map((b) => b.p || (b.ul ? b.ul.map((i: string) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i: string, n: number) => `${n + 1}. ${i}`).join('\n') : (b.links ? b.links.map((l: string) => `[[${l}]]`).join(' ') : '')))).filter(Boolean).join('\n\n')
 }
-const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0 })
+const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0, repeats: recurrenceLabel(r.recurrence), recurrence: r.recurrence || null })
+
+// Claude passes `until` as a YYYY-MM-DD string (every other date in this API is
+// one); the rule stores it as {y,m,d}. Convert before normalising, or the end
+// date would be silently dropped and the series would never stop.
+const repeatIn = (repeat: any) => {
+  if (repeat == null) return null
+  const raw = typeof repeat.until === 'string' ? { ...repeat, until: toYMD(repeat.until) } : repeat
+  return normalizeRule(raw)
+}
+
+// Create the next occurrence of a recurring task that has just been completed.
+// Mirrors spawnNextOccurrence in src/DataContext.jsx: the new task inherits what
+// describes the WORK and not the finished instance's own state (waiting-on,
+// meeting assignment, reschedule count), and the completed row is flagged
+// recur_spawned so a re-completion can never fork the series a second time.
+async function spawnNext(sb: any, id: string) {
+  const { data: cur } = await sb.from('cp_tasks').select('*').eq('id', id).single()
+  if (!cur || !cur.recurrence) return null
+  const task = { recurrence: cur.recurrence, dueDate: cur.due_date, recurIndex: cur.recur_index ?? 0, recurSpawned: !!cur.recur_spawned }
+  const nx = nextOccurrence(task, todayYmd())
+  if (!nx) return null
+  const seriesId = cur.recur_parent || cur.id
+  const newId = uuid()
+  const { error } = await sb.from('cp_tasks').insert({
+    id: newId, project_id: cur.project_id, area_id: cur.area_id, label: cur.label,
+    done: false, next: !!cur.next, waiting: null,
+    due_date: nx.dueDate, work_type: cur.work_type === 'scheduled' ? null : cur.work_type,
+    task_status: cur.task_status === 'now' ? 'now' : 'backlog',
+    priority: cur.priority ?? null, notes: cur.notes ?? null, group_label: cur.group_label ?? null,
+    sort: cur.sort ?? 0, completed_at: null,
+    recurrence: cur.recurrence, recur_parent: seriesId, recur_index: nx.index, recur_spawned: false,
+  })
+  must(error)
+  await sb.from('cp_tasks').update({ recur_spawned: true, recur_parent: seriesId }).eq('id', id)
+  return { id: newId, label: cur.label, due: ymdStr(nx.dueDate) }
+}
 const noteRow = (n: any) => ({ id: n.id, kind: n.kind, title: n.title, project: n.project ?? null, area: n.area ?? null, projects: n.projects || [], people: n.people || [], tags: n.tags || [], date: n.date, updated: n.updated, indexed: true, status: n.status ?? 2, transcript: n.transcript ?? null, summary: n.summary ?? null, agenda: n.agenda ?? null, terms: n.terms || [], actions: n.actions || [], body: n.body || [], related: n.related || [] })
 const noteOut = (r: any) => ({ id: r.id, kind: r.kind, title: r.title, project: r.project, area: r.area, projects: r.projects || [], people: r.people || [], tags: r.tags || [], date: r.date, summary: r.summary || null, agenda: r.agenda || null, incomplete: !!r.incomplete, bodyMarkdown: blocksToText(r.body || []), transcript: r.transcript || null, actions: r.actions || [], terms: r.terms || [] })
 const must = (e: any) => { if (e) throw new Error(e.message || String(e)) }
@@ -124,17 +171,27 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     else if (lane === 'backlog') rows = rows.filter((t: any) => t.status !== 'now')
     return rows
   },
-  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null }); must(error); return { id, project, label } },
-  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority }) {
+  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting, repeat }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null, recurrence: repeatIn(repeat) }); must(error); return { id, project, label, repeats: recurrenceLabel(repeatIn(repeat)) } },
+  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority, repeat }) {
     const row: any = {}
     if (label != null) row.label = label; if (done != null) row.done = done; if (next != null) row.next = next
     if (waiting !== undefined) row.waiting = waiting; if (due !== undefined) row.due_date = due ? toYMD(due) : null
     if (workType !== undefined) row.work_type = workType; if (notes !== undefined) row.notes = notes; if (status !== undefined) row.task_status = status
     if (priority !== undefined) row.priority = priority
+    if (repeat !== undefined) row.recurrence = repeatIn(repeat) // null/false clears the repeat
     // Stamp the honest completion time, same as src/lib/db.js updateTask. Without
     // this a task Claude ticks off gets no date and the Goals ledger cannot place it.
     if (done != null) row.completed_at = done ? new Date().toISOString() : null
-    const { error } = await sb.from('cp_tasks').update(row).eq('id', id); must(error); return { id, ...row }
+    const { error } = await sb.from('cp_tasks').update(row).eq('id', id); must(error)
+    const out: any = { id, ...row }
+    // Completing a recurring task spawns its successor, exactly as the app does
+    // (src/DataContext.jsx). Without this, a repeat set in the app would quietly
+    // die the first time Claude ticked it off. Best-effort: the recurrence must
+    // never be able to fail the completion itself.
+    if (done === true) {
+      try { const nx = await spawnNext(sb, id); if (nx) out.spawnedNext = nx } catch (_) { /* keep the completion */ }
+    }
+    return out
   },
   async complete_task(sb, { id }) { return ops.update_task(sb, { id, done: true }) },
   async delete_task(sb, { id }) { const { error } = await sb.from('cp_tasks').delete().eq('id', id); must(error); return { id, deleted: true } },
@@ -181,6 +238,22 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
 // ── tool definitions (name, description, JSON-Schema, write flag) ──
 const S = (props: any, required: string[] = []) => ({ type: 'object', properties: props, required })
 const str = { type: 'string' }, bool = { type: 'boolean' }, num = { type: 'integer' }, sArr = { type: 'array', items: { type: 'string' } }
+// A repeat rule. Completing the task creates the next occurrence; the finished
+// one stays in history. Pass null to stop a task repeating.
+const repeatSchema = {
+  type: ['object', 'null'],
+  description: 'Repeat rule. Completing the task creates the next occurrence. Pass null to clear it.',
+  properties: {
+    freq: { type: 'string', enum: ['daily', 'weekly', 'monthly', 'yearly'] },
+    interval: { type: 'integer', description: 'Every N units. Default 1.' },
+    weekdays: { type: 'array', items: { type: 'integer' }, description: 'Weekly only. 0=Sunday..6=Saturday. Weekdays-only is [1,2,3,4,5].' },
+    monthDay: { description: 'Monthly only. Day of month 1-31, or the string "last".' },
+    from: { type: 'string', enum: ['due', 'completion'], description: 'due (default) keeps its calendar slot even when finished late; completion counts the next one off the day it was ticked off.' },
+    until: { type: 'string', description: 'YYYY-MM-DD. Stop repeating after this date.' },
+    count: { type: 'integer', description: 'Stop after this many occurrences in total.' },
+  },
+  required: ['freq'],
+}
 const TOOLS = [
   { name: 'list_areas', write: false, description: 'List your areas / pillars (top-level grouping).', inputSchema: S({}) },
   { name: 'list_projects', write: false, description: 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived). Two labels differ from their stored values: "idea" shows as Icebox (tabled or not started, no reactivation date) and "on-hold" shows as Waiting (blocked on something, with a check-in date).', inputSchema: S({ area: str, status: str }) },
@@ -194,9 +267,9 @@ const TOOLS = [
   { name: 'create_area', write: true, description: 'Create a new area / pillar.', inputSchema: S({ name: str }, ['name']) },
   { name: 'create_project', write: true, description: 'Create a project in an area. status defaults to active.', inputSchema: S({ area: str, name: str, status: str, priority: { type: 'integer' } }, ['area', 'name']) },
   { name: 'update_project', write: true, description: 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).', inputSchema: S({ id: str, name: str, status: str, priority: { type: 'integer' }, due: str, area: str }, ['id']) },
-  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull into active focus); srcMeeting = source meeting note id for extracted action items.', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num, lane: { type: 'string', enum: ['now', 'backlog'] }, srcMeeting: str }, ['project', 'label']) },
-  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status).', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str }, ['id']) },
-  { name: 'complete_task', write: true, description: 'Mark a task done.', inputSchema: S({ id: str }, ['id']) },
+  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull into active focus); srcMeeting = source meeting note id for extracted action items. repeat makes it recurring.', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num, lane: { type: 'string', enum: ['now', 'backlog'] }, srcMeeting: str, repeat: repeatSchema }, ['project', 'label']) },
+  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status, repeat). Set repeat to null to stop a task recurring.', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str, repeat: repeatSchema }, ['id']) },
+  { name: 'complete_task', write: true, description: 'Mark a task done. If the task repeats, the next occurrence is created automatically and returned as spawnedNext.', inputSchema: S({ id: str }, ['id']) },
   { name: 'delete_task', write: true, description: 'Delete a task.', inputSchema: S({ id: str }, ['id']) },
   { name: 'create_note', write: true, description: 'Create a note or meeting. body is markdown (paragraphs, - bullets, 1. numbered).', inputSchema: S({ kind: str, title: str, project: str, area: str, body: str, people: sArr, tags: sArr, summary: str, transcript: str }, ['title']) },
   { name: 'update_note', write: true, description: 'Update a note (title, body markdown, summary, tags, people).', inputSchema: S({ id: str, title: str, body: str, summary: str, tags: sArr, people: sArr }, ['id']) },
@@ -396,7 +469,7 @@ Deno.serve(async (req) => {
     // batch or single
     if (Array.isArray(payload)) {
       const out = []
-      for (const msg of payload) { if (msg?.id !== undefined && msg?.id !== null) out.push(await handleRpc(msg, email)) else await handleRpc(msg, email) }
+      for (const msg of payload) { if (msg?.id !== undefined && msg?.id !== null) out.push(await handleRpc(msg, email)); else await handleRpc(msg, email) }
       return json(out)
     }
     // notification (no id) → 202

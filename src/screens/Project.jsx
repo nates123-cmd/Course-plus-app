@@ -16,6 +16,7 @@ import {
 } from '../kit'
 
 import { handleTablePaste } from '../lib/tablePaste'
+import { recurrenceLabel } from '../lib/recurrence'
 import { classifyCapture, textToBlocks, captureTitle } from '../lib/capture'
 import { composeDeliverable, updateGuide, reviseDocumentBody, synthesizeMeeting } from '../lib/ai'
 import { composePrompt, openInClaude } from '../lib/claudeBridge'
@@ -224,6 +225,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
       {x.done && <Icon n="check" s={12} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: x.done ? t.t3 : t.t1,
       textDecoration: x.done ? 'line-through' : 'none' }}>{x.label}</span>
+    {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1 }} />}
     {x.priority && !x.done && <span style={{ zIndex: 1, display: 'inline-flex' }}><Priority level={x.priority} /></span>}
     {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, zIndex: 1, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
@@ -261,14 +263,14 @@ const isNow = (x) => x.taskStatus === 'now'
 const isScheduled = (x) => x.workType === 'scheduled' // parked for a meeting → hidden from the board
 function Tasks({ project, reload }) {
   const { t, f } = useApp()
-  const { recordUndo, patchTask, addTask, removeTask } = useData()
+  const { recordUndo, patchTask, addTask, removeTask, undoRecurrence } = useData()
   const [nowCap, setNowCap] = usePersisted('course.nowCap', 3)
   // React owns lane order; re-seed whenever the persisted tasks change — keyed on
   // the mutable fields too, not just ids, so a sheet edit (due/status/lane) shows
   // live without a refresh. (Drag preview is safe: project.tasks only changes on drop.)
   const tasksSig = (project.tasks || []).map((x) => {
     const d = x.dueDate ? `${x.dueDate.y}-${x.dueDate.m}-${x.dueDate.d}` : (x.due || '')
-    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}:${x.groupLabel || ''}`
+    return `${x.id}:${x.done ? 1 : 0}:${x.next ? 1 : 0}:${x.taskStatus || ''}:${d}:${x.workType || ''}:${x.priority || ''}:${x.waiting || ''}:${x.label}:${x.notes || ''}:${x.project || ''}:${x.groupLabel || ''}:${x.recurrence ? JSON.stringify(x.recurrence) : ''}`
   }).join('|')
   const [nowList, setNowList] = useState([])
   const [icebox, setIcebox] = useState([])
@@ -308,8 +310,10 @@ function Tasks({ project, reload }) {
     const prevDone = x.done
     if (isNow(x)) setNowList((l) => l.filter((o) => o.id !== id)) // optimistic: completing clears the lane
     else setIcebox((l) => l.filter((o) => o.id !== id))
-    await patchTask(id, { done: !prevDone })
-    recordUndo(async () => { await patchTask(id, { done: prevDone }) })
+    // Completing a recurring task spawns its successor; undo has to take that
+    // back out too, or Cmd+Z would leave next week's copy behind.
+    const spawnedId = await patchTask(id, { done: !prevDone })
+    recordUndo(async () => { await patchTask(id, { done: prevDone }); await undoRecurrence(id, spawnedId) })
   }
   // P1 also pulls the task into Now (its priority means "now"). The rest of the
   // priority-driven placement (P2 top of Icebox, P3 under the last P2) is done

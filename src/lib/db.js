@@ -4,6 +4,7 @@
 // run, and read/write every entity. Mirrors Scribe's db.js patterns.
 import { supabase } from './supabase'
 import { unlinkProjectEverywhere } from './goals'
+import { normalizeRule } from './recurrence'
 import { mapAsset } from './assets'
 import { SEED_AREAS, SEED_NOTES, SEED_INBOX } from '../data'
 
@@ -47,6 +48,8 @@ function mapTask(r) {
     groupLabel: r.group_label || undefined, sort: r.sort ?? 0,
     createdAt: r.created_at, updatedAt: r.updated_at, rescheduleCount: r.reschedule_count ?? 0,
     completedAt: r.completed_at || undefined,
+    recurrence: r.recurrence || undefined, recurParent: r.recur_parent || undefined,
+    recurIndex: r.recur_index ?? 0, recurSpawned: !!r.recur_spawned,
   }
 }
 function mapMilestone(r) {
@@ -285,6 +288,7 @@ const TASK_COLS = {
   dueDate: 'due_date', workType: 'work_type', taskStatus: 'task_status', priority: 'priority',
   notes: 'notes', srcMeeting: 'src_meeting', meetingId: 'meeting_id', project: 'project_id', area: 'area_id', sort: 'sort',
   rescheduleCount: 'reschedule_count', groupLabel: 'group_label', completedAt: 'completed_at',
+  recurrence: 'recurrence', recurParent: 'recur_parent', recurIndex: 'recur_index', recurSpawned: 'recur_spawned',
 }
 // projectId may be null for a pillar-only task — pass the pillar via task.area.
 export async function createTask(projectId, task = {}) {
@@ -295,10 +299,22 @@ export async function createTask(projectId, task = {}) {
     work_type: task.workType ?? null, task_status: task.taskStatus ?? null, priority: task.priority ?? null,
     notes: task.notes ?? null, src_meeting: task.srcMeeting ?? null, meeting_id: task.meetingId ?? null,
     group_label: task.groupLabel ?? null, sort: task.sort ?? 0,
-    completed_at: task.completedAt ?? (task.done ? new Date().toISOString() : null) }
+    completed_at: task.completedAt ?? (task.done ? new Date().toISOString() : null),
+    recurrence: normalizeRule(task.recurrence), recur_parent: task.recurParent ?? null,
+    recur_index: task.recurIndex ?? 0, recur_spawned: !!task.recurSpawned }
   const { error } = await supabase.from('cp_tasks').insert(row)
-  if (error) throw error
-  return id
+  if (!error) return id
+  // Same missing-column tolerance as updateTask below. The recurrence columns
+  // ship ahead of migration 20260902120000, and an insert naming a column that
+  // isn't there yet fails the WHOLE row — i.e. every new task, recurring or not.
+  // Drop them and retry: a task without its repeat rule beats no task at all.
+  if (error.code === '42703') {
+    const { recurrence, recur_parent, recur_index, recur_spawned, ...rest } = row
+    const retry = await supabase.from('cp_tasks').insert(rest)
+    if (retry.error) throw retry.error
+    return id
+  }
+  throw error
 }
 export async function updateTask(id, patch) {
   // Stamp updated_at on every edit — this is the ONLY record that a task was
@@ -315,14 +331,18 @@ export async function updateTask(id, patch) {
   if ('done' in patch && !('completedAt' in patch)) {
     row.completed_at = patch.done ? new Date().toISOString() : null
   }
+  // Never store a half-formed rule. Normalising on the way in means every reader
+  // (app, MCP, the spawner) can trust the shape, and clearing a repeat is just
+  // patching any falsy value.
+  if ('recurrence' in row) row.recurrence = normalizeRule(row.recurrence)
   const { error } = await supabase.from('cp_tasks').update(row).eq('id', id)
   if (!error) return
   // reschedule_count ships ahead of its migration (20260712130000), completed_at
-  // ahead of 20260813120000. If a column isn't there yet, drop it and retry
-  // rather than failing the user's edit — a missing stat is a lost stat; a
-  // failed update is a lost task change.
+  // ahead of 20260813120000, the recur_* columns ahead of 20260902120000. If a
+  // column isn't there yet, drop it and retry rather than failing the user's
+  // edit — a missing stat is a lost stat; a failed update is a lost task change.
   if (error.code === '42703') {
-    const { reschedule_count, completed_at, ...rest } = row
+    const { reschedule_count, completed_at, recurrence, recur_parent, recur_index, recur_spawned, ...rest } = row
     const retry = await supabase.from('cp_tasks').update(rest).eq('id', id)
     if (!retry.error) return
     throw retry.error

@@ -3,6 +3,7 @@
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, seedIfEmpty, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
+import { nextOccurrence, todayYmd } from './lib/recurrence'
 import { blocksToText } from './lib/blocks'
 import { holdView } from './kit'
 import { seriesForTitle } from './lib/seriesAgenda'
@@ -143,7 +144,53 @@ export function DataProvider({ children }) {
       touched.completedAt = out.done ? touched.updatedAt : undefined
     }
     setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, ...touched })))
+    // A recurring task that was just completed spawns its successor. This lives
+    // here, not at the call sites, so every path that can finish a task — the
+    // pull board, the task sheet, the Overview roll-ups, the meeting recorder,
+    // and Claude over MCP going through the same rules — repeats it. Marking the
+    // completed row recur_spawned first is what makes done→undone→done safe.
+    let spawnedId = null
+    if (cur && out.done === true && !cur.done) {
+      try { spawnedId = await spawnNextOccurrence(cur) } catch (e) { console.error('recurrence spawn failed', e) }
+    }
     try { await updateTask(id, out) } catch (e) { reload(); throw e }
+    // Returned so an undo can take the spawned occurrence back out with it —
+    // un-completing a chore should not leave next week's copy sitting there.
+    return spawnedId
+  }
+  // Undo a completion that spawned a successor: delete the successor and reopen
+  // the series on the original, so re-completing it spawns cleanly again.
+  const undoRecurrence = async (id, spawnedId) => {
+    if (!spawnedId) return
+    try { await removeTask(spawnedId) } catch (e) { console.error('recurrence undo failed', e) }
+    setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, recurSpawned: false })))
+    try { await updateTask(id, { recurSpawned: false }) } catch {}
+  }
+  // Create the next occurrence of a recurring task. No-op for a task with no
+  // rule, one that already spawned, or a series that has hit its until/count.
+  // The new task inherits everything that describes the WORK (project, pillar,
+  // priority, work type, notes, group) but none of the per-occurrence state
+  // (waiting-on, meeting assignment, reschedule count) — those were true of the
+  // instance you just finished, not of the chore itself.
+  const spawnNextOccurrence = async (cur) => {
+    const nextUp = nextOccurrence(cur, todayYmd())
+    if (!nextUp) return null
+    const seriesId = cur.recurParent || cur.id
+    const nextId = crypto?.randomUUID?.() || 'rec-' + Date.now()
+    await addTask(cur.project ?? null, {
+      id: nextId, area: cur.area, label: cur.label,
+      priority: cur.priority, workType: cur.workType === 'scheduled' ? null : cur.workType,
+      notes: cur.notes, groupLabel: cur.groupLabel, sort: cur.sort ?? 0,
+      taskStatus: cur.taskStatus === 'now' ? 'now' : 'backlog', next: !!cur.next,
+      dueDate: nextUp.dueDate,
+      recurrence: cur.recurrence, recurParent: seriesId, recurIndex: nextUp.index,
+    })
+    // Close the door on the occurrence we just finished. Optimistic locally and
+    // persisted separately from the caller's own updateTask so a stale
+    // recur_spawned can never silently fork the series on a re-toggle.
+    setAreas((prev) => _mapTask(prev, cur.id, (t) => ({ ...t, recurSpawned: true, recurParent: seriesId })))
+    try { await updateTask(cur.id, { recurSpawned: true, recurParent: seriesId }) } catch {}
+    return nextId
   }
   const removeTask = async (id) => {
     setAreas((prev) => prev.map((a) => ({
@@ -431,7 +478,7 @@ export function DataProvider({ children }) {
     return {
       areas, notes, inbox, assets, series, nudgeStates, status, error, reload, recordUndo, canUndo,
       snoozeNudge, rememberQuestion,
-      patchTask, addTask, removeTask,
+      patchTask, addTask, removeTask, undoRecurrence,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,

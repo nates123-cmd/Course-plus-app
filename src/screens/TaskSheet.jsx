@@ -7,6 +7,7 @@ import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { supabase } from '../lib/supabase'
 import { Icon, IconBtn, Btn, Popover, PopRow, AreaDot, areaColor, DatePill, fmtDate, TODAY } from '../kit'
+import { PRESETS, matchPreset, recurrenceLabel, normalizeRule, nextDate, todayYmd } from '../lib/recurrence'
 
 // ── useLongPress — tap vs hold, movement-cancel + suppressed click ──
 export function useLongPress(onLong, onTap, ms = 450) {
@@ -72,6 +73,107 @@ function Chip({ active, onClick, children, tone }) {
     border: '1px solid ' + (active ? accent : 'transparent'), borderRadius: 8, padding: '7px 12px', transition: 'background .12s, color .12s' }}
     onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.tagBg }}
     onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = t.sel }}>{children}</span>
+}
+
+// ── Repeats ────────────────────────────────────────────────────────
+// Presets cover what a task actually repeats on; Custom opens the full rule
+// (interval, weekday set, day of month, what it counts from, and an end).
+// Completing the task is what creates the next one, so the preview below shows
+// the date the successor would land on — the rule is otherwise hard to picture.
+const WD_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const END_NEVER = 'never', END_ON = 'on', END_AFTER = 'after'
+
+function RepeatField({ task, onPatch }) {
+  const { t, f } = useApp()
+  const rule = normalizeRule(task.recurrence)
+  const anchor = task.dueDate || null
+  const [custom, setCustom] = useState(false)
+  const preset = rule ? matchPreset(rule, anchor) : null
+  // Open the editor automatically for a rule no preset chip can represent,
+  // otherwise the sheet would show "Custom" lit with nothing to read it by.
+  useEffect(() => { if (rule && !preset) setCustom(true) }, [rule && !preset])
+
+  const set = (patch) => onPatch({ recurrence: { ...(rule || { freq: 'weekly', interval: 1, from: 'due' }), ...patch } })
+  const clear = () => { setCustom(false); onPatch({ recurrence: null }) }
+  const preview = rule ? nextDate(rule, anchor || todayYmd()) : null
+  const endMode = !rule ? END_NEVER : rule.until ? END_ON : rule.count ? END_AFTER : END_NEVER
+
+  const numField = (value, onChange, width = 54) => <input type="number" min={1} value={value}
+    onChange={(e) => onChange(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+    style={{ width, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg,
+      fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, padding: '6px 8px' }} />
+
+  return <div>
+    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+      {PRESETS.map((p) => <Chip key={p.id} active={preset === p.id}
+        onClick={() => { setCustom(false); preset === p.id ? clear() : onPatch({ recurrence: p.build(anchor) }) }}>{p.label}</Chip>)}
+      <Chip active={!!rule && !preset} onClick={() => { setCustom((o) => !o); if (!rule) onPatch({ recurrence: { freq: 'weekly', interval: 1, from: 'due' } }) }}>
+        <Icon n="adjustments-horizontal" s={13} />Custom</Chip>
+      {rule && <Chip onClick={clear} tone={t.risk}><Icon n="x" s={13} />Clear</Chip>}
+    </div>
+
+    {rule && custom && <div style={{ marginTop: 12, padding: 12, background: t.sel, borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>Every</span>
+        {numField(rule.interval, (n) => set({ interval: n }))}
+        {[['daily', 'days'], ['weekly', 'weeks'], ['monthly', 'months'], ['yearly', 'years']].map(([id, lbl]) =>
+          <Chip key={id} active={rule.freq === id} onClick={() => set({ freq: id })}>{lbl}</Chip>)}
+      </div>
+
+      {rule.freq === 'weekly' && <div style={{ display: 'flex', gap: 5 }}>
+        {WD_LETTERS.map((L, i) => {
+          const on = (rule.weekdays || []).includes(i)
+          return <span key={i} onClick={() => {
+            const cur = rule.weekdays || []
+            set({ weekdays: on ? cur.filter((d) => d !== i) : [...cur, i] })
+          }} style={{ width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', fontFamily: f.ui, fontSize: 12.5, fontWeight: 700,
+            color: on ? t.onAccent : t.t2, background: on ? t.accent : t.bg, border: '1px solid ' + (on ? t.accent : t.line2) }}>{L}</span>
+        })}
+      </div>}
+
+      {rule.freq === 'monthly' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>On</span>
+        {numField(rule.monthDay === 'last' ? (anchor ? anchor.d : 1) : (rule.monthDay ?? (anchor ? anchor.d : 1)), (n) => set({ monthDay: Math.min(31, n) }), 58)}
+        <Chip active={rule.monthDay === 'last'} onClick={() => set({ monthDay: rule.monthDay === 'last' ? (anchor ? anchor.d : 1) : 'last' })}>Last day</Chip>
+      </div>}
+
+      <div>
+        <FieldLabel>Counts from</FieldLabel>
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+          <Chip active={rule.from !== 'completion'} onClick={() => set({ from: 'due' })}>Its due date</Chip>
+          <Chip active={rule.from === 'completion'} onClick={() => set({ from: 'completion' })}>When I finish it</Chip>
+        </div>
+        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.5, marginTop: 7 }}>
+          {rule.from === 'completion'
+            ? 'Late once, late always — the next one is counted off the day you tick this off.'
+            : 'Keeps its place on the calendar even if you finish it late.'}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel>Ends</FieldLabel>
+        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Chip active={endMode === END_NEVER} onClick={() => onPatch({ recurrence: { ...rule, until: null, count: null } })}>Never</Chip>
+          <Chip active={endMode === END_AFTER} onClick={() => onPatch({ recurrence: { ...rule, until: null, count: rule.count || 5 } })}>After…</Chip>
+          {endMode === END_AFTER && <>{numField(rule.count || 5, (n) => onPatch({ recurrence: { ...rule, until: null, count: n } }))}
+            <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>times</span></>}
+          <Chip active={endMode === END_ON} onClick={() => onPatch({ recurrence: { ...rule, count: null, until: rule.until || preview } })}>On date…</Chip>
+          {endMode === END_ON && <DatePill value={rule.until || null} onChange={(v) => onPatch({ recurrence: { ...rule, count: null, until: v || null } })}
+            label="" empty="+ End date" bottom="calc(100% + 8px)" />}
+        </div>
+      </div>
+    </div>}
+
+    {rule && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.5 }}>
+      <Icon n="repeat" s={13} c={t.accent} />
+      <span><b style={{ color: t.t2, fontWeight: 600 }}>{recurrenceLabel(rule)}</b>
+        {preview && <> · next one lands {fmtDate(preview)}</>}</span>
+    </div>}
+    {rule && !anchor && <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.5, marginTop: 6 }}>
+      No due date yet, so the first repeat counts from the day you complete it.
+    </div>}
+  </div>
 }
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
@@ -215,6 +317,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
             {typeof task.due === 'string' && !d && <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>was “{task.due}”</span>}
           </div>
         })())}
+        {row('Repeats', <RepeatField task={task} onPatch={onPatch} />)}
         {row('Priority', <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {PRIO_OPTS.map((p) => <Chip key={p.id} active={task.priority === p.id} tone={t[p.tone]} onClick={() => onPatch({ priority: task.priority === p.id ? null : p.id })}>{p.label}</Chip>)}
         </div>)}

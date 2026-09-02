@@ -26,6 +26,18 @@ const tool = (name, desc, shape, fn, { write = false } = {}) => {
   })
 }
 
+// A repeat rule. Completing the task creates the next occurrence; the finished
+// one stays in history, so the Goals wins ledger counts every time it was done.
+const repeatShape = z.object({
+  freq: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+  interval: z.number().int().min(1).optional().describe('Every N units. Default 1.'),
+  weekdays: z.array(z.number().int().min(0).max(6)).optional().describe('Weekly only. 0=Sunday..6=Saturday; weekdays-only is [1,2,3,4,5].'),
+  monthDay: z.union([z.number().int().min(1).max(31), z.literal('last')]).optional().describe('Monthly only. Day of month, or "last".'),
+  from: z.enum(['due', 'completion']).optional().describe('due (default) keeps its calendar slot even when finished late; completion counts the next one off the day it was ticked off.'),
+  until: z.string().optional().describe('YYYY-MM-DD. Stop repeating after this date.'),
+  count: z.number().int().min(1).optional().describe('Stop after this many occurrences in total.'),
+}).nullable().optional().describe('Repeat rule; null clears it.')
+
 // ── read ──
 tool('list_areas', 'List your areas / pillars (the top-level grouping).', {}, () => D.listAreas(sb))
 tool('list_projects', 'List projects, optionally filtered by area id or status (active|on-hold|idea|sent|archived). Two labels differ from their stored values: "idea" shows as Icebox (tabled or not started, no reactivation date) and "on-hold" shows as Waiting (blocked on something, with a check-in date).',
@@ -49,11 +61,11 @@ tool('create_project', 'Create a project in an area. status defaults to active.'
   { area: z.string(), name: z.string(), status: z.string().optional(), priority: z.number().int().min(1).max(3).optional() }, (a) => D.createProject(sb, a), { write: true })
 tool('update_project', 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).',
   { id: z.string(), name: z.string().optional(), status: z.string().optional(), priority: z.number().int().nullable().optional(), due: z.string().nullable().optional(), area: z.string().optional() }, (a) => D.updateProject(sb, a), { write: true })
-tool('create_task', 'Add a task to a project. due is YYYY-MM-DD; next=true marks it the surfaced next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull it into active focus); srcMeeting = source meeting note id for extracted action items.',
-  { project: z.string(), label: z.string(), due: z.string().optional(), next: z.boolean().optional(), waiting: z.string().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), lane: z.enum(['now', 'backlog']).optional(), srcMeeting: z.string().optional() }, (a) => D.createTask(sb, a), { write: true })
-tool('update_task', 'Update a task (label, done, next, waiting, due YYYY-MM-DD, workType deep|admin|scheduled, priority 1|2|3, notes, status none|next|in-progress|waiting|done).',
-  { id: z.string(), label: z.string().optional(), done: z.boolean().optional(), next: z.boolean().optional(), waiting: z.string().nullable().optional(), due: z.string().nullable().optional(), workType: z.string().nullable().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), notes: z.string().nullable().optional(), status: z.string().optional() }, (a) => D.updateTask(sb, a), { write: true })
-tool('complete_task', 'Mark a task done.', { id: z.string() }, (a) => D.updateTask(sb, { id: a.id, done: true }), { write: true })
+tool('create_task', 'Add a task to a project. due is YYYY-MM-DD; next=true marks it the surfaced next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull it into active focus); srcMeeting = source meeting note id for extracted action items. repeat makes it recurring.',
+  { project: z.string(), label: z.string(), due: z.string().optional(), next: z.boolean().optional(), waiting: z.string().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), lane: z.enum(['now', 'backlog']).optional(), srcMeeting: z.string().optional(), repeat: repeatShape }, (a) => D.createTask(sb, a), { write: true })
+tool('update_task', 'Update a task (label, done, next, waiting, due YYYY-MM-DD, workType deep|admin|scheduled, priority 1|2|3, notes, status none|next|in-progress|waiting|done, repeat). Set repeat to null to stop a task recurring.',
+  { id: z.string(), label: z.string().optional(), done: z.boolean().optional(), next: z.boolean().optional(), waiting: z.string().nullable().optional(), due: z.string().nullable().optional(), workType: z.string().nullable().optional(), priority: z.number().int().min(1).max(3).nullable().optional(), notes: z.string().nullable().optional(), status: z.string().optional(), repeat: repeatShape }, (a) => D.updateTask(sb, a), { write: true })
+tool('complete_task', 'Mark a task done. If the task repeats, the next occurrence is created automatically and returned as spawnedNext.', { id: z.string() }, (a) => D.updateTask(sb, { id: a.id, done: true }), { write: true })
 tool('delete_task', 'Delete a task.', { id: z.string() }, (a) => D.deleteTask(sb, a), { write: true })
 tool('create_note', 'Create a note or meeting. body is markdown (paragraphs, - bullets, 1. numbered). kind: note|meeting|knowledge|artifact.',
   { kind: z.string().optional(), title: z.string(), project: z.string().nullable().optional(), area: z.string().nullable().optional(), body: z.string().optional(), people: z.array(z.string()).optional(), tags: z.array(z.string()).optional(), summary: z.string().optional(), transcript: z.string().optional() }, (a) => D.createNote(sb, a), { write: true })

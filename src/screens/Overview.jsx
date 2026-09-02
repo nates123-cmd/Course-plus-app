@@ -14,6 +14,7 @@ import { Icon, Btn, StatusPill, Priority, AreaDot, Card, areaColor, statusSkin, 
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
 import { updateTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
+import { recurrenceLabel } from '../lib/recurrence'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -170,6 +171,7 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
       border: '1.5px solid ' + t.t3, background: 'transparent' }} />
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: t.t1, overflow: 'hidden',
       textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1 }} />}
     {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk,
       fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
@@ -375,6 +377,7 @@ function NowRow({ x, first, onToggle, onOpen }) {
       background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
     <span style={{ width: 16, height: 16, borderRadius: 5, flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1 }} />}
     {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
   </div>
