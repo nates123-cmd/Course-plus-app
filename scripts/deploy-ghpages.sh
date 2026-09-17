@@ -19,8 +19,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
+# A build with no VITE_SUPABASE_* ships a page that throws on boot — blank
+# screen, no error visible. Worktrees don't carry the gitignored .env, so this
+# is easy to hit from a worktree deploy (it happened 2026-09-17). Refuse early,
+# and re-check the emitted bundle for the project ref as a second guard.
+if [ ! -f .env ] || ! grep -q "VITE_SUPABASE_URL" .env; then
+  echo "refusing to deploy: no .env with VITE_SUPABASE_URL here — copy it from the primary checkout first" >&2
+  exit 1
+fi
 echo "building (base=/Course-plus-app/)…"
 npm run build:gh-pages
+if ! grep -q "supabase.co" dist/assets/index-*.js; then
+  echo "refusing to deploy: built bundle carries no Supabase URL (hollow build)" >&2
+  exit 1
+fi
 
 git fetch -q origin gh-pages
 WT="$(mktemp -d)"
