@@ -16,7 +16,7 @@ import { createTask } from '../lib/db'
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 import { MdEditor } from '../components/MdEditor'
-import { buildSeriesAgenda } from '../lib/seriesAgenda'
+import { DiscussList, discussMarkdown } from '../components/DiscussList'
 
 // Voice enrollment — records ~10s of just the user, hands the clip to the
 // diarizer to store a voiceprint (on-device; never uploaded). Used to label
@@ -200,8 +200,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks, patchTask,
-    seriesForMeetingTitle, openTasksForSeries, openThreadsForSeries } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, discussListFor, patchAgendaItem } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
   // Pickers prioritize active → on-hold → ideas (archived last).
@@ -218,21 +217,24 @@ export function RecordScreen() {
   const [actionDraft, setActionDraft] = useState('')
   const [showNext, setShowNext] = useState(false)
   const [enrollOpen, setEnrollOpen] = useState(false)
-  const [checkedSched, setCheckedSched] = useState({}) // optimistic strike-through for scheduled tasks
+  const [checkedSched, setCheckedSched] = useState({}) // "To discuss" rows ticked in this session (save snapshots them)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
   const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
-  // Tasks scheduled to be discussed in THIS meeting (matched to the meeting's
-  // title via task.meetingId). Surfaced at the top so you can run through them.
-  const scheduledForMeeting = title
-    ? [...projects.flatMap((p) => (p.tasks || []).map((x) => ({ ...x, where: p.name, pid: p.id }))),
-       ...looseTasks().map((x) => ({ ...x, where: x.areaName, pid: null }))]
-        .filter((x) => !x.done && x.meetingId === title)
-    : []
-  const toggleScheduled = async (id) => { setCheckedSched((c) => ({ ...c, [id]: !c[id] })); try { await patchTask(id, { done: true }) } catch {} }
+  // The "To discuss in this meeting" checklist — scheduled tasks assigned to
+  // this title plus manual talking points — lives in <DiscussList>; the
+  // composer only keeps the ticked set (plus the rows that ticking removed
+  // from the live list) so save() can snapshot the whole thing.
+  const discussRowsRef = useRef([])
+  const discussStruck = useRef([])
+  discussRowsRef.current = title ? discussListFor([title]) : []
+  const onDiscussChecked = (next) => {
+    for (const r of discussRowsRef.current) if (next[r.id] && !discussStruck.current.some((x) => x.id === r.id)) discussStruck.current.push(r)
+    setCheckedSched(next)
+  }
   // pillar drives the project list; default Arrow. A chosen project's area wins.
   const effectivePillar = home ? (areaOfProject(home)?.id || null) : (pillar || (areaById('arrow') ? 'arrow' : (areas[0]?.id || null)))
   const destAreaId = effectivePillar
@@ -240,75 +242,21 @@ export function RecordScreen() {
   const destLabel = homeProj ? homeProj.name : destArea ? destArea.name : 'Library'
   const pillarProjects = pickerProjects.filter((p) => p.area === effectivePillar)
 
-  // seed title/home from the route when starting fresh
+  // Every launch path lands here with what it knows — a note id (Resume /
+  // Composer on a note), a calendar title + day (Agenda block, imminent
+  // popup), a series (series page), a project + title (New → Meeting), or
+  // quick. rec.open() resolves that to ONE cp_notes row, existing or fresh,
+  // and binds the composer to it. A bare open (floating recorder) keeps what's
+  // there, and nothing disturbs a live recording.
   const autoStartedRef = useRef(false)
   useEffect(() => {
-    if (phase !== 'idle') return
-    const patch = {}
-    // Launched via "Quick record" (New → Meeting): quick mode + auto-start.
-    if (route.quick) patch.quick = true
-    // Launched from a recurring series → prefill defaults (people, links, area)
-    // and bind the series so the saved meeting becomes one of its instances.
-    const s = route.series ? seriesById(route.series) : null
-    if (route.series) {
-      patch.seriesId = route.series
-      if (s) {
-        if (s.project) patch.home = s.project
-        else if (s.area) patch.pillar = s.area
-        patch.projects = s.projects || []
-        patch.people = s.people || []
-        if (route.agenda != null) patch.agenda = route.agenda
-      }
-    }
-    if (route.project) patch.home = route.project
-    if (route.title != null && !title) patch.title = route.title
-    if (!route.project && !route.series && !home && !pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
-    if (Object.keys(patch).length) rec.setMeta(patch)
-    // Kick off recording immediately for Quick record (guard against double-mount).
-    if (route.quick && !autoStartedRef.current) { autoStartedRef.current = true; rec.start() }
+    const has = route.noteId || route.title != null || route.series || route.quick || route.project
+    if (!has) return
+    const ok = rec.open({ noteId: route.noteId, title: route.title, date: route.date, series: route.series, project: route.project, agenda: route.agenda, quick: !!route.quick })
+    // Quick record: one tap → recording (guard against double-mount).
+    if (ok && route.quick && !autoStartedRef.current) { autoStartedRef.current = true; rec.start() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Clicking a meeting (from the Agenda screen or the imminent-meeting popup)
-  // should open THAT meeting — with its scheduled tasks on top. The composer's
-  // draft persists above the router, so a stale title would otherwise stick.
-  // Adopt the clicked meeting's title when we're idle and not mid-draft, so the
-  // "To discuss" list matches. Never disrupts an active recording or real notes.
-  useEffect(() => {
-    if (route.title == null || phase !== 'idle') return
-    const clean = route.title
-    const draftEmpty = !notes && !transcriptText && actions.length === 0
-    if (clean !== title && (draftEmpty || !title)) rec.setMeta({ title: clean })
-
-    // Reconcile the calendar with the series. A recurring meeting opened from
-    // the Agenda or the imminent-meeting popup arrives as a bare title, so
-    // without this it would save with no series_id — no standing agenda, no
-    // carry-forward, and invisible on the series page. Bind it here, at the one
-    // point every launch path passes through, rather than in each launcher.
-    // Only on an untouched draft, and never over an explicit series binding.
-    // route.series means a launcher already bound this deliberately (and its
-    // agenda may carry AI prep) — rec.seriesId is still unset on this first
-    // commit, so check the route, not just state, or we'd overwrite it.
-    if (!route.series && !rec.seriesId && draftEmpty) {
-      const s = seriesForMeetingTitle(clean)
-      if (s) {
-        const patch = { seriesId: s.id }
-        if (s.project) patch.home = s.project
-        else if (s.area) patch.pillar = s.area
-        if ((s.projects || []).length) patch.projects = s.projects
-        if ((s.people || []).length) patch.people = s.people
-        // Don't overwrite an agenda the user already has in front of them.
-        if (!agenda) {
-          const built = buildSeriesAgenda({
-            series: s, openTasks: openTasksForSeries(s.id), openThreads: openThreadsForSeries(s.id),
-          })
-          if (built) patch.agenda = built
-        }
-        rec.setMeta(patch)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.title])
+  }, [route.noteId, route.title, route.date, route.series, route.quick, route.project])
 
   // seed editable draft action items once synthesis completes
   useEffect(() => {
@@ -380,7 +328,16 @@ export function RecordScreen() {
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
       if ((notes || '').trim()) note.body = markdownToBlocks(notes)
+      // Snapshot the "To discuss" list into the note's agenda — ticked or not —
+      // so the record of what this meeting was meant to cover survives the
+      // tasks completing and the points moving on to next week.
+      const liveRows = discussRowsRef.current
+      const discussRows = [...liveRows, ...discussStruck.current.filter((r) => !liveRows.some((x) => x.id === r.id))]
+      const snap = discussMarkdown(discussRows, checkedSched)
+      if (snap && !(note.agenda || '').includes('## To discuss')) note.agenda = [(note.agenda || '').trim(), snap].filter(Boolean).join('\n\n')
       const noteId = await rec.finalizeNote(note)
+      // Talking points ticked off during this meeting now know which meeting covered them.
+      for (const r of discussRows) if (r.kind === 'item' && checkedSched[r.id]) { try { await patchAgendaItem(r.id, { noteId }) } catch {} }
       if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
       const boundSeries = rec.seriesId
       rec.clear(); await reload()
@@ -429,8 +386,13 @@ export function RecordScreen() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
       <Icon n="users" s={18} c={t.accent} />
       <span style={{ fontFamily: f.label, fontSize: 10.5, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Meeting</span>
-      {(title || notes || agenda || transcriptText) && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 10.5, color: t.t3 }}>
-        <Icon n="cloud-check" s={12} c={t.t3} />Auto-saved · recovers if you leave</span>}
+      {rec.noteId && (() => {
+        const st = rec.saveState
+        const icon = st === 'saving' ? 'loader-2' : st === 'error' ? 'alert-triangle' : st === 'dirty' ? 'cloud' : 'cloud-check'
+        const text = st === 'saving' ? 'Saving…' : st === 'error' ? 'Couldn’t save — will retry' : st === 'dirty' ? 'Unsaved edits' : st === 'saved' ? 'Saved' : 'Saves as you type'
+        return <span title={rec.meetingDate ? `Meeting on ${rec.meetingDate}` : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 10.5, color: st === 'error' ? t.risk : t.t3 }}>
+          <Icon n={icon} s={12} c={st === 'error' ? t.risk : t.t3} />{text}</span>
+      })()}
       {rec.seriesId && seriesById(rec.seriesId) && <span onClick={() => go({ screen: 'series', id: rec.seriesId })} title="Part of a recurring series"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent,
           background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
@@ -481,21 +443,11 @@ export function RecordScreen() {
       </span>
     </div>}
 
-    {/* scheduled tasks — anything assigned to be discussed in this meeting, on top */}
-    {scheduledForMeeting.length > 0 && <Card style={{ marginTop: 16, padding: '4px 0', borderColor: t.accentLine, background: t.accentBg }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 6px' }}>
-        <Icon n="list-check" s={15} c={t.accent} />
-        <Label style={{ margin: 0, color: t.accent }}>To discuss in this meeting · {scheduledForMeeting.length}</Label>
-      </div>
-      {scheduledForMeeting.map((tk) => {
-        const done = !!checkedSched[tk.id]
-        return <div key={tk.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 16px', borderTop: '1px solid ' + t.line }}>
-          <span onClick={() => toggleScheduled(tk.id)} title="Mark done" style={{ width: 18, height: 18, borderRadius: 5, flex: 'none', cursor: 'pointer', position: 'relative', border: '1.5px solid ' + (done ? t.accent : t.t3), background: done ? t.accent : 'transparent' }}>
-            {done && <Icon n="check" s={13} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
-          <span onClick={() => tk.pid && go({ screen: 'project', id: tk.pid })} style={{ flex: 1, minWidth: 0, fontFamily: f.body, fontSize: 14, color: done ? t.t3 : t.t1, textDecoration: done ? 'line-through' : 'none', cursor: tk.pid ? 'pointer' : 'default' }}>{tk.label}</span>
-          {tk.where && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120, flex: 'none' }}>{tk.where}</span>}
-        </div>
-      })}
+    {/* To discuss — scheduled tasks assigned to this meeting + manual talking
+        points. Present as soon as the meeting has a name, so points can be
+        added mid-meeting; the same list shows on the Agenda beforehand. */}
+    {(title || '').trim() && (!quick || phase === 'done') && <Card style={{ marginTop: 16, padding: '4px 0', borderColor: t.accentLine, background: t.accentBg }}>
+      <DiscussList titles={[title]} addTitle={title.trim()} checked={checkedSched} onChecked={onDiscussChecked} />
     </Card>}
 
     {/* people (attendees + speakers) */}
@@ -776,8 +728,8 @@ export function RecordScreen() {
       {(synth.tags || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
         <Label style={{ marginRight: 4 }}>Tags</Label>{synth.tags.map((tg) => <Tag key={tg}>{tg}</Tag>)}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, flexWrap: 'wrap' }}>
-        <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save}>{saving ? 'Saving…' : `Save to ${destLabel}`}</Btn>
-        <Btn kind="ghost" onClick={() => rec.discard()}>Discard</Btn>
+        <Btn kind="primary" icon={saving ? 'loader-2' : 'check'} onClick={save} title="Everything here is already saved as you type. Finish marks the meeting done, pulls its action items into the project, and files it.">{saving ? 'Finishing…' : `Finish · file to ${destLabel}`}</Btn>
+        <Btn kind="ghost" onClick={() => rec.discard()} title="Delete this meeting's note">Discard</Btn>
         {(notes || '').trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginLeft: 'auto' }}><Icon n="note" s={13} />Your notes are weighted highest</span>}
       </div>
       {sheetAction && <TaskSheet task={sheetAction} projectId={sheetAction.project || home}

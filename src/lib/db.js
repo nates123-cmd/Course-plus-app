@@ -32,6 +32,15 @@ function mapSeries(r) {
     archived: !!r.archived, created: r.created, updated: r.updated, updatedAt: r.updated_at,
   }
 }
+// A manual talking point for a meeting (cp_agenda_items). Scheduled TASKS are
+// the other half of the same checklist and stay derived from cp_tasks.
+function mapAgendaItem(r) {
+  return {
+    id: r.id, meetingTitle: r.meeting_title || '', label: r.label || '', done: !!r.done,
+    doneAt: r.done_at || undefined, noteId: r.note_id || undefined, sort: r.sort ?? 0,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  }
+}
 function mapInbox(r) {
   return {
     id: r.id, title: r.title, src: r.src, srcIcon: r.src_icon, snippet: r.snippet,
@@ -111,7 +120,7 @@ function sortNotes(rows) {
 
 // ── load everything ────────────────────────────────────────────────
 export async function loadAll() {
-  const [areas, projects, tasks, ms, upd, art, notes, inbox, assets, series] = await Promise.all([
+  const [areas, projects, tasks, ms, upd, art, notes, inbox, assets, series, agendaItems] = await Promise.all([
     supabase.from('cp_areas').select('*'),
     supabase.from('cp_projects').select('*'),
     supabase.from('cp_tasks').select('*'),
@@ -122,7 +131,12 @@ export async function loadAll() {
     supabase.from('cp_inbox').select('*').order('created_at', { ascending: false }),
     supabase.from('cp_assets').select('*').order('created_at', { ascending: false }),
     supabase.from('cp_series').select('*').order('updated_at', { ascending: false }),
+    supabase.from('cp_agenda_items').select('*').order('sort').order('created_at'),
   ])
+  // cp_agenda_items ships ahead of its migration (20260917120000). A missing
+  // table must not take the whole app down — it only costs the manual talking
+  // points, and the derived (task) half of the checklist still works.
+  if (agendaItems.error && agendaItems.error.code !== '42P01') throw agendaItems.error
   const err = areas.error || projects.error || tasks.error || ms.error || upd.error || art.error || notes.error || inbox.error || assets.error || series.error
   if (err) throw err
   return {
@@ -131,6 +145,7 @@ export async function loadAll() {
     inbox: (inbox.data || []).map(mapInbox),
     assets: (assets.data || []).map(mapAsset),
     series: (series.data || []).map(mapSeries),
+    agendaItems: agendaItems.error ? [] : (agendaItems.data || []).map(mapAgendaItem),
     nudgeStates: await loadNudgeStates(),
   }
 }
@@ -542,4 +557,27 @@ export async function deleteAreaCascade(id) {
 export async function reorderAreas(orderedIds) {
   const r = await Promise.all(orderedIds.map((id, sort) => supabase.from('cp_areas').update({ sort }).eq('id', id)))
   const err = r.find((x) => x.error); if (err) throw err.error
+}
+
+// ── agenda items (manual "to discuss" talking points) ─────────────
+const AGENDA_COLS = { meetingTitle: 'meeting_title', label: 'label', done: 'done', doneAt: 'done_at', noteId: 'note_id', sort: 'sort' }
+export async function createAgendaItem(item = {}) {
+  const id = item.id || uuid()
+  const row = { id, meeting_title: item.meetingTitle || '', label: item.label || '', done: !!item.done,
+    done_at: item.doneAt ?? null, note_id: item.noteId ?? null, sort: item.sort ?? 0 }
+  const { error } = await supabase.from('cp_agenda_items').insert(row)
+  if (error) throw error
+  return id
+}
+export async function updateAgendaItem(id, patch) {
+  const row = { updated_at: new Date().toISOString() }
+  for (const k in patch) if (AGENDA_COLS[k]) row[AGENDA_COLS[k]] = patch[k] ?? null
+  // Stamp the moment it was actually covered, unless the caller already did.
+  if ('done' in patch && !('doneAt' in patch)) row.done_at = patch.done ? new Date().toISOString() : null
+  const { error } = await supabase.from('cp_agenda_items').update(row).eq('id', id)
+  if (error) throw error
+}
+export async function deleteAgendaItem(id) {
+  const { error } = await supabase.from('cp_agenda_items').delete().eq('id', id)
+  if (error) throw error
 }

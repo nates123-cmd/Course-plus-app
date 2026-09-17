@@ -224,7 +224,7 @@ function ClaudeRail({ note, onClose, onReload }) {
 // ════ NOTE / MEETING VIEWER ═════════════════════════════════════
 export function NoteScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas, addTask } = useData()
+  const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas, addTask, agendaItemsForNote } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
   const [rawOpen, setRawOpen] = useState(false)
@@ -286,7 +286,7 @@ export function NoteScreen() {
   // Meetings edit INLINE here (title, notes/body, summary, next steps). The
   // recording/transcript/re-synthesis machinery still lives in the composer —
   // reachable via "Composer" — but the everyday text edits happen in place.
-  const resumeMeeting = () => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }
+  const resumeMeeting = () => go({ screen: 'meeting', noteId: n.id })
   const startEdit = () => {
     setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null)
     if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || '') }
@@ -403,7 +403,7 @@ export function NoteScreen() {
       borderRadius: 11, background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
       <Icon n="player-pause" s={16} c={t.risk} />
       <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>This meeting was interrupted and never finished. Resume it to add a transcript and synthesize.</span>
-      <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={() => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }}>Resume</Btn>
+      <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={resumeMeeting}>Resume</Btn>
     </div>}
 
     {/* meeting synthesis: summary + actions + terms */}
@@ -449,6 +449,15 @@ export function NoteScreen() {
         <Icon n="bulb" s={14} c={t.accent} />Suggested next steps</div>
       {nextOpen && <div style={{ padding: '14px 16px', background: t.card, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px' }}>
         <RichText text={n.nextSteps} /></div>}
+    </div>}
+
+    {/* talking points covered in this meeting (ticked off its "To discuss" list) */}
+    {!editing && isMeeting && agendaItemsForNote(n.id).length > 0 && <div style={{ marginTop: 18 }}>
+      <Label style={{ marginBottom: 8 }}>Covered · {agendaItemsForNote(n.id).length}</Label>
+      <div style={{ background: t.panel, border: '1px solid ' + t.line, borderRadius: 10, padding: '6px 14px' }}>
+        {agendaItemsForNote(n.id).map((it) => <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0', fontFamily: f.body, fontSize: 14, color: t.t2 }}>
+          <Icon n="circle-check" s={15} c={t.good} /><span style={{ flex: 1 }}>{it.label}</span></div>)}
+      </div>
     </div>}
 
     {/* agenda / prep — collapsible */}

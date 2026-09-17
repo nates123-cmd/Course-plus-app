@@ -85,7 +85,7 @@ function textToBlocks(text: string) {
 function blocksToText(blocks: any[] = []) {
   return (blocks || []).map((b) => b.p || (b.ul ? b.ul.map((i: string) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i: string, n: number) => `${n + 1}. ${i}`).join('\n') : (b.links ? b.links.map((l: string) => `[[${l}]]`).join(' ') : '')))).filter(Boolean).join('\n\n')
 }
-const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0, repeats: recurrenceLabel(r.recurrence), recurrence: r.recurrence || null })
+const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, meeting: r.meeting_id || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0, repeats: recurrenceLabel(r.recurrence), recurrence: r.recurrence || null })
 
 // Claude passes `until` as a YYYY-MM-DD string (every other date in this API is
 // one); the rule stores it as {y,m,d}. Convert before normalising, or the end
@@ -125,6 +125,8 @@ async function spawnNext(sb: any, id: string) {
 const noteRow = (n: any) => ({ id: n.id, kind: n.kind, title: n.title, project: n.project ?? null, area: n.area ?? null, projects: n.projects || [], people: n.people || [], tags: n.tags || [], date: n.date, updated: n.updated, indexed: true, status: n.status ?? 2, transcript: n.transcript ?? null, summary: n.summary ?? null, agenda: n.agenda ?? null, terms: n.terms || [], actions: n.actions || [], body: n.body || [], related: n.related || [] })
 const noteOut = (r: any) => ({ id: r.id, kind: r.kind, title: r.title, project: r.project, area: r.area, projects: r.projects || [], people: r.people || [], tags: r.tags || [], date: r.date, summary: r.summary || null, agenda: r.agenda || null, incomplete: !!r.incomplete, bodyMarkdown: blocksToText(r.body || []), transcript: r.transcript || null, actions: r.actions || [], terms: r.terms || [] })
 const must = (e: any) => { if (e) throw new Error(e.message || String(e)) }
+// Meeting titles match the way the app matches them (lib/seriesAgenda normalizeTitle).
+const norm = (s: any) => String(s || '').replace(/[\u00a0\u200b-\u200d\ufeff]/g, ' ').trim().toLowerCase().replace(/\s+/g, ' ')
 
 // ── data ops (take a user-scoped supabase client) ──
 const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
@@ -171,9 +173,12 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     else if (lane === 'backlog') rows = rows.filter((t: any) => t.status !== 'now')
     return rows
   },
-  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting, repeat }) { const id = uuid(); const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null, recurrence: repeatIn(repeat) }); must(error); return { id, project, label, repeats: recurrenceLabel(repeatIn(repeat)) } },
-  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority, repeat }) {
+  async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting, repeat, meeting }) { const id = uuid(); const mtg = (meeting || '').trim() || null; const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null, recurrence: repeatIn(repeat), work_type: mtg ? 'scheduled' : null, meeting_id: mtg }); must(error); return { id, project, label, meeting: mtg, repeats: recurrenceLabel(repeatIn(repeat)) } },
+  async update_task(sb, { id, label, done, next, waiting, due, workType, notes, status, priority, repeat, meeting }) {
     const row: any = {}
+    // meeting = the calendar title (or series name) to raise this in. Setting it
+    // is what the app's Scheduled chip does; '' or null takes it off the meeting.
+    if (meeting !== undefined) { const mtg = (meeting || '').trim() || null; row.meeting_id = mtg; row.work_type = mtg ? 'scheduled' : (workType !== undefined ? workType : null) }
     if (label != null) row.label = label; if (done != null) row.done = done; if (next != null) row.next = next
     if (waiting !== undefined) row.waiting = waiting; if (due !== undefined) row.due_date = due ? toYMD(due) : null
     if (workType !== undefined) row.work_type = workType; if (notes !== undefined) row.notes = notes; if (status !== undefined) row.task_status = status
@@ -223,6 +228,22 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
   async get_artifact(sb, { id }) { const { data, error } = await sb.from('cp_artifacts').select('*').eq('id', id).single(); must(error); return { id: data.id, project: data.project_id, title: data.title, artType: data.art_type, provenance: data.provenance, body: data.body || '' } },
   async create_artifact(sb, { project, title, body, artType = 'file' }) { const id = uuid(); const { error } = await sb.from('cp_artifacts').insert({ id, project_id: project, title: title || 'Untitled', art_type: artType, provenance: 'Added via Claude (MCP)', body: body ?? '' }); must(error); return { id, title } },
   async add_update(sb, { project, body }) { const id = uuid(); const { error } = await sb.from('cp_updates').insert({ id, project_id: project, body }); must(error); return { id, project } },
+  // ── "To discuss" checklist per meeting (by calendar title / series name) ──
+  async list_agenda(sb, { meeting }) {
+    const want = norm(meeting)
+    const [tasks, items] = await Promise.all([
+      sb.from('cp_tasks').select('*').eq('done', false).eq('work_type', 'scheduled'),
+      sb.from('cp_agenda_items').select('*').eq('done', false).order('sort').order('created_at'),
+    ])
+    must(tasks.error); if (items.error && items.error.code !== '42P01') must(items.error)
+    const byMeeting: Record<string, any> = {}
+    const bucket = (title: string) => { const k = norm(title); if (!byMeeting[k]) byMeeting[k] = { meeting: (title || '').trim(), tasks: [], points: [] }; return byMeeting[k] }
+    for (const r of tasks.data || []) if (r.meeting_id && (!want || norm(r.meeting_id) === want)) bucket(r.meeting_id).tasks.push({ id: r.id, label: r.label, project: r.project_id })
+    for (const r of items.data || []) if (!want || norm(r.meeting_title) === want) bucket(r.meeting_title).points.push({ id: r.id, label: r.label })
+    return Object.values(byMeeting)
+  },
+  async add_agenda_item(sb, { meeting, label }) { const id = uuid(); const { error } = await sb.from('cp_agenda_items').insert({ id, meeting_title: (meeting || '').trim(), label: (label || '').trim(), done: false, sort: 99 }); must(error); return { id, meeting, label } },
+  async complete_agenda_item(sb, { id }) { const { error } = await sb.from('cp_agenda_items').update({ done: true, done_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', id); must(error); return { id, done: true } },
   async list_inbox(sb) { const { data, error } = await sb.from('cp_inbox').select('*').order('created_at', { ascending: false }); must(error); return (data || []).map((c: any) => ({ id: c.id, title: c.title, src: c.src, snippet: c.snippet, suggest: c.suggest || null, tags: c.tags || [] })) },
   async triage_inbox(sb, { id, project }) {
     const { data: c, error: e1 } = await sb.from('cp_inbox').select('*').eq('id', id).single(); must(e1)
@@ -263,12 +284,15 @@ const TOOLS = [
   { name: 'get_note', write: false, description: 'Get one note/meeting in full — body markdown, summary, agenda, transcript, actions.', inputSchema: S({ id: str }, ['id']) },
   { name: 'list_artifacts', write: false, description: 'List artifacts (deliverables / files / edit guides), optionally for one project.', inputSchema: S({ project: str }) },
   { name: 'get_artifact', write: false, description: 'Get one artifact including its full body.', inputSchema: S({ id: str }, ['id']) },
+  { name: 'list_agenda', write: false, description: 'The "To discuss" checklist for upcoming meetings: tasks marked Scheduled for a meeting plus manual talking points, grouped by meeting title. Pass meeting to get one meeting (calendar title or series name, e.g. "Jon 1:1").', inputSchema: S({ meeting: str }) },
+  { name: 'add_agenda_item', write: true, description: 'Add a talking point to a meeting\'s "To discuss" list (not a task — for "raise X with Jon"). meeting = calendar title or series name. It carries forward until ticked off in the meeting.', inputSchema: S({ meeting: str, label: str }, ['meeting', 'label']) },
+  { name: 'complete_agenda_item', write: true, description: 'Tick off a talking point (id from list_agenda).', inputSchema: S({ id: str }, ['id']) },
   { name: 'list_inbox', write: false, description: 'List untriaged inbox captures.', inputSchema: S({}) },
   { name: 'create_area', write: true, description: 'Create a new area / pillar.', inputSchema: S({ name: str }, ['name']) },
   { name: 'create_project', write: true, description: 'Create a project in an area. status defaults to active.', inputSchema: S({ area: str, name: str, status: str, priority: { type: 'integer' } }, ['area', 'name']) },
   { name: 'update_project', write: true, description: 'Update a project (name, status, priority 1-3, due YYYY-MM-DD, area).', inputSchema: S({ id: str, name: str, status: str, priority: { type: 'integer' }, due: str, area: str }, ['id']) },
-  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull into active focus); srcMeeting = source meeting note id for extracted action items. repeat makes it recurring.', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num, lane: { type: 'string', enum: ['now', 'backlog'] }, srcMeeting: str, repeat: repeatSchema }, ['project', 'label']) },
-  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status, repeat). Set repeat to null to stop a task recurring.', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str, repeat: repeatSchema }, ['id']) },
+  { name: 'create_task', write: true, description: 'Add a task to a project. due YYYY-MM-DD; next=true surfaces it as the next action; priority 1|2|3 (P1=highest). lane defaults to backlog, the lane shown in the app as the Icebox (use now to pull into active focus); srcMeeting = source meeting note id for extracted action items. repeat makes it recurring. meeting = the calendar meeting title or series name to raise it in (marks it Scheduled and puts it on that meeting\'s "To discuss" list).', inputSchema: S({ project: str, label: str, due: str, next: bool, waiting: str, priority: num, lane: { type: 'string', enum: ['now', 'backlog'] }, srcMeeting: str, repeat: repeatSchema, meeting: str }, ['project', 'label']) },
+  { name: 'update_task', write: true, description: 'Update a task (label, done, next, waiting, due, workType, priority 1|2|3, notes, status, repeat, meeting). Set repeat to null to stop a task recurring. meeting = calendar meeting title or series name to raise it in (sets Scheduled); pass "" to take it off the meeting.', inputSchema: S({ id: str, label: str, done: bool, next: bool, waiting: str, due: str, workType: str, priority: num, notes: str, status: str, repeat: repeatSchema, meeting: str }, ['id']) },
   { name: 'complete_task', write: true, description: 'Mark a task done. If the task repeats, the next occurrence is created automatically and returned as spawnedNext.', inputSchema: S({ id: str }, ['id']) },
   { name: 'delete_task', write: true, description: 'Delete a task.', inputSchema: S({ id: str }, ['id']) },
   { name: 'create_note', write: true, description: 'Create a note or meeting. body is markdown (paragraphs, - bullets, 1. numbered).', inputSchema: S({ kind: str, title: str, project: str, area: str, body: str, people: sArr, tags: sArr, summary: str, transcript: str }, ['title']) },

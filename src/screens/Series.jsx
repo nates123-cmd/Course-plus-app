@@ -11,6 +11,7 @@ import { createSeries, updateSeries, deleteSeries, updateNote } from '../lib/db'
 import { prepFromSeries, synthesizeSeries, askAcrossSeries } from '../lib/ai'
 import { buildSeriesAgenda, titlesForSeries, normalizeTitle } from '../lib/seriesAgenda'
 import { supabase } from '../lib/supabase'
+import { DiscussList } from '../components/DiscussList'
 import { RichText } from '../components/RichText'
 import { MdEditor } from '../components/MdEditor'
 
@@ -366,6 +367,13 @@ export function SeriesScreen() {
         </div>
         <Btn kind="outline" size="sm" icon="link" onClick={startEdit}>Link it</Btn>
       </Card>}
+
+      {/* to discuss next time — the live checklist for this meeting: tasks
+          marked Scheduled + points added here, on the Agenda, or mid-meeting.
+          Matches every calendar title the series answers to. */}
+      <Card style={{ padding: '4px 0', borderColor: t.accentLine, background: t.accentBg }}>
+        <DiscussList titles={[...titlesForSeries(s)]} addTitle={s.name} />
+      </Card>
 
       {/* standing agenda — what every instance opens with */}
       {s.standingAgenda && s.standingAgenda.trim()

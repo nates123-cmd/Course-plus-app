@@ -178,7 +178,7 @@ function RepeatField({ task, onPatch }) {
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
   const { t, f, go, isMobile } = useApp()
-  const { projectById, allProjects, areas, areaName } = useData()
+  const { projectById, allProjects, areas, areaName, activeSeries } = useData()
   const project = projectById(projectId)
   // Pillar-only task (no project): show its pillar instead of "No project".
   const pillarId = !project ? (task.area || null) : null
@@ -250,6 +250,11 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
       const rows = (data || []).map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
         .filter((b) => startOf(b) > now) // future meetings only — drop ones that already happened today
         .filter((b) => { const k = [b.date, b.hour, b.title.trim().toLowerCase()].join('|'); if (seen.has(k)) return false; seen.add(k); return true })
+      // Recurring meetings set up as a series are always offered, even when
+      // the next occurrence is past this week's window — "raise it at the next
+      // Jon 1:1" shouldn't depend on which day of the week it is.
+      const have = new Set(rows.map((b) => b.title.trim().toLowerCase()))
+      for (const s of activeSeries()) if (s.name && !have.has(s.name.trim().toLowerCase())) rows.push({ id: 's-' + s.id, title: s.name, series: true })
       setAgenda(rows)
     })()
     return () => { live = false }
@@ -343,8 +348,8 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
                 color: assigned ? t.t1 : t.risk, background: assigned ? t.sel : t.riskBg, border: '1px solid ' + (assigned ? 'transparent' : t.riskLine) }}>
               <Icon n="calendar-event" s={14} />{assigned || 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
             {mtgOpen && <Popover onClose={() => setMtgOpen(false)} width={300} maxHeight={300} bottom="calc(100% + 8px)">
-              {agenda.map((b) => <PopRow key={b.id} icon="users" label={b.title} hint={blockHint(b)} on={task.meetingId === b.title} onClick={() => pickMeeting(b.title)} />)}
-              {agenda.length === 0 && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>No meetings on this week’s agenda. Schedule one in Today.</div>}
+              {agenda.map((b) => <PopRow key={b.id} icon={b.series ? 'repeat' : 'users'} label={b.title} hint={b.series ? 'recurring' : blockHint(b)} on={(task.meetingId || '').trim().toLowerCase() === b.title.trim().toLowerCase()} onClick={() => pickMeeting(b.title)} />)}
+              {agenda.length === 0 && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>No meetings on this week’s agenda and no series yet. Schedule one in Today, or hold a meeting on the Agenda to make it a series.</div>}
               {task.meetingId && <div style={{ borderTop: '1px solid ' + t.line, marginTop: 4 }}><PopRow icon="x" label="Clear assignment" onClick={() => pickMeeting(null)} /></div>}
             </Popover>}
           </span>
