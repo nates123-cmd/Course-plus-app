@@ -10,7 +10,7 @@ import { useData } from '../DataContext'
 import { supabase } from '../lib/supabase'
 import { Icon, Card, Btn, TODAY, MONTHS } from '../kit'
 import { useLongPress } from './TaskSheet'
-import { createSeries } from '../lib/db'
+import { createSeries, deleteNote } from '../lib/db'
 import { DiscussList } from '../components/DiscussList'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -78,7 +78,7 @@ function groupByDay(blocks) {
   return [...map.keys()].sort().map((iso) => ({ iso, blocks: map.get(iso) }))
 }
 
-function BlockRow({ block, series, onOpen, onHold, onDelete }) {
+function BlockRow({ block, series, note, onOpen, onHold, onDelete }) {
   const { t, f, go } = useApp()
   const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
@@ -112,6 +112,11 @@ function BlockRow({ block, series, onOpen, onHold, onDelete }) {
         <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1 }}>{block.title}</div>
         {/* This block belongs to a series, so starting it here carries the
             standing agenda and the open items forward. Say so. */}
+        {/* A note already exists for this meeting (typed ahead, or mid-way).
+            Tapping the block resumes it — say so. */}
+        {note && <span title={note.incomplete ? 'Notes started — tap to continue' : 'Finished — tap to open in the composer'}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, marginRight: 10, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: note.incomplete ? t.accent : t.t3 }}>
+          <Icon n={note.incomplete ? 'pencil' : 'circle-check'} s={12} />{note.incomplete ? 'Notes started' : 'Done'}</span>}
         {series && series.name !== block.title && <span onClick={(e) => { e.stopPropagation(); go({ screen: 'series', id: series.id }) }}
           title="Part of a recurring series — starting it here files the meeting there"
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent }}>
@@ -140,7 +145,7 @@ function BlockRow({ block, series, onOpen, onHold, onDelete }) {
   )
 }
 
-function DaySection({ iso, blocks, seriesFor, onOpen, onHold, onDelete }) {
+function DaySection({ iso, blocks, seriesFor, noteFor, onOpen, onHold, onDelete }) {
   const { t, f, isMobile } = useApp()
   const m = dayMeta(iso)
   return (
@@ -155,7 +160,7 @@ function DaySection({ iso, blocks, seriesFor, onOpen, onHold, onDelete }) {
       </div>
       <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
         {blocks.map((b) => <div key={b.id}>
-          <BlockRow block={b} series={seriesFor(b)} onOpen={onOpen} onHold={onHold} onDelete={onDelete} />
+          <BlockRow block={b} series={seriesFor(b)} note={noteFor(b)} onOpen={onOpen} onHold={onHold} onDelete={onDelete} />
           {/* Every meeting carries its "To discuss" checklist right here, so the
               agenda for next week's 1:1 gets built while the thought is fresh:
               type a point, or pull a task in. Tasks marked Scheduled in the
@@ -225,7 +230,7 @@ function SeriesSheet({ block, series, onClose, onCreated }) {
 
 export function AgendaScreen() {
   const { t, f, go } = useApp()
-  const { seriesForMeetingTitle, reload } = useData()
+  const { seriesForMeetingTitle, reload, unfinishedMeetings, meetingNoteFor, removeNoteLocal } = useData()
   const [holdBlock, setHoldBlock] = useState(null)
   const [blocks, setBlocks] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
@@ -254,7 +259,7 @@ export function AgendaScreen() {
   }, [])
 
   // open the meeting composer with this block's title pre-filled
-  const openMeeting = (block) => go({ screen: 'meeting', title: (block.title || '').trim() })
+  const openMeeting = (block) => go({ screen: 'meeting', title: (block.title || '').trim(), date: block.date })
 
   // delete a scheduled block — removes the placed_blocks row (shared with Today).
   // Optimistic: drop it locally first, restore on failure.
@@ -305,12 +310,37 @@ export function AgendaScreen() {
         </Card>
       )}
 
+      {/* Meetings with notes started but not finished — the composer never
+          holds one of these hostage any more; this is where they live. */}
+      {status === 'ready' && unfinishedMeetings().length > 0 && <div style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, padding: '0 2px' }}>
+          <span style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 700, color: t.t1 }}>Started, not finished</span>
+          <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>tap to continue</span>
+        </div>
+        <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
+          {unfinishedMeetings().map((n) => <div key={n.id} onClick={() => go({ screen: 'meeting', noteId: n.id })}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid ' + t.line, cursor: 'pointer' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = t.tagBg} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+            <Icon n="pencil" s={15} c={t.accent} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</div>
+              <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 2 }}>{n.date}{n.transcript ? ' · has a transcript' : ''}</div>
+            </div>
+            <Icon n="arrow-up-right" s={15} c={t.t3} />
+            <span className="task-grip" onClick={async (e) => { e.stopPropagation(); if (!window.confirm(`Delete the notes for “${n.title}”?`)) return; removeNoteLocal(n.id); try { await deleteNote(n.id) } catch { reload() } }}
+              title="Delete these notes" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, cursor: 'pointer', color: t.t3 }}
+              onMouseEnter={(e) => e.currentTarget.style.color = t.risk} onMouseLeave={(e) => e.currentTarget.style.color = t.t3}><Icon n="trash" s={15} c="currentColor" /></span>
+          </div>)}
+        </Card>
+      </div>}
+
       {holdBlock && <SeriesSheet block={holdBlock} series={seriesForMeetingTitle(holdBlock.title)}
         onCreated={reload} onClose={() => setHoldBlock(null)} />}
 
       {status === 'ready' && days.map((d) => (
         <DaySection key={d.iso} iso={d.iso} blocks={d.blocks}
           seriesFor={(b) => (b.type === 'meeting' ? seriesForMeetingTitle(b.title) : null)}
+          noteFor={(b) => (b.type === 'meeting' ? meetingNoteFor(b.title, b.date) : null)}
           onOpen={openMeeting} onHold={setHoldBlock} onDelete={deleteBlock} />
       ))}
     </div>

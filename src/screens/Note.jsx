@@ -286,7 +286,7 @@ export function NoteScreen() {
   // Meetings edit INLINE here (title, notes/body, summary, next steps). The
   // recording/transcript/re-synthesis machinery still lives in the composer —
   // reachable via "Composer" — but the everyday text edits happen in place.
-  const resumeMeeting = () => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }
+  const resumeMeeting = () => go({ screen: 'meeting', noteId: n.id })
   const startEdit = () => {
     setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null)
     if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || '') }
@@ -403,7 +403,7 @@ export function NoteScreen() {
       borderRadius: 11, background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
       <Icon n="player-pause" s={16} c={t.risk} />
       <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>This meeting was interrupted and never finished. Resume it to add a transcript and synthesize.</span>
-      <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={() => { rec.loadDraftFromNote(n); go({ screen: 'meeting' }) }}>Resume</Btn>
+      <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={resumeMeeting}>Resume</Btn>
     </div>}
 
     {/* meeting synthesis: summary + actions + terms */}

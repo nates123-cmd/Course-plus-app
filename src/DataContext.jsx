@@ -7,6 +7,7 @@ import { nextOccurrence, todayYmd } from './lib/recurrence'
 import { blocksToText } from './lib/blocks'
 import { holdView } from './kit'
 import { seriesForTitle, normalizeTitle } from './lib/seriesAgenda'
+import { findMeetingNote } from './lib/meetingKey'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'Waiting: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
@@ -246,6 +247,17 @@ export function DataProvider({ children }) {
     return id
   }
 
+  // ── Local note mirror ───────────────────────────────────────────
+  // The meeting composer autosaves its note straight to cp_notes; these patch
+  // the in-memory copy so the Library / Agenda / series page reflect it with
+  // NO refetch (reload() is a 10-table pull — never on an autosave tick).
+  const upsertNoteLocal = (n) => setNotes((prev) => {
+    const i = prev.findIndex((x) => x.id === n.id)
+    if (i < 0) return [{ ...n }, ...prev]
+    const next = prev.slice(); next[i] = { ...prev[i], ...n }; return next
+  })
+  const removeNoteLocal = (id) => setNotes((prev) => prev.filter((x) => x.id !== id))
+
   // ── "To discuss" talking points (optimistic, same pattern as tasks) ──
   const addAgendaItem = async (item = {}) => {
     const id = item.id || (crypto?.randomUUID?.() || 'tmp-' + Date.now())
@@ -293,6 +305,10 @@ export function DataProvider({ children }) {
     const projectById = (id) => allProjects().find((p) => p.id === id) || null
     const areaById = (id) => areas.find((a) => a.id === id) || null
     const noteById = (id) => notes.find((n) => n.id === id)
+    // The note that IS a calendar meeting (title + day), or null.
+    const meetingNoteFor = (title, dateIso) => findMeetingNote(notes, { title, dateIso })
+    // Meetings with a note started but not finished — resumable from the Agenda.
+    const unfinishedMeetings = () => notes.filter((n) => n.kind === 'meeting' && n.incomplete)
     const artifactById = (id) => {
       for (const a of areas) for (const p of a.projects) { const f = (p.artifacts || []).find((x) => x.id === id); if (f) return { ...f, project: f.project || p.id } }
       return null
@@ -517,6 +533,7 @@ export function DataProvider({ children }) {
     return {
       areas, notes, inbox, assets, series, agendaItems, nudgeStates, status, error, reload, recordUndo, canUndo,
       addAgendaItem, patchAgendaItem, removeAgendaItem, discussListFor, agendaItemsForNote,
+      upsertNoteLocal, removeNoteLocal, meetingNoteFor, unfinishedMeetings,
       snoozeNudge, rememberQuestion,
       patchTask, addTask, removeTask, undoRecurrence,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,

@@ -17,8 +17,21 @@ import { synthesizeMeeting } from './lib/ai'
 import { claudeCost } from './lib/claude'
 import { createNote, updateNote, deleteNote } from './lib/db'
 import { markdownToBlocks, blocksToText } from './lib/blocks'
+import { seriesForTitle, buildSeriesAgenda, normalizeTitle } from './lib/seriesAgenda'
+import { findMeetingNote, labelFromIso, todayIso, dateLabel } from './lib/meetingKey'
 
-const DRAFT_KEY = 'course.meetingDraft'
+// One crash copy PER NOTE in localStorage (course.meetingDraft.<note id>). It is
+// only ever read back when that same note is reopened and the copy is newer
+// than the DB row — never hydrated on boot as "the draft". The old single
+// global key (course.meetingDraft) is what made every new meeting open on top
+// of whatever was typed last; it is migrated once and removed (see below).
+const DRAFT_PREFIX = 'course.meetingDraft.'
+const LEGACY_DRAFT_KEY = 'course.meetingDraft'
+// Autosave cadence. Writes are ONE small cp_notes update each, only when the
+// content actually changed, only after typing pauses — and at most one write
+// per AUTOSAVE_MAX_MS while typing continuously. Nothing polls.
+const AUTOSAVE_MS = 2500
+const AUTOSAVE_MAX_MS = 20000
 
 // AssemblyAI async transcription, USD per hour (Best/Universal tier, speaker
 // diarization on). Nano tier (no good diarization) is ~$0.12/hr.
@@ -41,7 +54,7 @@ export function RecorderProvider({ go, children }) {
   // Pin the current moment (dedupe within the same second). Works live + paused.
   const addPin = () => setPins((p) => p.some((x) => x.at === seconds) ? p : [...p, { at: seconds, label: '' }].sort((a, b) => a.at - b.at))
   const removePin = (at) => setPins((p) => p.filter((x) => x.at !== at))
-  const { areaOfProject, reload, allProjects, projectById } = useData()
+  const { areaOfProject, reload, allProjects, projectById, notes: allNotes, noteById, series, seriesById, openTasksForSeries, openThreadsForSeries, areaById, upsertNoteLocal, removeNoteLocal } = useData()
 
   // post-recording processing phase (idle when not in a processing stage)
   const [proc, setProc] = useState(PROC_IDLE) // idle | transcribing | ready | synth | done
@@ -86,6 +99,14 @@ export function RecorderProvider({ go, children }) {
   const [transcriptText, setTranscriptText] = useState('')
   const [synth, setSynth] = useState(emptySynth)
   const [cost, setCost] = useState(null) // { transcribe, claude, total, usage, estimated }
+  // The composer is a VIEW onto one cp_notes row. noteId is that row (assigned
+  // on open, created in the DB on the first real content); meetingDate is the
+  // meeting's calendar day, which is what identifies it — not the day typed.
+  const [noteId, setNoteId] = useState(null)
+  const [noteIncomplete, setNoteIncomplete] = useState(true)
+  const [meetingDate, setMeetingDate] = useState(null) // "Sep 17, 2026"
+  const [dateIso, setDateIso] = useState(null)         // "2026-09-17"
+  const [saveState, setSaveState] = useState('idle')   // idle | dirty | saving | saved | error
 
   // The effective phase: recorder status wins while live/paused, otherwise the
   // processing stage. When the recorder is idle and we haven't started any
@@ -163,69 +184,128 @@ export function RecorderProvider({ go, children }) {
 
   const meaningful = () => !!(title.trim() || notes.trim() || agenda.trim() || transcriptText.trim())
 
-  // Hydrate the draft from localStorage + detect recovered audio — once.
+  // Boot: the composer starts EMPTY. Nothing is hydrated into it — an
+  // unfinished meeting is a row in cp_notes and shows up as "Started" on the
+  // Agenda, one tap to resume. The one-time job here is to rescue whatever the
+  // old global draft key held: if it was already autosaved (has a note id) it
+  // is safe to drop; if not, file it as an unfinished note so nothing is lost.
   useEffect(() => {
     if (hydratedRef.current) return
     hydratedRef.current = true
     try {
-      const raw = localStorage.getItem(DRAFT_KEY)
+      const raw = localStorage.getItem(LEGACY_DRAFT_KEY)
       if (raw) {
         const d = JSON.parse(raw)
-        if (d && (d.title || d.notes || d.agenda || d.transcriptText)) {
-          setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
-          setProjects(d.projects || []); setSeriesId(d.seriesId ?? null); setPeople(d.people || []); setAgenda(d.agenda || '')
-          setNotes(d.notes || ''); setSource(d.source || 'paste'); setQuick(!!d.quick)
-          if (d.engine) setEngine(browserWhisperSupported ? d.engine : 'cloud')
-          setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
-          setPins(Array.isArray(d.pins) ? d.pins : [])
-          draftIdRef.current = d.draftNoteId || null
-          draftSavedRef.current = !!d.draftNoteId
-          setProc(d.transcriptText ? 'ready' : PROC_IDLE)
+        const has = d && (d.notes || d.agenda || d.transcriptText)
+        if (has && !d.draftNoteId) {
+          createNote({
+            id: crypto.randomUUID(), kind: 'meeting', title: (d.title || '').trim() || 'Untitled meeting',
+            project: d.home || null, area: d.home ? (areaOfProject(d.home)?.id || null) : (d.pillar || null),
+            projects: d.projects || [], people: d.people || [], agenda: (d.agenda || '').trim() || null,
+            transcript: d.transcriptText || null, seriesId: d.seriesId || null,
+            body: (d.notes || '').trim() ? markdownToBlocks(d.notes) : [],
+            date: dateLabel(new Date()), updated: 'now', status: 0, incomplete: true,
+          }).then(() => reload()).catch(() => {})
         }
+        localStorage.removeItem(LEGACY_DRAFT_KEY)
       }
     } catch {}
     getRecovered().then((b) => { if (b && b.size) setRecoveredBlob(b) }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Persist the draft to localStorage (synchronous safety copy) on every change.
+  // Crash copy: this note's live fields to localStorage, keyed by note id, so a
+  // killed tab mid-sentence loses nothing. Read back only by open() for the
+  // same note, and only when newer than the DB row.
   useEffect(() => {
-    if (!hydratedRef.current) return
-    const has = meaningful() || people.length || projects.length
-    if (!has) { try { localStorage.removeItem(DRAFT_KEY) } catch {} ; return }
+    if (!hydratedRef.current || !noteId) return
     const id = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, home, pillar, projects, seriesId, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins, draftNoteId: draftIdRef.current })) } catch {}
+      try { localStorage.setItem(DRAFT_PREFIX + noteId, JSON.stringify({ savedAt: Date.now(), title, home, pillar, projects, seriesId, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins })) } catch {}
     }, 500)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, home, pillar, projects, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins])
+  }, [noteId, title, home, pillar, projects, people, agenda, notes, source, engine, quick, transcriptText, lines, synth, pins])
 
-  // The note fields shared by autosave + finalize.
-  const noteFields = (incomplete) => ({
-    kind: 'meeting', title: title.trim() || 'Untitled meeting',
-    project: home || null, area: home ? (areaOfProject(home)?.id || null) : (pillar || null),
-    projects: [...new Set([home, ...projects].filter(Boolean))],
-    people: people || [], agenda: agenda.trim() || null, transcript: transcriptText || null,
-    seriesId: seriesId || null,
-    body: notes.trim() ? markdownToBlocks(notes) : [],
-    date: (() => { const d = new Date(); const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` })(),
-    updated: 'now', status: incomplete ? 0 : 2, incomplete,
-  })
+  // The note fields autosave writes (finalize adds actions on top). Synthesis
+  // output is included only once it exists, so autosaving a reopened finished
+  // meeting can never blank its summary.
+  const noteFields = () => {
+    const f = {
+      kind: 'meeting', title: title.trim() || 'Untitled meeting',
+      project: home || null, area: home ? (areaOfProject(home)?.id || null) : (pillar || null),
+      projects: [...new Set([home, ...projects].filter(Boolean))],
+      people: people || [], agenda: agenda.trim() || null, transcript: transcriptText || null,
+      seriesId: seriesId || null,
+      body: notes.trim() ? markdownToBlocks(notes) : [],
+      date: meetingDate || dateLabel(new Date()),
+      updated: 'now', status: noteIncomplete ? 0 : 2, incomplete: noteIncomplete,
+    }
+    if ((synth.summary || '').trim() || (synth.tags || []).length || (synth.nextSteps || '').trim()) {
+      f.summary = synth.summary || ''; f.tags = synth.tags || []; f.nextSteps = synth.nextSteps || ''
+    }
+    return f
+  }
+  // Content worth a row. A bare title is not — tapping a meeting on the Agenda
+  // just to look must not litter the library with empty notes.
+  const hasContentOf = (f) => !!((f.body || []).length || f.agenda || f.transcript || f.summary || (f.people || []).length)
 
-  // Debounced best-effort DB autosave as a flagged incomplete meeting.
+  // ── Autosave ────────────────────────────────────────────────────
+  // The bound note is written whenever its fields change: debounced to a pause
+  // in typing, capped at one write per AUTOSAVE_MAX_MS while typing never
+  // pauses, skipped entirely when the snapshot equals what was last written,
+  // never overlapping (a change during an in-flight write queues one more).
+  // The result is also patched into DataContext locally, so the Library and
+  // the Agenda reflect it without a refetch.
+  const lastSavedRef = useRef(null)   // JSON of the fields last written
+  const timerRef = useRef(null)
+  const maxTimerRef = useRef(null)
+  const inflightRef = useRef(false)
+  const pendingRef = useRef(false)
+  const skipNextRef = useRef(false)   // next change is a load, not an edit
+  const frozenRef = useRef(false)     // finalize in progress — autosave stands down
+  const saveNowRef = useRef(null)
+  const saveNow = async () => {
+    const id = draftIdRef.current
+    if (!id || frozenRef.current) return
+    if (inflightRef.current) { pendingRef.current = true; return }
+    const fields = noteFields(); const snap = JSON.stringify(fields)
+    if (snap === lastSavedRef.current) { setSaveState('saved'); return }
+    if (!draftSavedRef.current && !hasContentOf(fields)) { setSaveState('idle'); return }
+    const wasNew = !draftSavedRef.current
+    inflightRef.current = true; setSaveState('saving')
+    try {
+      if (wasNew) await createNote({ ...fields, id })
+      else await updateNote(id, fields)
+      upsertNoteLocal({ ...fields, id, updatedAt: new Date().toISOString() })
+      // The composer may have switched meetings while this write was in the
+      // air (open() flushes the old one first). Only the binding this write
+      // belongs to gets marked saved — never the new one.
+      if (draftIdRef.current === id) { if (wasNew) draftSavedRef.current = true; lastSavedRef.current = snap; setSaveState('saved') }
+    } catch { if (draftIdRef.current === id) setSaveState('error') } // localStorage crash copy still holds it; next edit retries
+    finally { inflightRef.current = false; if (pendingRef.current) { pendingRef.current = false; saveNowRef.current && saveNowRef.current() } }
+  }
+  useEffect(() => { saveNowRef.current = saveNow })
+  const clearTimers = () => { clearTimeout(timerRef.current); clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+  // Write now if anything is unsaved (leaving the tab, switching meetings, finishing).
+  const flushSave = () => { clearTimers(); return saveNowRef.current ? saveNowRef.current() : Promise.resolve() }
   useEffect(() => {
-    if (!hydratedRef.current || !meaningful() || proc === 'done') return
-    const id = setTimeout(async () => {
-      try {
-        if (!draftIdRef.current) draftIdRef.current = (crypto?.randomUUID?.() || 'draft-' + Date.now())
-        const fields = noteFields(true)
-        if (!draftSavedRef.current) { await createNote({ ...fields, id: draftIdRef.current }); draftSavedRef.current = true }
-        else await updateNote(draftIdRef.current, fields)
-      } catch {} // RLS / offline → localStorage still holds the draft
-    }, 6000)
-    return () => clearTimeout(id)
+    if (!noteId) return
+    if (skipNextRef.current) { skipNextRef.current = false; lastSavedRef.current = JSON.stringify(noteFields()); setSaveState('saved'); return }
+    if (JSON.stringify(noteFields()) === lastSavedRef.current) return
+    setSaveState('dirty')
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => { clearTimeout(maxTimerRef.current); maxTimerRef.current = null; saveNowRef.current() }, AUTOSAVE_MS)
+    if (!maxTimerRef.current) maxTimerRef.current = setTimeout(() => { maxTimerRef.current = null; clearTimeout(timerRef.current); saveNowRef.current() }, AUTOSAVE_MAX_MS)
+    return () => clearTimeout(timerRef.current)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, home, pillar, projects, people, agenda, notes, transcriptText, proc])
+  }, [noteId, title, home, pillar, projects, people, agenda, notes, transcriptText, seriesId, synth, meetingDate, noteIncomplete])
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') flushSave() }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', flushSave)
+    return () => { document.removeEventListener('visibilitychange', onHide); window.removeEventListener('pagehide', flushSave) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Warn before leaving while there's unsaved meeting content.
   useEffect(() => {
@@ -241,16 +321,23 @@ export function RecorderProvider({ go, children }) {
   // the draft row so there's no duplicate. Returns the note id.
   const finalizeNote = async (fields) => {
     const id = draftIdRef.current || (crypto?.randomUUID?.() || 'note-' + Date.now())
+    frozenRef.current = true; clearTimers()
+    while (inflightRef.current) await new Promise((r) => setTimeout(r, 40)) // never race an autosave
     const full = { ...fields, incomplete: false }
-    if (draftSavedRef.current) await updateNote(id, full)
-    else await createNote({ ...full, id })
-    draftIdRef.current = id; draftSavedRef.current = true
+    try {
+      if (draftSavedRef.current) await updateNote(id, full)
+      else await createNote({ ...full, id })
+    } catch (e) { frozenRef.current = false; throw e }
+    draftIdRef.current = id; draftSavedRef.current = true; setNoteIncomplete(false)
+    upsertNoteLocal({ ...full, id, updatedAt: new Date().toISOString() })
     return id
   }
 
   // Discard: delete the autosaved incomplete row (if any) + wipe the draft.
   const discard = async () => {
-    try { if (draftSavedRef.current && draftIdRef.current) { await deleteNote(draftIdRef.current); await reload() } } catch {}
+    const id = draftIdRef.current
+    frozenRef.current = true; clearTimers()
+    try { if (draftSavedRef.current && id) { await deleteNote(id); removeNoteLocal(id) } } catch {}
     clear()
   }
 
@@ -300,6 +387,9 @@ export function RecorderProvider({ go, children }) {
   const loadDraftFromNote = (n) => {
     if (!n) return
     draftIdRef.current = n.id; draftSavedRef.current = true
+    setNoteId(n.id); setNoteIncomplete(!!n.incomplete); setMeetingDate(n.date || dateLabel(new Date())); setDateIso(null)
+    frozenRef.current = false; lastSavedRef.current = null; skipNextRef.current = true; setSaveState('saved')
+    setQuick(false)
     setTitle(n.title || ''); setHome(n.project || null); setPillar(n.project ? null : (n.area || null))
     setProjects(n.projects || []); setSeriesId(n.seriesId || null); setPeople(n.people || []); setAgenda(n.agenda || '')
     setNotes(blocksToText(n.body || [])); setSource(n.transcript ? 'record' : 'paste')
@@ -318,9 +408,82 @@ export function RecorderProvider({ go, children }) {
     setProc(synthesized ? 'done' : (n.transcript ? 'ready' : PROC_IDLE))
   }
 
+  // A crash copy newer than the DB row wins (the tab died before autosave ran).
+  const applyLocalCopy = (id, updatedAt) => {
+    try {
+      const raw = localStorage.getItem(DRAFT_PREFIX + id)
+      if (!raw) return false
+      const d = JSON.parse(raw)
+      if (!d || !(d.savedAt > (Date.parse(updatedAt || 0) || 0) + 1500)) return false
+      setTitle(d.title || ''); setHome(d.home ?? null); setPillar(d.pillar ?? null)
+      setProjects(d.projects || []); setSeriesId(d.seriesId ?? null); setPeople(d.people || []); setAgenda(d.agenda || '')
+      setNotes(d.notes || ''); setSource(d.source || 'paste')
+      setTranscriptText(d.transcriptText || ''); setLines(d.lines || []); setSynth(d.synth || emptySynth)
+      setPins(Array.isArray(d.pins) ? d.pins : [])
+      if (d.transcriptText) setProc('ready')
+      skipNextRef.current = false // this IS an edit relative to the row — autosave it
+      return true
+    } catch { return false }
+  }
+
+  // ── open(target) — bind the composer to ONE meeting ─────────────
+  // Every launch path (Agenda block, imminent popup, series page, New →
+  // Meeting, Resume/Composer on a note, Quick record) lands here with what it
+  // knows. Resolves to an existing cp_notes row (by id, or by title + calendar
+  // day) or a fresh binding whose row is created on the first real content.
+  // Idempotent for the meeting already bound, and a no-op while a recording,
+  // transcription or synthesis is live — nothing can yank those away.
+  const open = (target = {}) => {
+    if (status === 'recording' || status === 'paused' || proc === 'transcribing' || proc === 'synth') return false
+    const tIso = target.date || todayIso()
+    const bare = !target.noteId && target.title == null && !target.series && !target.quick && !target.project
+    if (bare) return true
+    if (target.noteId) { if (target.noteId === noteId) return true }
+    else if (target.title != null && noteId && normalizeTitle(target.title) === normalizeTitle(title) && (!dateIso || dateIso === tIso)) return true
+    else if (target.quick && noteId && quick) return true
+    if (noteId) flushSave()
+    frozenRef.current = false
+    const existing = target.noteId ? noteById(target.noteId)
+      : (target.title ? findMeetingNote(allNotes, { title: target.title, dateIso: tIso }) : null)
+    if (existing) {
+      loadDraftFromNote(existing)
+      setDateIso(tIso)
+      applyLocalCopy(existing.id, existing.updatedAt)
+      return true
+    }
+    // fresh binding
+    reset()
+    setTitle(target.title || ''); setHome(null); setSeriesId(null); setSynth(emptySynth); setCost(null) // reset() keeps home; a new meeting must not inherit it
+    const id = crypto.randomUUID()
+    setNoteId(id); draftIdRef.current = id; draftSavedRef.current = false; setNoteIncomplete(true)
+    setMeetingDate(labelFromIso(tIso)); setDateIso(tIso)
+    lastSavedRef.current = null; skipNextRef.current = false; setSaveState('idle')
+    setQuick(!!target.quick); if (target.quick) setSource('record')
+    // Prefill: an explicit series, else the series this calendar title belongs
+    // to — its defaults and the composed agenda (standing checklist + open
+    // items), unless the launcher already composed one (series page AI prep).
+    const s = target.series ? seriesById(target.series) : (target.title ? seriesForTitle(series, target.title) : null)
+    const patch = {}
+    if (target.project) patch.home = target.project
+    if (s) {
+      setSeriesId(s.id)
+      if (!patch.home && s.project) patch.home = s.project
+      else if (!patch.home && s.area) patch.pillar = s.area
+      if ((s.projects || []).length) patch.projects = s.projects
+      if ((s.people || []).length) patch.people = s.people
+      const built = target.agenda != null ? target.agenda : buildSeriesAgenda({ series: s, openTasks: openTasksForSeries(s.id), openThreads: openThreadsForSeries(s.id) })
+      if (built) patch.agenda = built
+    } else if (target.agenda != null) patch.agenda = target.agenda
+    if (!patch.home && !patch.pillar && areaById('arrow')) patch.pillar = 'arrow' // most meetings are Arrow
+    setMeta(patch)
+    return true
+  }
+
+  // Recording never wipes what the meeting already has: a second recording on
+  // a meeting with a transcript APPENDS to it (see stopAndTranscribe). "Start
+  // over" is reset(), an explicit button.
   const start = async () => {
-    setError(null); setWarn(null)
-    setLines([]); setTranscriptText(''); setSynth(emptySynth); setCost(null)
+    setError(null); setWarn(null); setCost(null)
     setTStatus(''); setModelPct(0)
     setProc(PROC_IDLE)
     await recorder.start({ tabAudio })
@@ -409,16 +572,21 @@ export function RecorderProvider({ go, children }) {
     try {
       const { text, lines: dl } = await runEngine(blob)
       // diarized turns when available; else rough evenly-spaced timestamps
-      const withAt = dl || linesFor(text)
-      setLines(withAt)
+      const segLines = dl || linesFor(text)
       // Never persist an empty transcript when we actually have labeled turns:
       // rebuild the text from the lines so the saved note keeps the words.
-      const txt = text || withAt.map((l) => (l.sp ? `${l.sp}: ${l.text}` : l.text)).join('\n\n')
+      const segText = text || segLines.map((l) => (l.sp ? `${l.sp}: ${l.text}` : l.text)).join('\n\n')
+      // Append to an existing transcript (a meeting recorded in two sittings, or
+      // more recorded onto a saved one) instead of replacing it.
+      const prev = (transcriptText || '').trim()
+      const txt = prev ? `${prev}\n\n${segText}` : segText
+      const withAt = prev ? [...lines, ...segLines] : segLines
+      setLines(withAt)
       setTranscriptText(txt)
       // Completeness check: ~120 wpm is normal speech. If the transcript is far
       // short of what the elapsed time implies (or the tab went background), the
       // audio capture likely paused — warn so the user doesn't trust a partial.
-      const words = (txt || '').split(/\s+/).filter(Boolean).length
+      const words = (segText || '').split(/\s+/).filter(Boolean).length
       const expected = (seconds / 60) * 120
       if (seconds > 120 && (interrupted || words < expected * 0.4)) {
         const mins = Math.round(seconds / 60)
@@ -508,11 +676,14 @@ export function RecorderProvider({ go, children }) {
 
   // clear() — full teardown after a save/discard (drops title + the draft copies).
   const clear = () => {
+    clearTimers()
+    const id = draftIdRef.current
     reset()
-    setTitle(''); setSeriesId(null)
-    draftIdRef.current = null; draftSavedRef.current = false
+    setTitle(''); setSeriesId(null); setQuick(false)
+    setNoteId(null); setNoteIncomplete(true); setMeetingDate(null); setDateIso(null); setSaveState('idle')
+    draftIdRef.current = null; draftSavedRef.current = false; lastSavedRef.current = null; frozenRef.current = false
     setRecoveredBlob(null)
-    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    try { if (id) localStorage.removeItem(DRAFT_PREFIX + id) } catch {}
     clearRecovered().catch(() => {})
   }
 
@@ -520,6 +691,7 @@ export function RecorderProvider({ go, children }) {
     phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost,
     speakers, diarize, recoveredBlob,
+    noteId, noteIncomplete, meetingDate, saveState, open, flushSave,
     engine, browserWhisperSupported, tStatus, modelPct,
     diarizeSupported, hasVoice, labelSpeakers, setLabelSpeakers, enrollVoice, clearVoice, enrollStatus, labelPct,
     tabAudio, tabAudioSupported, tabMixed, storageWarn, getAnalyser,
@@ -527,7 +699,7 @@ export function RecorderProvider({ go, children }) {
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, downloadRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins, noteId, noteIncomplete, meetingDate, dateIso, saveState, allNotes, series])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }
@@ -555,7 +727,7 @@ export function FloatingRecorder() {
     : phase === 'transcribing' ? 'Transcribing…' : phase === 'ready' ? 'Ready to synthesize'
     : phase === 'synth' ? 'Synthesizing…' : 'Synthesized — tap to save'
   const busy = phase === 'transcribing' || phase === 'synth'
-  const open = () => go({ screen: 'record', project: home, title })
+  const open = () => go({ screen: 'record' }) // bare: the composer keeps the bound meeting
 
   return <div style={{ position: 'fixed', zIndex: 460, width: 'min(286px, calc(100vw - 32px))',
     right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(16px + env(safe-area-inset-bottom))',

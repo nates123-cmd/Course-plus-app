@@ -3,7 +3,7 @@
 // the meeting composer for that meeting (where its scheduled tasks surface on
 // top). Meetings come from `placed_blocks` (shared with Today), same source as
 // the Agenda screen. Dismissals are remembered (localStorage) so it won't nag.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../ctx'
 import { supabase } from '../lib/supabase'
 import { Icon } from '../kit'
@@ -19,27 +19,43 @@ export function ImminentMeeting() {
   const [meeting, setMeeting] = useState(null)
   const [dismissed, setDismissed] = useState(loadDismissed)
 
+  // Today's meetings are fetched ONCE per app open (and again only when the
+  // day rolls over, or the tab comes back after an hour away). The minute
+  // timer just re-checks the clock against that cached list — this used to
+  // hit Supabase every 60 s for as long as the tab was open, ~1,400 requests a
+  // day doing nothing, which is exactly what blows the suite's request budget.
+  const cacheRef = useRef({ date: null, at: 0, blocks: [] })
   useEffect(() => {
     let live = true
-    const check = async () => {
+    const fetchToday = async () => {
       const today = isoLocal(new Date())
       const { data } = await supabase.from('placed_blocks').select('*').eq('type', 'meeting').eq('date', today).order('hour')
       if (!live) return
-      const now = new Date()
-      const nowMin = now.getHours() * 60 + now.getMinutes()
       const seen = new Set()
-      const soon = (data || [])
+      cacheRef.current = { date: today, at: Date.now(), blocks: (data || [])
         .map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
         .filter((b) => { const k = keyOf(b); if (seen.has(k)) return false; seen.add(k); return true }) // Today writes dup rows
+        .map((b) => ({ ...b, startMin: Math.floor(b.hour) * 60 + Math.round((b.hour - Math.floor(b.hour)) * 60) })) }
+      check()
+    }
+    const check = () => {
+      const now = new Date()
+      const nowMin = now.getHours() * 60 + now.getMinutes()
+      const soon = cacheRef.current.blocks
         .filter((b) => !dismissed.has(keyOf(b)))
-        .map((b) => ({ ...b, startMin: Math.floor(b.hour) * 60 + Math.round((b.hour - Math.floor(b.hour)) * 60) }))
         .filter((b) => b.startMin - nowMin <= LEAD_MIN && nowMin - b.startMin <= GRACE_MIN)
         .sort((a, b) => a.startMin - b.startMin)
       setMeeting(soon[0] || null)
     }
-    check()
-    const iv = setInterval(check, 60000)
-    return () => { live = false; clearInterval(iv) }
+    const refreshIfStale = () => {
+      const c = cacheRef.current
+      if (c.date !== isoLocal(new Date()) || Date.now() - c.at > 60 * 60 * 1000) fetchToday(); else check()
+    }
+    refreshIfStale()
+    const iv = setInterval(refreshIfStale, 60000)
+    const onVis = () => { if (document.visibilityState === 'visible') refreshIfStale() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { live = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis) }
   }, [dismissed])
 
   if (!meeting) return null
@@ -48,7 +64,7 @@ export function ImminentMeeting() {
     try { localStorage.setItem('course.mtgDismissed', JSON.stringify([...next])) } catch {}
     setDismissed(next); setMeeting(null)
   }
-  const open = () => { dismiss(); go({ screen: 'meeting', title: meeting.title }) }
+  const open = () => { dismiss(); go({ screen: 'meeting', title: meeting.title, date: meeting.date }) }
   const hr = Math.floor(meeting.hour), mm = String(Math.round((meeting.hour - hr) * 60)).padStart(2, '0')
   const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr, ap = hr < 12 ? 'a' : 'p'
   const mins = meeting.startMin - (new Date().getHours() * 60 + new Date().getMinutes())
