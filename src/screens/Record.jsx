@@ -17,6 +17,7 @@ import { TaskSheet, useLongPress } from './TaskSheet'
 import { useRecorderCtx } from '../RecorderContext'
 import { MdEditor } from '../components/MdEditor'
 import { buildSeriesAgenda } from '../lib/seriesAgenda'
+import { DiscussList, discussMarkdown } from '../components/DiscussList'
 
 // Voice enrollment — records ~10s of just the user, hands the clip to the
 // diarizer to store a voiceprint (on-device; never uploaded). Used to label
@@ -200,8 +201,8 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
 
 export function RecordScreen() {
   const { t, f, go, route, isMobile, aiName } = useApp()
-  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById, looseTasks, patchTask,
-    seriesForMeetingTitle, openTasksForSeries, openThreadsForSeries } = useData()
+  const { allProjects, projectById, areaOfProject, areas, areaById, reload, seriesById,
+    seriesForMeetingTitle, openTasksForSeries, openThreadsForSeries, discussListFor, patchAgendaItem } = useData()
   const rec = useRecorderCtx()
   const projects = allProjects()
   // Pickers prioritize active → on-hold → ideas (archived last).
@@ -218,21 +219,24 @@ export function RecordScreen() {
   const [actionDraft, setActionDraft] = useState('')
   const [showNext, setShowNext] = useState(false)
   const [enrollOpen, setEnrollOpen] = useState(false)
-  const [checkedSched, setCheckedSched] = useState({}) // optimistic strike-through for scheduled tasks
+  const [checkedSched, setCheckedSched] = useState({}) // "To discuss" rows ticked in this session (save snapshots them)
   const addAction = () => { const v = actionDraft.trim(); setActionDraft(''); if (v) setActions((xs) => [...xs, { id: 'm' + Date.now() + Math.round(Math.random() * 1e4), label: v, owner: 'me', done: false, manual: true }]) }
 
   const { phase, seconds, title, home, pillar, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, error, cost, warn, speakers: speakerCount, diarize, engine, browserWhisperSupported, tStatus, modelPct, tabAudio, tabAudioSupported, tabMixed, storageWarn, pins } = rec
   const tuneLocked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
   const usd = (n) => '$' + (n < 0.01 ? n.toFixed(4) : n.toFixed(2))
   const homeProj = projectById(home)
-  // Tasks scheduled to be discussed in THIS meeting (matched to the meeting's
-  // title via task.meetingId). Surfaced at the top so you can run through them.
-  const scheduledForMeeting = title
-    ? [...projects.flatMap((p) => (p.tasks || []).map((x) => ({ ...x, where: p.name, pid: p.id }))),
-       ...looseTasks().map((x) => ({ ...x, where: x.areaName, pid: null }))]
-        .filter((x) => !x.done && x.meetingId === title)
-    : []
-  const toggleScheduled = async (id) => { setCheckedSched((c) => ({ ...c, [id]: !c[id] })); try { await patchTask(id, { done: true }) } catch {} }
+  // The "To discuss in this meeting" checklist — scheduled tasks assigned to
+  // this title plus manual talking points — lives in <DiscussList>; the
+  // composer only keeps the ticked set (plus the rows that ticking removed
+  // from the live list) so save() can snapshot the whole thing.
+  const discussRowsRef = useRef([])
+  const discussStruck = useRef([])
+  discussRowsRef.current = title ? discussListFor([title]) : []
+  const onDiscussChecked = (next) => {
+    for (const r of discussRowsRef.current) if (next[r.id] && !discussStruck.current.some((x) => x.id === r.id)) discussStruck.current.push(r)
+    setCheckedSched(next)
+  }
   // pillar drives the project list; default Arrow. A chosen project's area wins.
   const effectivePillar = home ? (areaOfProject(home)?.id || null) : (pillar || (areaById('arrow') ? 'arrow' : (areas[0]?.id || null)))
   const destAreaId = effectivePillar
@@ -380,7 +384,16 @@ export function RecordScreen() {
         actions: actions.map((a) => ({ text: a.label || a.text, owner: a.owner || 'you', src: 'this meeting' })),
       }
       if ((notes || '').trim()) note.body = markdownToBlocks(notes)
+      // Snapshot the "To discuss" list into the note's agenda — ticked or not —
+      // so the record of what this meeting was meant to cover survives the
+      // tasks completing and the points moving on to next week.
+      const liveRows = discussRowsRef.current
+      const discussRows = [...liveRows, ...discussStruck.current.filter((r) => !liveRows.some((x) => x.id === r.id))]
+      const snap = discussMarkdown(discussRows, checkedSched)
+      if (snap && !(note.agenda || '').includes('## To discuss')) note.agenda = [(note.agenda || '').trim(), snap].filter(Boolean).join('\n\n')
       const noteId = await rec.finalizeNote(note)
+      // Talking points ticked off during this meeting now know which meeting covered them.
+      for (const r of discussRows) if (r.kind === 'item' && checkedSched[r.id]) { try { await patchAgendaItem(r.id, { noteId }) } catch {} }
       if (home) for (const a of actions) { if (a.done) await createTask(home, { label: a.label, srcMeeting: noteId, next: false }) }
       const boundSeries = rec.seriesId
       rec.clear(); await reload()
@@ -481,21 +494,11 @@ export function RecordScreen() {
       </span>
     </div>}
 
-    {/* scheduled tasks — anything assigned to be discussed in this meeting, on top */}
-    {scheduledForMeeting.length > 0 && <Card style={{ marginTop: 16, padding: '4px 0', borderColor: t.accentLine, background: t.accentBg }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px 6px' }}>
-        <Icon n="list-check" s={15} c={t.accent} />
-        <Label style={{ margin: 0, color: t.accent }}>To discuss in this meeting · {scheduledForMeeting.length}</Label>
-      </div>
-      {scheduledForMeeting.map((tk) => {
-        const done = !!checkedSched[tk.id]
-        return <div key={tk.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 16px', borderTop: '1px solid ' + t.line }}>
-          <span onClick={() => toggleScheduled(tk.id)} title="Mark done" style={{ width: 18, height: 18, borderRadius: 5, flex: 'none', cursor: 'pointer', position: 'relative', border: '1.5px solid ' + (done ? t.accent : t.t3), background: done ? t.accent : 'transparent' }}>
-            {done && <Icon n="check" s={13} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
-          <span onClick={() => tk.pid && go({ screen: 'project', id: tk.pid })} style={{ flex: 1, minWidth: 0, fontFamily: f.body, fontSize: 14, color: done ? t.t3 : t.t1, textDecoration: done ? 'line-through' : 'none', cursor: tk.pid ? 'pointer' : 'default' }}>{tk.label}</span>
-          {tk.where && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120, flex: 'none' }}>{tk.where}</span>}
-        </div>
-      })}
+    {/* To discuss — scheduled tasks assigned to this meeting + manual talking
+        points. Present as soon as the meeting has a name, so points can be
+        added mid-meeting; the same list shows on the Agenda beforehand. */}
+    {(title || '').trim() && (!quick || phase === 'done') && <Card style={{ marginTop: 16, padding: '4px 0', borderColor: t.accentLine, background: t.accentBg }}>
+      <DiscussList titles={[title]} addTitle={title.trim()} checked={checkedSched} onChecked={onDiscussChecked} />
     </Card>}
 
     {/* people (attendees + speakers) */}

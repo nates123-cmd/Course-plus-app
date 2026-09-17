@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase'
 import { Icon, Card, Btn, TODAY, MONTHS } from '../kit'
 import { useLongPress } from './TaskSheet'
 import { createSeries } from '../lib/db'
+import { DiscussList } from '../components/DiscussList'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEK_DAYS = 7
@@ -140,7 +141,7 @@ function BlockRow({ block, series, onOpen, onHold, onDelete }) {
 }
 
 function DaySection({ iso, blocks, seriesFor, onOpen, onHold, onDelete }) {
-  const { t, f } = useApp()
+  const { t, f, isMobile } = useApp()
   const m = dayMeta(iso)
   return (
     <div style={{ marginBottom: 18 }}>
@@ -153,7 +154,16 @@ function DaySection({ iso, blocks, seriesFor, onOpen, onHold, onDelete }) {
         </span>
       </div>
       <Card style={{ padding: '4px 0', overflow: 'hidden' }}>
-        {blocks.map((b) => <BlockRow key={b.id} block={b} series={seriesFor(b)} onOpen={onOpen} onHold={onHold} onDelete={onDelete} />)}
+        {blocks.map((b) => <div key={b.id}>
+          <BlockRow block={b} series={seriesFor(b)} onOpen={onOpen} onHold={onHold} onDelete={onDelete} />
+          {/* Every meeting carries its "To discuss" checklist right here, so the
+              agenda for next week's 1:1 gets built while the thought is fresh:
+              type a point, or pull a task in. Tasks marked Scheduled in the
+              task sheet land here too. */}
+          {b.type === 'meeting' && <div style={{ padding: isMobile ? '2px 16px 10px 16px' : '2px 16px 10px 126px', borderBottom: '1px solid ' + t.line }}>
+            <DiscussList titles={[b.title]} addTitle={(b.title || '').trim()} compact />
+          </div>}
+        </div>)}
       </Card>
     </div>
   )

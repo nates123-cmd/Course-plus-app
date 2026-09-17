@@ -2,11 +2,11 @@
 // run) and exposes it + the prototype data helpers, bound to the loaded data,
 // via context. Replaces the prototype's window.* module-level fixtures.
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAll, seedIfEmpty, createTask, updateTask, deleteTask, updateNote, upsertNudgeState } from './lib/db'
+import { loadAll, seedIfEmpty, createTask, updateTask, deleteTask, updateNote, upsertNudgeState, createAgendaItem, updateAgendaItem, deleteAgendaItem } from './lib/db'
 import { nextOccurrence, todayYmd } from './lib/recurrence'
 import { blocksToText } from './lib/blocks'
 import { holdView } from './kit'
-import { seriesForTitle } from './lib/seriesAgenda'
+import { seriesForTitle, normalizeTitle } from './lib/seriesAgenda'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'Waiting: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
@@ -79,6 +79,7 @@ export function DataProvider({ children }) {
   const [inbox, setInbox] = useState([])
   const [assets, setAssets] = useState([])
   const [series, setSeries] = useState([])
+  const [agendaItems, setAgendaItems] = useState([]) // cp_agenda_items — manual "to discuss" points
   const [nudgeStates, setNudgeStates] = useState([]) // cp_nudge_states — [] when un-migrated
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
@@ -96,6 +97,7 @@ export function DataProvider({ children }) {
       // Pull any un-materialized meeting action items into the project Iceboxes.
       if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
+      setAgendaItems(data.agendaItems || [])
       setNudgeStates(data.nudgeStates || [])
       setStatus('ready')
     } catch (e) {
@@ -244,6 +246,26 @@ export function DataProvider({ children }) {
     return id
   }
 
+  // ── "To discuss" talking points (optimistic, same pattern as tasks) ──
+  const addAgendaItem = async (item = {}) => {
+    const id = item.id || (crypto?.randomUUID?.() || 'tmp-' + Date.now())
+    const opt = { id, meetingTitle: item.meetingTitle || '', label: item.label || '', done: !!item.done,
+      sort: item.sort ?? 0, createdAt: new Date().toISOString() }
+    setAgendaItems((prev) => [...prev, opt])
+    try { await createAgendaItem({ ...item, id }) } catch (e) { reload(); throw e }
+    return id
+  }
+  const patchAgendaItem = async (id, patch) => {
+    const touched = { ...patch }
+    if ('done' in patch && !('doneAt' in patch)) touched.doneAt = patch.done ? new Date().toISOString() : undefined
+    setAgendaItems((prev) => prev.map((x) => (x.id === id ? { ...x, ...touched } : x)))
+    try { await updateAgendaItem(id, patch) } catch (e) { reload(); throw e }
+  }
+  const removeAgendaItem = async (id) => {
+    setAgendaItems((prev) => prev.filter((x) => x.id !== id))
+    try { await deleteAgendaItem(id) } catch (e) { reload(); throw e }
+  }
+
   // ── Single-level undo (Cmd/Ctrl+Z) ──────────────────────────────
   // Mutation sites call recordUndo(revertFn); the global key handler runs the
   // last one. Skipped while focused in a text field so native text-undo wins.
@@ -320,6 +342,23 @@ export function DataProvider({ children }) {
     // The series that owns a calendar block's title — how a meeting opened from
     // the Agenda (or the imminent-meeting popup) finds its series.
     const seriesForMeetingTitle = (title) => seriesForTitle(series, title)
+    // The ONE "To discuss in this meeting" list for a meeting, by title(s):
+    // scheduled tasks assigned to it (derived — a done task drops out on its
+    // own) followed by the manual talking points. Titles match the way series
+    // do (case/space-insensitive), so "Jon 1:1" and "Jon 1:1 " agree.
+    const discussListFor = (titles) => {
+      const want = new Set([].concat(titles || []).map(normalizeTitle).filter(Boolean))
+      if (!want.size) return []
+      const out = []
+      for (const a of areas) {
+        for (const tk of a.areaTasks || []) if (!tk.done && tk.workType === 'scheduled' && want.has(normalizeTitle(tk.meetingId || ''))) out.push({ kind: 'task', id: tk.id, label: tk.label, where: a.name, pid: null, task: tk })
+        for (const p of a.projects) for (const tk of p.tasks || []) if (!tk.done && tk.workType === 'scheduled' && want.has(normalizeTitle(tk.meetingId || ''))) out.push({ kind: 'task', id: tk.id, label: tk.label, where: p.name, pid: p.id, task: tk })
+      }
+      for (const it of agendaItems) if (!it.done && want.has(normalizeTitle(it.meetingTitle))) out.push({ kind: 'item', id: it.id, label: it.label, item: it })
+      return out
+    }
+    // What was covered in a saved meeting: the talking points ticked off in it.
+    const agendaItemsForNote = (noteId) => agendaItems.filter((x) => x.noteId === noteId)
     // Still-open tasks that were born in one of this series' meetings — the
     // actions[] that already materialized into cp_tasks. These are the real
     // carry-forward: they have status, so a done task drops out on its own and
@@ -476,7 +515,8 @@ export function DataProvider({ children }) {
     }
 
     return {
-      areas, notes, inbox, assets, series, nudgeStates, status, error, reload, recordUndo, canUndo,
+      areas, notes, inbox, assets, series, agendaItems, nudgeStates, status, error, reload, recordUndo, canUndo,
+      addAgendaItem, patchAgendaItem, removeAgendaItem, discussListFor, agendaItemsForNote,
       snoozeNudge, rememberQuestion,
       patchTask, addTask, removeTask, undoRecurrence,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
@@ -484,7 +524,7 @@ export function DataProvider({ children }) {
       assetsForProject, assetsForNote, assetsInProject,
       seriesById, activeSeries, instancesForSeries, openThreadsForSeries, openTasksForSeries, seriesForMeetingTitle,
     }
-  }, [areas, notes, inbox, assets, series, status, error, canUndo])
+  }, [areas, notes, inbox, assets, series, agendaItems, status, error, canUndo])
 
   return <DataCtx.Provider value={value}>{children}</DataCtx.Provider>
 }
