@@ -85,6 +85,7 @@ function textToBlocks(text: string) {
 function blocksToText(blocks: any[] = []) {
   return (blocks || []).map((b) => b.p || (b.ul ? b.ul.map((i: string) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i: string, n: number) => `${n + 1}. ${i}`).join('\n') : (b.links ? b.links.map((l: string) => `[[${l}]]`).join(' ') : '')))).filter(Boolean).join('\n\n')
 }
+const ymdNum = (d: any) => (d && d.y != null ? d.y * 10000 + (d.m + 1) * 100 + d.d : 0)
 const mapTask = (r: any) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, meeting: r.meeting_id || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0, repeats: recurrenceLabel(r.recurrence), recurrence: r.recurrence || null })
 
 // Claude passes `until` as a YYYY-MM-DD string (every other date in this API is
@@ -113,7 +114,8 @@ async function spawnNext(sb: any, id: string) {
     id: newId, project_id: cur.project_id, area_id: cur.area_id, label: cur.label,
     done: false, next: !!cur.next, waiting: null,
     due_date: nx.dueDate, work_type: cur.work_type === 'scheduled' ? null : cur.work_type,
-    task_status: cur.task_status === 'now' ? 'now' : 'backlog',
+    // A Now chore's next occurrence waits out of Now ('deferred') until its day; the app moves it back.
+    task_status: (cur.task_status === 'now' || cur.task_status === 'deferred') ? (ymdNum(nx.dueDate) > ymdNum(todayYmd()) ? 'deferred' : 'now') : 'backlog',
     priority: cur.priority ?? null, notes: cur.notes ?? null, group_label: cur.group_label ?? null,
     sort: cur.sort ?? 0, completed_at: null,
     recurrence: cur.recurrence, recur_parent: seriesId, recur_index: nx.index, recur_spawned: false,
@@ -150,7 +152,7 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     const pr = p.data
     return {
       id: pr.id, name: pr.name, area: pr.area_id, status: pr.status, priority: pr.priority ?? null, due: ymdStr(pr.due), blurb: pr.blurb || null, hold: pr.hold || null,
-      tasks: (tasks.data || []).map(mapTask).sort((a: any, b: any) => a.sort - b.sort),
+      tasks: (tasks.data || []).filter((r: any) => r.task_status !== 'dismissed').map(mapTask).sort((a: any, b: any) => a.sort - b.sort),
       milestones: (ms.data || []).map((r: any) => ({ id: r.id, label: r.label, state: r.state, sub: r.sub || null, due: ymdStr(r.due) })),
       updates: (upd.data || []).map((u: any) => ({ body: u.body, at: u.created_at })),
       artifacts: (art.data || []).map((a: any) => ({ id: a.id, title: a.title, artType: a.art_type, provenance: a.provenance })),
@@ -168,9 +170,10 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     if (project) q = q.eq('project_id', project)
     if (status === 'open') q = q.eq('done', false); else if (status === 'done') q = q.eq('done', true)
     const { data, error } = await q; must(error)
-    let rows = (data || []).map(mapTask)
+    let rows = (data || []).filter((r: any) => r.task_status !== 'dismissed').map(mapTask) // dismissed = turned-down meeting suggestion, kept for dedup only
     if (lane === 'now') rows = rows.filter((t: any) => t.status === 'now')
-    else if (lane === 'backlog') rows = rows.filter((t: any) => t.status !== 'now')
+    else if (lane === 'backlog') rows = rows.filter((t: any) => !['now', 'deferred', 'consider'].includes(t.status))
+    else if (lane === 'consider') rows = rows.filter((t: any) => t.status === 'consider')
     return rows
   },
   async create_task(sb, { project, label, due, next = false, waiting, priority = null, lane = 'backlog', srcMeeting, repeat, meeting }) { const id = uuid(); const mtg = (meeting || '').trim() || null; const { error } = await sb.from('cp_tasks').insert({ id, project_id: project, label, done: false, next, waiting: waiting ?? null, due_date: due ? toYMD(due) : null, priority, task_status: lane === 'now' ? 'now' : 'backlog', src_meeting: srcMeeting ?? null, sort: 99, completed_at: null, recurrence: repeatIn(repeat), work_type: mtg ? 'scheduled' : null, meeting_id: mtg }); must(error); return { id, project, label, meeting: mtg, repeats: recurrenceLabel(repeatIn(repeat)) } },
@@ -238,7 +241,21 @@ const ops: Record<string, (sb: any, a: any) => Promise<any>> = {
     must(tasks.error); if (items.error && items.error.code !== '42P01') must(items.error)
     const byMeeting: Record<string, any> = {}
     const bucket = (title: string) => { const k = norm(title); if (!byMeeting[k]) byMeeting[k] = { meeting: (title || '').trim(), tasks: [], points: [] }; return byMeeting[k] }
-    for (const r of tasks.data || []) if (r.meeting_id && (!want || norm(r.meeting_id) === want)) bucket(r.meeting_id).tasks.push({ id: r.id, label: r.label, project: r.project_id })
+    // A person link ("@Jon: JS/NS 1:1 | Arrow Staff" = "next meeting with Jon",
+    // see src/lib/meetingMatch.js) belongs to each title it lists and to any
+    // meeting whose title names the person.
+    const personHit = (mid: string) => {
+      const body = mid.slice(1), i = body.indexOf(':')
+      const name = (i < 0 ? body : body.slice(0, i)).trim().toLowerCase()
+      const titles = i < 0 ? [] : body.slice(i + 1).split('|').map((x) => norm(x)).filter(Boolean)
+      return titles.includes(want) || want.split(/[^a-z0-9]+/).includes(name)
+    }
+    for (const r of tasks.data || []) {
+      if (!r.meeting_id) continue
+      const person = r.meeting_id.startsWith('@')
+      if (want && !(person ? personHit(r.meeting_id) : norm(r.meeting_id) === want)) continue
+      bucket(want && person ? meeting : r.meeting_id).tasks.push({ id: r.id, label: r.label, project: r.project_id })
+    }
     for (const r of items.data || []) if (!want || norm(r.meeting_title) === want) bucket(r.meeting_title).points.push({ id: r.id, label: r.label })
     return Object.values(byMeeting)
   },

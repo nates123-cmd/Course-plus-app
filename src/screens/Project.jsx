@@ -32,6 +32,7 @@ import {
 import { TaskSheet, useLongPress } from './TaskSheet'
 import { HoldSheet } from './HoldSheet'
 import { ThinkItThrough } from '../components/ThinkItThrough'
+import { MeetingSource } from '../components/MeetingSource'
 import { handleCsvPaste } from '../lib/tablePaste'
 import { uploadAsset, signedUrl } from '../lib/assets'
 
@@ -285,9 +286,12 @@ function Tasks({ project, reload }) {
     // Priority drives placement: P1 → Now; Icebox is banded P2 → P3 → the rest.
     // Within a band, keep the stored drag order (stable sort over the db order),
     // so manual reordering still holds inside a priority tier.
-    const nw = open.filter((x) => x.priority === 1 || isNow(x))
+    // A deferred task (moved out of Now to a later day) waits in Icebox even at
+    // P1, and returns to Now on its day.
+    const inNow = (x) => isNow(x) || (x.priority === 1 && x.taskStatus !== 'deferred')
+    const nw = open.filter(inNow)
     const band = (x) => (x.priority === 2 ? 0 : x.priority === 3 ? 1 : 2)
-    const bk = open.filter((x) => !(x.priority === 1 || isNow(x)))
+    const bk = open.filter((x) => !inNow(x))
       .map((x, i) => [x, i]).sort((a, b) => band(a[0]) - band(b[0]) || a[1] - b[1]).map((p) => p[0])
     setNowList(nw); setIcebox(bk); listRef.current = { now: nw, back: bk }
   }, [tasksSig]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -312,7 +316,7 @@ function Tasks({ project, reload }) {
     else setIcebox((l) => l.filter((o) => o.id !== id))
     // Completing a recurring task spawns its successor; undo has to take that
     // back out too, or Cmd+Z would leave next week's copy behind.
-    const spawnedId = await patchTask(id, { done: !prevDone })
+    const spawnedId = await patchTask(id, { done: !prevDone }, { noUndo: true })
     recordUndo(async () => { await patchTask(id, { done: prevDone }); await undoRecurrence(id, spawnedId) })
   }
   // P1 also pulls the task into Now (its priority means "now"). The rest of the
@@ -322,12 +326,12 @@ function Tasks({ project, reload }) {
     const cur = findTask(id)
     const p2 = 'priority' in p && p.priority === 1 ? { ...p, taskStatus: 'now', next: false, waiting: null } : p
     const inverse = cur ? Object.fromEntries(Object.keys(p2).map((k) => [k, cur[k] ?? null])) : null
-    await patchTask(id, p2)
-    if (inverse) recordUndo(async () => { await patchTask(id, inverse) })
+    await patchTask(id, p2, { noUndo: !!inverse })
+    if (inverse) recordUndo(async () => { await patchTask(id, inverse, { noUndo: true }) }, { key: 'task:' + id + ':' + Object.keys(p2).sort().join(',') })
   }
   const remove = async (id) => {
     const prev = findTask(id)
-    setSheetTask(null); await removeTask(id)
+    setSheetTask(null); await removeTask(id, { noUndo: true })
     if (prev) recordUndo(async () => { await addTask(prev.project || project.id, prev) })
   }
   const reassign = async (target) => {
@@ -456,6 +460,8 @@ function Tasks({ project, reload }) {
         <span>Slot open. Pull a task up from Icebox, or tap ↑ Now on one below.</span></div>}
     </div>
 
+    <Consider project={project} />
+
     {/* Icebox lane */}
     <div style={{ marginTop: 20 }}>
       <SectionHead label={`Icebox · ${icebox.length}`} action="Drag or tap ↑ Now · hold for details" />
@@ -533,6 +539,50 @@ function Tasks({ project, reload }) {
         onPatch={(p) => patch(sheetTask.id, p)} onDelete={remove} onReassign={reassign} onClose={() => setSheetTask(null)} /> })()}
   </div>
 }
+// ── For your consideration — a meeting's suggested next steps, waiting on a
+//    yes/no before they touch the board. Add files one into the Icebox (or ↑
+//    straight into Now), Dismiss hides it for good, and the meeting chip opens
+//    where it came from: the transcript lines, the meeting summary, and the way
+//    into the full transcript. Items come from DataContext.materializeNextSteps.
+function Consider({ project }) {
+  const { t, f } = useApp()
+  const { acceptConsider, dismissConsider, noteById } = useData()
+  const [open, setOpen] = usePersisted('course.considerOpen.' + project.id, true)
+  const [source, setSource] = useState(null)
+  const items = project.consider || []
+  if (!items.length) return null
+  const act = (label, icon, onClick, tone) => <button onClick={onClick} title={label}
+    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
+      color: tone || t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 7, padding: '4px 8px', cursor: 'pointer' }}
+    onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+    <Icon n={icon} s={12.5} />{label}</button>
+  return <div style={{ marginTop: 20 }}>
+    <div onClick={() => setOpen(!open)} style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', marginBottom: open ? 9 : 0 }}>
+      <Icon n={open ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
+      <Label style={{ whiteSpace: 'nowrap' }}>For your consideration · {items.length}</Label>
+      <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>suggested next steps from meetings</span>
+    </div>
+    {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {items.map((x) => { const n = x.srcMeeting ? noteById(x.srcMeeting) : null
+        return <div key={x.id} style={{ padding: '10px 12px 10px 14px', borderRadius: 10, border: '1px dashed ' + t.line2, background: t.card }}>
+          <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, lineHeight: 1.4 }}>{x.label}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+            <span onClick={() => x.srcMeeting && setSource(x)} title="Where this came from"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, maxWidth: '100%', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
+                color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '3px 8px', cursor: 'pointer' }}>
+              <Icon n="info-circle" s={12.5} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n ? n.title + (n.date ? ' · ' + n.date.replace(/, \d{4}$/, '') : '') : 'From a meeting'}</span></span>
+            <div style={{ flex: 1 }} />
+            {act('Dismiss', 'x', () => dismissConsider(x.id), t.t3)}
+            {act('Now', 'arrow-up', () => acceptConsider(x.id, 'now'))}
+            {act('Add', 'plus', () => acceptConsider(x.id), t.accent)}
+          </div>
+        </div> })}
+    </div>}
+    {source && <MeetingSource noteId={source.srcMeeting} label={source.label} detail={source.notes} onClose={() => setSource(null)} />}
+  </div>
+}
+
 // small square stepper button for the Now WIP cap
 const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
   flex: 'none', border: '1px solid ' + t.line2, background: 'transparent', color: t.t2, cursor: 'pointer' })
