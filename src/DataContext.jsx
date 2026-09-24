@@ -8,6 +8,8 @@ import { blocksToText } from './lib/blocks'
 import { holdView } from './kit'
 import { seriesForTitle, normalizeTitle } from './lib/seriesAgenda'
 import { findMeetingNote } from './lib/meetingKey'
+import { parseNextSteps, isDuplicateStep } from './lib/nextSteps'
+import { linkMatchesTitle } from './lib/meetingMatch'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'Waiting: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
@@ -71,6 +73,60 @@ async function materializeMeetingActions(areas, notes) {
   return wrote
 }
 
+// ── Meeting next steps → "For your consideration" ─────────────────
+// A meeting's Suggested next steps are Claude's read of what could happen next,
+// not commitments, so they don't go straight onto the board the way owned action
+// items do. Each bullet becomes a 'consider' row on the meeting's project, shown
+// in that project's For your consideration section with a link back to the
+// meeting; Nate accepts it into the Icebox (or Now) or dismisses it.
+//
+// Idempotence without a per-note flag: a bullet is skipped when the project
+// already has a task that says the same thing, whatever its state — open, done,
+// considering, or dismissed (dismissed rows are kept, hidden, for exactly this).
+// Only recent meetings are read, so switching this on doesn't flood every
+// project with a backlog of old suggestions, and a note that ages out is never
+// re-read.
+const NEXT_STEPS_WINDOW_DAYS = 7
+const noteAgeDays = (n) => {
+  const ts = Date.parse(n.date || '') || Date.parse(n.createdAt || '') || 0
+  return ts ? (Date.now() - ts) / 86400000 : Infinity
+}
+async function materializeNextSteps(areas, notes) {
+  const projIndex = {}
+  for (const a of areas) for (const p of a.projects) {
+    projIndex[p.id] = [...(p.tasks || []), ...(p.consider || []), ...(p.dismissed || [])].map((x) => ({ label: x.label, src: x.srcMeeting }))
+  }
+  let wrote = false
+  for (const n of notes) {
+    if (n.kind !== 'meeting' || n.incomplete || !n.nextSteps || !n.project) continue
+    if (noteAgeDays(n) > NEXT_STEPS_WINDOW_DAYS) continue
+    const known = projIndex[n.project]
+    if (!known) continue
+    for (const step of parseNextSteps(n.nextSteps)) {
+      if (known.some((k) => isDuplicateStep(step.label, { label: k.label, sameMeeting: k.src === n.id }))) continue
+      await createTask(n.project, { label: step.label, notes: step.detail || undefined, taskStatus: 'consider', srcMeeting: n.id, sort: 0 })
+      known.push({ label: step.label, src: n.id })
+      wrote = true
+    }
+  }
+  return wrote
+}
+
+// ── Now, deferred ─────────────────────────────────────────────────
+// A task in Now that gets rescheduled to a later day leaves Now as 'deferred'
+// and comes back into Now on its due date. The return happens here, on load,
+// so it happens the first time the app is opened that day.
+const ymdNum = (d) => (d && d.y != null ? d.y * 10000 + (d.m + 1) * 100 + d.d : null)
+async function promoteDeferred(areas, today) {
+  const due = []
+  for (const a of areas) {
+    for (const x of a.areaTasks || []) if (x.taskStatus === 'deferred' && !x.done && (ymdNum(x.dueDate) ?? 0) <= today) due.push(x.id)
+    for (const p of a.projects) for (const x of p.tasks || []) if (x.taskStatus === 'deferred' && !x.done && (ymdNum(x.dueDate) ?? 0) <= today) due.push(x.id)
+  }
+  for (const id of due) await updateTask(id, { taskStatus: 'now', next: false })
+  return due.length > 0
+}
+
 const DataCtx = createContext(null)
 export function useData() { return useContext(DataCtx) }
 
@@ -97,6 +153,11 @@ export function DataProvider({ children }) {
       // check-in row in Pending decisions. See the note at the top of the file.)
       // Pull any un-materialized meeting action items into the project Iceboxes.
       if (await materializeMeetingActions(data.areas, data.notes)) data = await loadAll()
+      // …and recent meetings' suggested next steps into For your consideration.
+      try { if (await materializeNextSteps(data.areas, data.notes)) data = await loadAll() } catch (e) { console.error('next steps materialize failed', e) }
+      // Deferred tasks whose day has come go back into Now.
+      try { if (await promoteDeferred(data.areas, ymdNum(todayYmd()))) data = await loadAll() } catch (e) { console.error('deferred promote failed', e) }
+      loadedDay.current = ymdNum(todayYmd())
       setAreas(data.areas); setNotes(data.notes); setInbox(data.inbox); setAssets(data.assets || []); setSeries(data.series || [])
       setAgendaItems(data.agendaItems || [])
       setNudgeStates(data.nudgeStates || [])
@@ -107,6 +168,15 @@ export function DataProvider({ children }) {
   }
   const reload = () => load(true)
   useEffect(() => { load() }, [])
+  // The app often stays open across midnight (a pinned tab, a PWA left in the
+  // background). Coming back on a new day reloads, which is what returns
+  // deferred tasks to Now on their day.
+  const loadedDay = useRef(null)
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible' && loadedDay.current && loadedDay.current !== ymdNum(todayYmd())) load(true) }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
 
   // ── Optimistic task mutations ────────────────────────────────────────
   // Patch local state synchronously so the UI reacts instantly, then persist in
@@ -126,7 +196,7 @@ export function DataProvider({ children }) {
     return null
   }
   const _ms = (d) => (d && d.y != null ? new Date(d.y, d.m, d.d).getTime() : null)
-  const patchTask = async (id, patch) => {
+  const patchTask = async (id, patch, opts = {}) => {
     // Pushing a due date FORWARD is the avoidance signal — count it. (The old
     // Course app counted this via a Postgres trigger and then never read it;
     // here the drift nudge reads it.) Only forward moves count: pulling a date
@@ -136,6 +206,25 @@ export function DataProvider({ children }) {
     if (cur && 'dueDate' in patch) {
       const before = _ms(cur.dueDate), after = _ms(patch.dueDate)
       if (before != null && after != null && after > before) out.rescheduleCount = (cur.rescheduleCount || 0) + 1
+      // Rescheduling a Now task to a later day takes it out of Now until that
+      // day; pulling a deferred task's date back to today (or clearing it)
+      // returns it now. An explicit lane in the same patch wins.
+      if (!('taskStatus' in patch) && !cur.done) {
+        const dueN = ymdNum(patch.dueDate), todayN = ymdNum(todayYmd())
+        const inNow = cur.taskStatus === 'now' || (cur.priority === 1 && cur.taskStatus !== 'deferred')
+        if (inNow && dueN != null && dueN > todayN) out.taskStatus = 'deferred'
+        else if (cur.taskStatus === 'deferred' && (dueN == null || dueN <= todayN)) out.taskStatus = 'now'
+      }
+    }
+    // Every task edit is undoable with Cmd/Ctrl+Z unless the caller records its
+    // own (richer) undo. The inverse restores exactly the fields this patch
+    // touched, including the lane a reschedule moved.
+    if (cur && !opts.noUndo) {
+      const inverse = Object.fromEntries(Object.keys(out).filter((k) => k !== 'rescheduleCount').map((k) => [k, cur[k] ?? null]))
+      // spawnedId is assigned further down; the undo only reads it when run.
+      // Un-completing a recurring task also takes back the occurrence it spawned.
+      recordUndo(async () => { await patchTask(id, inverse, { noUndo: true }); if (spawnedId) await undoRecurrence(id, spawnedId) },
+        { key: 'task:' + id + ':' + Object.keys(patch).sort().join(',') })
     }
     // Mirror the updated_at that db.updateTask stamps, so the edit counts as
     // project activity (lastTouchAt) immediately rather than only after a reload.
@@ -161,11 +250,35 @@ export function DataProvider({ children }) {
     // un-completing a chore should not leave next week's copy sitting there.
     return spawnedId
   }
+  // ── For your consideration ──────────────────────────────────────
+  // Accept moves a suggestion onto the board (Icebox by default, or Now);
+  // dismiss hides it for good (the row stays so the same suggestion isn't
+  // re-created from the meeting). Both are optimistic and undoable.
+  const _findConsider = (id) => {
+    for (const a of areas) for (const p of a.projects) { const x = (p.consider || []).find((c) => c.id === id); if (x) return { x, pid: p.id } }
+    return null
+  }
+  const _dropConsider = (id) => setAreas((prev) => prev.map((a) => ({ ...a,
+    projects: a.projects.map((p) => (p.consider || []).some((c) => c.id === id) ? { ...p, consider: p.consider.filter((c) => c.id !== id) } : p) })))
+  const acceptConsider = async (id, lane = 'backlog') => {
+    const hit = _findConsider(id); if (!hit) return
+    const moved = { ...hit.x, taskStatus: lane === 'now' ? 'now' : 'backlog', sort: 0 }
+    setAreas((prev) => prev.map((a) => ({ ...a, projects: a.projects.map((p) => p.id !== hit.pid ? p
+      : { ...p, consider: (p.consider || []).filter((c) => c.id !== id), tasks: [...(p.tasks || []), moved] }) })))
+    try { await updateTask(id, { taskStatus: moved.taskStatus, sort: 0 }) } catch (e) { reload(); throw e }
+    recordUndo(async () => { await updateTask(id, { taskStatus: 'consider' }); await load(true) })
+  }
+  const dismissConsider = async (id) => {
+    const hit = _findConsider(id); if (!hit) return
+    _dropConsider(id)
+    try { await updateTask(id, { taskStatus: 'dismissed' }) } catch (e) { reload(); throw e }
+    recordUndo(async () => { await updateTask(id, { taskStatus: 'consider' }); await load(true) })
+  }
   // Undo a completion that spawned a successor: delete the successor and reopen
   // the series on the original, so re-completing it spawns cleanly again.
   const undoRecurrence = async (id, spawnedId) => {
     if (!spawnedId) return
-    try { await removeTask(spawnedId) } catch (e) { console.error('recurrence undo failed', e) }
+    try { await removeTask(spawnedId, { noUndo: true }) } catch (e) { console.error('recurrence undo failed', e) }
     setAreas((prev) => _mapTask(prev, id, (t) => ({ ...t, recurSpawned: false })))
     try { await updateTask(id, { recurSpawned: false }) } catch {}
   }
@@ -184,7 +297,10 @@ export function DataProvider({ children }) {
       id: nextId, area: cur.area, label: cur.label,
       priority: cur.priority, workType: cur.workType === 'scheduled' ? null : cur.workType,
       notes: cur.notes, groupLabel: cur.groupLabel, sort: cur.sort ?? 0,
-      taskStatus: cur.taskStatus === 'now' ? 'now' : 'backlog', next: !!cur.next,
+      // A Now chore's next occurrence waits out of Now until its own day.
+      taskStatus: (cur.taskStatus === 'now' || cur.taskStatus === 'deferred')
+        ? ((ymdNum(nextUp.dueDate) ?? 0) > ymdNum(todayYmd()) ? 'deferred' : 'now') : 'backlog',
+      next: !!cur.next,
       dueDate: nextUp.dueDate,
       recurrence: cur.recurrence, recurParent: seriesId, recurIndex: nextUp.index,
     })
@@ -195,7 +311,9 @@ export function DataProvider({ children }) {
     try { await updateTask(cur.id, { recurSpawned: true, recurParent: seriesId }) } catch {}
     return nextId
   }
-  const removeTask = async (id) => {
+  const removeTask = async (id, opts = {}) => {
+    const cur = _findTask(areas, id)
+    if (cur && !opts.noUndo) recordUndo(async () => { await addTask(cur.project ?? null, cur) })
     setAreas((prev) => prev.map((a) => ({
       ...a,
       areaTasks: (a.areaTasks || []).filter((t) => t.id !== id),
@@ -278,19 +396,36 @@ export function DataProvider({ children }) {
     try { await deleteAgendaItem(id) } catch (e) { reload(); throw e }
   }
 
-  // ── Single-level undo (Cmd/Ctrl+Z) ──────────────────────────────
+  // ── Undo (Cmd/Ctrl+Z) ───────────────────────────────────────────
   // Mutation sites call recordUndo(revertFn); the global key handler runs the
-  // last one. Skipped while focused in a text field so native text-undo wins.
-  const undoRef = useRef(null)
+  // most recent one, and pressing again walks further back. Skipped while
+  // focused in a text field so native text-undo wins. Edits that arrive as a
+  // stream (typing into a task's notes or waiting-on) share a `key`, and
+  // repeats within a couple of seconds collapse into the first entry, so one
+  // undo takes back the whole burst rather than one keystroke.
+  const undoRef = useRef([])
   const [canUndo, setCanUndo] = useState(false)
-  const recordUndo = (revert) => { undoRef.current = revert; setCanUndo(!!revert) }
-  const runUndo = async () => { const r = undoRef.current; if (!r) return; undoRef.current = null; setCanUndo(false); try { await r() } catch (e) { console.error('undo failed', e) } }
+  const recordUndo = (revert, { key } = {}) => {
+    const stack = undoRef.current
+    if (!revert) { undoRef.current = []; setCanUndo(false); return }
+    const top = stack[stack.length - 1]
+    const now = Date.now()
+    if (key && top && top.key === key && now - top.at < 2500) { top.at = now; return }
+    stack.push({ revert, key, at: now })
+    if (stack.length > 40) stack.shift()
+    setCanUndo(true)
+  }
+  const runUndo = async () => {
+    const top = undoRef.current.pop(); setCanUndo(undoRef.current.length > 0)
+    if (!top) return
+    try { await top.revert() } catch (e) { console.error('undo failed', e) }
+  }
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || (e.key !== 'z' && e.key !== 'Z')) return
       const el = document.activeElement
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
-      if (!undoRef.current) return
+      if (!undoRef.current.length) return
       e.preventDefault(); runUndo()
     }
     window.addEventListener('keydown', onKey)
@@ -365,10 +500,13 @@ export function DataProvider({ children }) {
     const discussListFor = (titles) => {
       const want = new Set([].concat(titles || []).map(normalizeTitle).filter(Boolean))
       if (!want.size) return []
+      // A plain assignment matches by title; a person link ("next meeting with
+      // Jon") matches any meeting it resolved to or whose title names them.
+      const matches = (mid) => !!mid && (want.has(normalizeTitle(mid)) || [].concat(titles || []).some((ti) => linkMatchesTitle(mid, ti)))
       const out = []
       for (const a of areas) {
-        for (const tk of a.areaTasks || []) if (!tk.done && tk.workType === 'scheduled' && want.has(normalizeTitle(tk.meetingId || ''))) out.push({ kind: 'task', id: tk.id, label: tk.label, where: a.name, pid: null, task: tk })
-        for (const p of a.projects) for (const tk of p.tasks || []) if (!tk.done && tk.workType === 'scheduled' && want.has(normalizeTitle(tk.meetingId || ''))) out.push({ kind: 'task', id: tk.id, label: tk.label, where: p.name, pid: p.id, task: tk })
+        for (const tk of a.areaTasks || []) if (!tk.done && tk.workType === 'scheduled' && matches(tk.meetingId)) out.push({ kind: 'task', id: tk.id, label: tk.label, where: a.name, pid: null, task: tk })
+        for (const p of a.projects) for (const tk of p.tasks || []) if (!tk.done && tk.workType === 'scheduled' && matches(tk.meetingId)) out.push({ kind: 'task', id: tk.id, label: tk.label, where: p.name, pid: p.id, task: tk })
       }
       for (const it of agendaItems) if (!it.done && want.has(normalizeTitle(it.meetingTitle))) out.push({ kind: 'item', id: it.id, label: it.label, item: it })
       return out
@@ -535,7 +673,7 @@ export function DataProvider({ children }) {
       addAgendaItem, patchAgendaItem, removeAgendaItem, discussListFor, agendaItemsForNote,
       upsertNoteLocal, removeNoteLocal, meetingNoteFor, unfinishedMeetings,
       snoozeNudge, rememberQuestion,
-      patchTask, addTask, removeTask, undoRecurrence,
+      patchTask, addTask, removeTask, undoRecurrence, acceptConsider, dismissConsider,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,

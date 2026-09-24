@@ -227,7 +227,8 @@ export function NoteScreen() {
   const { noteById, noteByTitle, projectName, reload, projectDigest, areaDigest, projectById, allProjects, areaOfProject, areaById, areas, addTask, agendaItemsForNote } = useData()
   const rec = useRecorderCtx()
   const n = noteById(route.id)
-  const [rawOpen, setRawOpen] = useState(false)
+  // Arriving from a task's "where it came from" opens straight to the transcript.
+  const [rawOpen, setRawOpen] = useState(!!route.transcript)
   const [agendaOpen, setAgendaOpen] = useState(false)
   const [nextOpen, setNextOpen] = useState(false)
   const [railOpen, setRailOpen] = useState(false)
@@ -506,7 +507,7 @@ export function NoteScreen() {
       {n.tags.map((tg) => <span key={tg} onClick={() => go({ screen: 'library', tag: tg })} style={{ cursor: 'pointer' }}><Tag>{tg}</Tag></span>)}</div>}
 
     {/* raw transcript collapsible */}
-    {!editing && n.transcript && <div style={{ marginTop: 22 }}>
+    {!editing && n.transcript && <div ref={(el) => { if (el && route.transcript && !el.dataset.scrolled) { el.dataset.scrolled = '1'; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120) } }} style={{ marginTop: 22 }}>
       <div onClick={() => setRawOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
         borderRadius: 10, cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
         <Icon n={rawOpen ? 'chevron-down' : 'chevron-right'} s={14} />

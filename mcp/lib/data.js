@@ -45,6 +45,7 @@ export function blocksToText(blocks = []) {
   return (blocks || []).map((b) => b.p || (b.ul ? b.ul.map((i) => '- ' + i).join('\n') : (b.ol ? b.ol.map((i, n) => `${n + 1}. ${i}`).join('\n') : (b.links ? b.links.map((l) => `[[${l}]]`).join(' ') : '')))).filter(Boolean).join('\n\n')
 }
 
+const ymdNum = (d) => (d && d.y != null ? d.y * 10000 + (d.m + 1) * 100 + d.d : 0)
 const mapTask = (r) => ({ id: r.id, project: r.project_id, label: r.label, done: !!r.done, next: !!r.next, waiting: r.waiting || null, due: ymdStr(r.due_date) || r.due || null, workType: r.work_type || null, priority: r.priority ?? null, status: r.task_status || null, notes: r.notes || null, sort: r.sort ?? 0, repeats: recurrenceLabel(r.recurrence), recurrence: r.recurrence || null })
 const mapMs = (r) => ({ id: r.id, label: r.label, state: r.state, sub: r.sub || null, due: ymdStr(r.due) })
 const noteRow = (n) => ({ id: n.id, kind: n.kind, title: n.title, project: n.project ?? null, area: n.area ?? null, projects: n.projects || [], people: n.people || [], tags: n.tags || [], date: n.date, updated: n.updated, indexed: true, status: n.status ?? 2, transcript: n.transcript ?? null, summary: n.summary ?? null, agenda: n.agenda ?? null, terms: n.terms || [], actions: n.actions || [], body: n.body || [], related: n.related || [] })
@@ -79,7 +80,7 @@ export async function getProject(sb, { id }) {
   const pr = p.data
   return {
     id: pr.id, name: pr.name, area: pr.area_id, status: pr.status, priority: pr.priority ?? null, due: ymdStr(pr.due), blurb: pr.blurb || null, hold: pr.hold || null,
-    tasks: (tasks.data || []).map(mapTask).sort((a, b) => a.sort - b.sort),
+    tasks: (tasks.data || []).filter((r) => r.task_status !== 'dismissed').map(mapTask).sort((a, b) => a.sort - b.sort),
     milestones: (ms.data || []).map(mapMs),
     updates: (upd.data || []).map((u) => ({ body: u.body, at: u.created_at })),
     artifacts: (art.data || []).map((a) => ({ id: a.id, title: a.title, artType: a.art_type, provenance: a.provenance })),
@@ -102,11 +103,14 @@ export async function listTasks(sb, { project, status = 'open', lane } = {}) {
   if (status === 'open') q = q.eq('done', false)
   else if (status === 'done') q = q.eq('done', true)
   const { data, error } = await q; must(error)
-  let rows = (data || []).map(mapTask)
+  // 'dismissed' = a meeting suggestion Nate turned down; the row only exists so
+  // it isn't suggested again. 'consider' = still awaiting his yes/no.
+  let rows = (data || []).filter((r) => r.task_status !== 'dismissed').map(mapTask)
   // lane lives in task_status: 'now' = Now lane, anything else open = the Icebox
   // lane (still stored as 'backlog' — the rename was display-only).
   if (lane === 'now') rows = rows.filter((t) => t.status === 'now')
-  else if (lane === 'backlog') rows = rows.filter((t) => t.status !== 'now')
+  else if (lane === 'backlog') rows = rows.filter((t) => !['now', 'deferred', 'consider'].includes(t.status))
+    else if (lane === 'consider') rows = rows.filter((t) => t.status === 'consider')
   return rows
 }
 // Claude passes `until` as a YYYY-MM-DD string (every other date in this API is
@@ -157,7 +161,8 @@ async function spawnNext(sb, id) {
     id: newId, project_id: cur.project_id, area_id: cur.area_id, label: cur.label,
     done: false, next: !!cur.next, waiting: null, due_date: nx.dueDate,
     work_type: cur.work_type === 'scheduled' ? null : cur.work_type,
-    task_status: cur.task_status === 'now' ? 'now' : 'backlog',
+    // A Now chore's next occurrence waits out of Now ('deferred') until its day; the app moves it back.
+    task_status: (cur.task_status === 'now' || cur.task_status === 'deferred') ? (ymdNum(nx.dueDate) > ymdNum(todayYmd()) ? 'deferred' : 'now') : 'backlog',
     priority: cur.priority ?? null, notes: cur.notes ?? null, group_label: cur.group_label ?? null,
     sort: cur.sort ?? 0, completed_at: null,
     recurrence: cur.recurrence, recur_parent: seriesId, recur_index: nx.index, recur_spawned: false,

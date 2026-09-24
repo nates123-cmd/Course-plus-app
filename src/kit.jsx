@@ -2,9 +2,11 @@
 // prototype's course-kit.jsx to ESM. Components read { t, f } from useApp().
 // Styles are inline against the token var-map `t`; `f` is the Direction-B font
 // role object. This is the work (status-forward) + document (calm) shared kit.
-import { Fragment, useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useApp } from './ctx'
 import { parseLine } from './lib/outline'
+import { meetingLabel } from './lib/meetingMatch'
 
 // ── Area accent lookup ──────────────────────────────────────────
 const AREA_HUE = { arrow: 'area_arrow', sds: 'area_sds', brain: 'area_brain' }
@@ -48,12 +50,13 @@ export function Tag({ children, onClick, active }) {
 export function StateTag({ kind, label }) {
   const { t, f } = useApp()
   const risk = kind === 'waiting'
-  return <span title={risk ? 'Waiting on someone or something' : 'Scheduled — parked for a meeting'}
+  const deferred = kind === 'deferred'
+  return <span title={risk ? 'Waiting on someone or something' : deferred ? 'Moved out of Now — returns to Now on its due date' : 'Scheduled — parked for a meeting'}
     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, maxWidth: 150,
       fontFamily: f.ui, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
       color: risk ? t.risk : t.t2, background: risk ? t.riskBg : t.tagBg,
       border: '1px solid ' + (risk ? t.riskLine : 'transparent'), borderRadius: 6, padding: '2px 8px' }}>
-    <Icon n={risk ? 'player-pause' : 'calendar'} s={11} />
+    <Icon n={risk ? 'player-pause' : deferred ? 'player-play' : 'calendar'} s={11} />
     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span></span>
 }
 
@@ -63,7 +66,8 @@ export function StateTag({ kind, label }) {
 export function stateTagFor(x) {
   if (x.done) return null
   if (x.taskStatus === 'waiting' || x.waiting) return { kind: 'waiting', label: x.waiting || 'Waiting' }
-  if (x.workType === 'scheduled') return { kind: 'scheduled', label: x.meetingId || 'Scheduled' }
+  if (x.workType === 'scheduled') return { kind: 'scheduled', label: meetingLabel(x.meetingId) || 'Scheduled' }
+  if (x.taskStatus === 'deferred' && x.dueDate) return { kind: 'deferred', label: 'Now on ' + fmtDate(x.dueDate) }
   return null
 }
 
@@ -434,14 +438,50 @@ export function MiniCal({ value, onPick, onClear }) {
 }
 
 // A clickable date pill that opens MiniCal. value = {y,m,d} | null.
+// FloatPop — a popover rendered into <body> at fixed coordinates next to its
+// anchor, opening below when there's room and above when there isn't, clamped
+// to the viewport. Unlike Popover it can't be clipped by a scrolling ancestor
+// (the TaskSheet's body is one, which is what cut the calendar's month header
+// off when the Due picker opened upward).
+export function FloatPop({ anchorRef, children, onClose, width = 262, estHeight = 320, prefer = 'below', maxHeight }) {
+  const { t } = useApp()
+  const ref = useRef(null)
+  const [pos, setPos] = useState(null)
+  const place = () => {
+    const a = anchorRef.current; if (!a) return
+    const r = a.getBoundingClientRect()
+    const vw = window.innerWidth, vh = window.innerHeight, gap = 8, pad = 10
+    const h = (ref.current && ref.current.offsetHeight) || estHeight
+    const below = vh - r.bottom - gap - pad, above = r.top - gap - pad
+    const down = prefer === 'below' ? (below >= h || below >= above) : !(above >= h || above >= below)
+    let top = down ? r.bottom + gap : r.top - gap - h
+    top = Math.max(pad, Math.min(top, vh - h - pad))
+    const left = Math.max(pad, Math.min(r.left, vw - width - pad))
+    setPos({ top, left })
+  }
+  useLayoutEffect(() => { place() }, [])
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target) && !(anchorRef.current && anchorRef.current.contains(e.target))) onClose && onClose() }
+    const re = () => place()
+    const id = setTimeout(() => document.addEventListener('mousedown', h), 0)
+    window.addEventListener('resize', re); window.addEventListener('scroll', re, true)
+    return () => { clearTimeout(id); document.removeEventListener('mousedown', h); window.removeEventListener('resize', re); window.removeEventListener('scroll', re, true) }
+  }, [])
+  return createPortal(<div ref={ref} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
+    style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, zIndex: 1000, width,
+      background: t.card, border: '1px solid ' + t.line, borderRadius: 12, padding: 6, boxShadow: t.shadow,
+      maxHeight: maxHeight ? `min(${maxHeight}px, calc(100vh - 20px))` : 'calc(100vh - 20px)', overflowY: 'auto', visibility: pos ? 'visible' : 'hidden' }}>{children}</div>, document.body)
+}
+
 export function DatePill({ value, onChange, label = 'Due', empty = '+ Add date', icon = 'flag', bottom, variant = 'risk' }) {
   const { t, f } = useApp()
   const [open, setOpen] = useState(false)
+  const anchor = useRef(null)
   const has = !!value
   const skin = variant === 'accent' ? { c: t.accent, bg: t.accentBg, ln: t.accentLine }
     : variant === 'neutral' ? { c: t.t2, bg: t.sel, ln: 'transparent' }
     : { c: t.risk, bg: t.riskBg, ln: t.riskLine }
-  return <span style={{ position: 'relative', display: 'inline-flex' }}>
+  return <span ref={anchor} style={{ position: 'relative', display: 'inline-flex' }}>
     <span onClick={() => setOpen((o) => !o)} title="Set date" style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
       cursor: 'pointer', fontFamily: f.ui, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
       color: has ? skin.c : t.t3, background: has ? skin.bg : t.sel,
@@ -450,8 +490,8 @@ export function DatePill({ value, onChange, label = 'Due', empty = '+ Add date',
       onMouseEnter={(e) => { if (!has) e.currentTarget.style.background = t.tagBg }}
       onMouseLeave={(e) => { if (!has) e.currentTarget.style.background = t.sel }}>
       <Icon n={has ? icon : 'calendar-plus'} s={12} />{has ? (label ? label + ' ' : '') + fmtDate(value) : empty}</span>
-    {open && <Popover onClose={() => setOpen(false)} width={262} bottom={bottom}>
+    {open && <FloatPop anchorRef={anchor} onClose={() => setOpen(false)} width={262} prefer={bottom != null ? 'above' : 'below'}>
       <MiniCal value={value} onPick={(d) => { onChange(d); setOpen(false) }} onClear={() => { onChange(null); setOpen(false) }} />
-    </Popover>}
+    </FloatPop>}
   </span>
 }

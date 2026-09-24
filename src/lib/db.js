@@ -71,11 +71,12 @@ function mapArtifact(r) {
   return { id: r.id, project: r.project_id, title: r.title, artType: r.art_type, provenance: r.provenance, fromCount: r.from_count, body: r.body, at: r.created_at }
 }
 
+const isHeld = (x) => x.taskStatus === 'consider' || x.taskStatus === 'dismissed'
 function assemble(areaRows, projRows, taskRows, msRows, updRows, artRows) {
   const allTasks = taskRows.map(mapTask)
   const tasksByProj = groupBy(allTasks.filter((t) => t.project), 'project')
   // Pillar-only tasks (no project) hang off their area directly.
-  const looseByArea = groupBy(allTasks.filter((t) => !t.project && t.area), 'area')
+  const looseByArea = groupBy(allTasks.filter((t) => !t.project && t.area && !isHeld(t)), 'area')
   const msByProj = groupBy(msRows.map(mapMilestone), 'project')
   const updByProj = groupBy(updRows.map(mapUpdate), 'project')
   const artByProj = groupBy(artRows.map(mapArtifact), 'project')
@@ -87,7 +88,13 @@ function assemble(areaRows, projRows, taskRows, msRows, updRows, artRows) {
       id: p.id, name: p.name, status: p.status, priority: p.priority ?? null,
       due: p.due || undefined, blurb: p.blurb || undefined, hold: p.hold || undefined,
       pinned: Array.isArray(p.pinned) ? p.pinned : [],
-      tasks: (tasksByProj[p.id] || []).sort((x, y) => x.sort - y.sort),
+      // Meeting next-steps waiting on a yes/no live beside the task list, not in
+      // it: 'consider' rows are the project's "For your consideration" queue and
+      // 'dismissed' rows are kept only so the same suggestion never comes back.
+      // Neither counts as an open task anywhere.
+      tasks: (tasksByProj[p.id] || []).filter((x) => !isHeld(x)).sort((x, y) => x.sort - y.sort),
+      consider: (tasksByProj[p.id] || []).filter((x) => x.taskStatus === 'consider' && !x.done).sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1)),
+      dismissed: (tasksByProj[p.id] || []).filter((x) => x.taskStatus === 'dismissed'),
       milestones: (msByProj[p.id] || []).sort((x, y) => x.sort - y.sort),
       updates: (updByProj[p.id] || []).sort((x, y) => (x.at < y.at ? 1 : -1)),
       artifacts: (artByProj[p.id] || []).sort((x, y) => (x.at < y.at ? 1 : -1)),
