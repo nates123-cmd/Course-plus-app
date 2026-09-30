@@ -21,6 +21,7 @@ import {
   writeBreakLookup,
   writeCourseNote,
   writeCourseTask,
+  writeCueAdd,
   writeInbox,
   writeInkThought,
   writeStockIdea,
@@ -100,6 +101,8 @@ async function dispatch(
   ownerId: string,
   item: RoutedItem,
   byName: Map<string, { id: string; name: string; status: string }>,
+  raw: string,
+  src: string,
 ): Promise<WriteResult> {
   // The classifier returns a project NAME copied from the list we gave it;
   // resolving it to an id here means a hallucinated name degrades to "no
@@ -114,7 +117,7 @@ async function dispatch(
     case 'course_note':
       return writeCourseNote(admin, ownerId, item, projectId, projectName)
     case 'stock_out':
-      return writeStockOut(admin, ownerId, item)
+      return writeStockOut(admin, ownerId, item, src)
     case 'stock_staple':
       return writeStockStaple(admin, ownerId, item)
     case 'stock_idea':
@@ -125,6 +128,8 @@ async function dispatch(
       return writeBreakLookup(admin, ownerId, item)
     case 'break_flashcard':
       return writeBreakFlashcard(admin, ownerId, item)
+    case 'cue_add':
+      return writeCueAdd(admin, ownerId, item, raw)
     default:
       throw new Error(`unroutable kind: ${item.kind}`)
   }
@@ -167,7 +172,7 @@ export async function route(
       }
 
       try {
-        const result = await dispatch(admin, ownerId, item, byName)
+        const result = await dispatch(admin, ownerId, item, byName, text, src)
         logged.push({ ...result, kind: item.kind, confidence: item.confidence })
       } catch (err) {
         // One writer failing must not take the other items down with it.

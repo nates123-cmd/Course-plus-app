@@ -87,7 +87,11 @@ Deno.serve(async (req) => {
   // mean a bug in that contract, not a lost capture, but the capture is what
   // matters — so report honestly rather than pretending it saved.
   try {
-    const outcome = await route(admin, OWNER_ID, text, 'watch')
+    // Where the capture came from, for provenance labels and the inbox id.
+    // Allow-listed: anything else (including no header, the watch Shortcut)
+    // stays 'watch', which is what every capture was labelled before.
+    const src = req.headers.get('x-capture-src') === 'reminders' ? 'reminders' : 'watch'
+    const outcome = await route(admin, OWNER_ID, text, src)
     return line(outcome)
   } catch (err) {
     console.error('router threw:', err instanceof Error ? err.message : err)

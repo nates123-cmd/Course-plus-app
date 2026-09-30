@@ -34,6 +34,7 @@ Tick is the only suite app in a separate project, and nothing here targets it.
 | `ink_thought` | `entries` + `thoughts` | "ink - I feel better in the morning when I hydrate" |
 | `break_lookup` | `look_up_later` | "look up what a mansard roof is" |
 | `break_flashcard` | `flashcards` | "add tendentious to break flashcards" |
+| `cue_add` | `recommendations` (status `queued`, `extension.needs_enrich`) | "cue: Gone Girl", "cue book: Gone Girl" |
 | `unknown` | `cp_inbox` | anything ambiguous |
 
 Three distinctions the prompt works hard to hold, because the tables are
