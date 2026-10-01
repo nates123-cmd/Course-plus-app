@@ -79,7 +79,8 @@ function groupByDay(blocks) {
 }
 
 function BlockRow({ block, series, note, onOpen, onHold, onDelete }) {
-  const { t, f, go } = useApp()
+  const { t, f, go, look } = useApp()
+  const memo = look === 'memo'
   const [hover, setHover] = useState(false)
   const end = block.hour + block.duration / 60
   const isMeeting = block.type === 'meeting'
@@ -104,10 +105,16 @@ function BlockRow({ block, series, note, onOpen, onHold, onDelete }) {
         transform: pressing ? 'scale(0.995)' : 'none',
         transition: 'background .12s, transform .12s' }}
     >
-      <div style={{ flex: 'none', width: 96, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2,
+      {/* Memo: a narrow mono time column (start over end) so the title keeps the
+          row width — the classic 96px range squeezed titles to one word a line. */}
+      {memo ? <div style={{ flex: 'none', width: 54, fontFamily: f.meta, fontSize: 12, fontWeight: 500, color: t.accent,
+        fontVariantNumeric: 'tabular-nums', paddingTop: 2, lineHeight: 1.35 }}>
+        {fmtTime(block.hour)}<div style={{ color: t.t3, fontSize: 11 }}>{fmtTime(end)}</div>
+      </div>
+      : <div style={{ flex: 'none', width: 96, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2,
         fontVariantNumeric: 'tabular-nums', paddingTop: 1 }}>
         {fmtTime(block.hour)} – {fmtTime(end)}
-      </div>
+      </div>}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: f.ui, fontSize: 14, fontWeight: 500, color: t.t1 }}>{block.title}</div>
         {/* This block belongs to a series, so starting it here carries the
@@ -122,13 +129,13 @@ function BlockRow({ block, series, note, onOpen, onHold, onDelete }) {
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent }}>
           <Icon n="repeat" s={12} c={t.accent} />{series.name}</span>}
       </div>
-      <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />
-      <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
+      {!memo && <Icon n="arrow-up-right" s={15} c={hover ? t.t2 : t.t3} />}
+      {!(memo && badge === 'Meeting') && <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
         fontFamily: f.ui, fontSize: 11, fontWeight: 600,
         color: series ? t.accent : t.t2, background: series ? t.accentBg : t.tagBg,
         border: '1px solid ' + (series ? t.accentLine : 'transparent'),
         borderRadius: 'calc(6px * var(--rs))', padding: '2px 8px', whiteSpace: 'nowrap' }}>
-        {series && <Icon n="repeat" s={11} c={t.accent} />}{badge}</span>
+        {series && <Icon n="repeat" s={11} c={t.accent} />}{badge}</span>}
       <span
         className="task-grip"
         onClick={(e) => { e.stopPropagation(); onDelete(block) }}

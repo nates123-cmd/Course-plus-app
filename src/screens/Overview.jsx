@@ -404,8 +404,10 @@ function NowRow({ x, first, onToggle, onOpen }) {
       background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
     {memo ? <StatusCircle state="now" c={t.accent} />
       : <span style={{ width: 16, height: 16, borderRadius: 'calc(5px * var(--rs))', flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />}
-    <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: memo ? 15 : 14, fontWeight: memo ? 500 : 400,
-      letterSpacing: memo ? '-0.012em' : 0, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    <span style={memo
+      ? { flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 15, fontWeight: 500, letterSpacing: '-0.012em', lineHeight: 1.35, color: t.t1,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }
+      : { flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
     {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1 }} />}
     {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
     {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.meta, fontSize: memo ? 11 : 11.5, fontWeight: memo ? 500 : 600,
