@@ -97,71 +97,73 @@
   --rs: 0.25;
   font-feature-settings: 'cv11', 'ss03';
 }
+/* memo palette = Graphite (2026-10-01): grey engineering-pad paper, graphite
+   cover band, classic's deep green as the accent. Replaced the cream/kraft set. */
 :root[data-look='memo'][data-theme='light'] {
-  --bg: #f7f3ea;          /* memo-book paper */
-  --panel: #f1ebde;
-  --card: #f7f3ea;        /* cards sit flush on the page: rules, not boxes */
-  --raise: #fbf8f1;
-  --line: #e3d9c5;
-  --line2: #cbbd9f;
-  --t1: #2b2925;          /* print ink */
-  --t2: #625a4c;
-  --t3: #8f8676;
-  --accent: #7a5a2e;      /* kraft, darkened to hold text contrast */
-  --onAccent: #f7f3ea;
-  --accentBg: rgba(176, 145, 98, 0.16);
-  --accentLine: rgba(122, 90, 46, 0.35);
-  --sel: #ece4d3;
-  --tagBg: #ece4d3;
-  --tagText: #4c3729;
-  --shadow: 0 1px 0 rgba(43, 41, 37, 0.06), 0 6px 20px rgba(43, 41, 37, 0.08);
-  --ph: #a39985;
-  --selection: rgba(176, 145, 98, 0.28);
-  --risk: #a2482a;
-  --riskBg: rgba(162, 72, 42, 0.10);
-  --riskLine: rgba(162, 72, 42, 0.28);
-  --good: #5d6b3a;
-  --goodBg: rgba(93, 107, 58, 0.12);
+  --bg: #f2f2f0;          /* grey engineering-pad paper */
+  --panel: #e9e9e6;
+  --card: #f2f2f0;        /* cards sit flush on the page: rules, not boxes */
+  --raise: #fafaf9;
+  --line: #dcdcd8;
+  --line2: #bdbdb7;
+  --t1: #1e1f1f;          /* pencil-black ink */
+  --t2: #535553;
+  --t3: #898b88;
+  --accent: #2f6b4f;      /* classic's green, deepened for text contrast */
+  --onAccent: #f2f2f0;
+  --accentBg: rgba(47, 107, 79, 0.10);
+  --accentLine: rgba(47, 107, 79, 0.28);
+  --sel: #e4e4e0;
+  --tagBg: #e4e4e0;
+  --tagText: #3a3c3a;
+  --shadow: 0 1px 0 rgba(30, 31, 31, 0.06), 0 6px 20px rgba(30, 31, 31, 0.08);
+  --ph: #9a9c99;
+  --selection: rgba(47, 107, 79, 0.18);
+  --risk: #bf4320;
+  --riskBg: rgba(191, 67, 32, 0.10);
+  --riskLine: rgba(191, 67, 32, 0.28);
+  --good: #2f6b4f;
+  --goodBg: rgba(47, 107, 79, 0.12);
   --area_arrow: #3b6680;  /* Field Notes steel blue */
   --area_sds: #8a6a3c;
   --area_brain: #6b4f5e;
-  --onArea: #f7f3ea;
-  --kraft: #b09162;       /* the cover */
-  --kraftInk: #2b2116;
-  --kraftRule: #4c3729;
+  --onArea: #f2f2f0;
+  --kraft: #2b2d2e;       /* the cover: graphite (token name kept from kraft) */
+  --kraftInk: #f2f2f0;
+  --kraftRule: #9fa3a5;
 }
 :root[data-look='memo'][data-theme='dark'] {
-  --bg: #1a1814;          /* the black-cover editions */
-  --panel: #1f1c18;
-  --card: #1a1814;
-  --raise: #24211c;
-  --line: #2e2a24;
-  --line2: #3d382f;
-  --t1: #efe7d6;
-  --t2: #a89e8b;
-  --t3: #766d5e;
-  --accent: #c9a46a;
-  --onAccent: #1a1814;
-  --accentBg: rgba(201, 164, 106, 0.13);
-  --accentLine: rgba(201, 164, 106, 0.32);
-  --sel: #2a2620;
-  --tagBg: #2a2620;
-  --tagText: #cbbd9f;
+  --bg: #141515;
+  --panel: #191a1a;
+  --card: #141515;
+  --raise: #1e2020;
+  --line: #262828;
+  --line2: #353838;
+  --t1: #e8e8e5;
+  --t2: #9c9e9a;
+  --t3: #6a6c69;
+  --accent: #62b08b;
+  --onAccent: #141515;
+  --accentBg: rgba(98, 176, 139, 0.13);
+  --accentLine: rgba(98, 176, 139, 0.32);
+  --sel: #202222;
+  --tagBg: #202222;
+  --tagText: #bcbeba;
   --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.4);
-  --ph: #6b6355;
-  --selection: rgba(201, 164, 106, 0.22);
-  --risk: #d77d5c;
-  --riskBg: rgba(215, 125, 92, 0.14);
-  --riskLine: rgba(215, 125, 92, 0.30);
-  --good: #9aac70;
-  --goodBg: rgba(154, 172, 112, 0.14);
+  --ph: #5f615e;
+  --selection: rgba(98, 176, 139, 0.22);
+  --risk: #e0704f;
+  --riskBg: rgba(224, 112, 79, 0.14);
+  --riskLine: rgba(224, 112, 79, 0.30);
+  --good: #62b08b;
+  --goodBg: rgba(98, 176, 139, 0.14);
   --area_arrow: #8fb0c6;
   --area_sds: #c9a46a;
   --area_brain: #b9a0ad;
-  --onArea: #1a1814;
-  --kraft: #8f7448;
-  --kraftInk: #1a1410;
-  --kraftRule: #2b2116;
+  --onArea: #141515;
+  --kraft: #303335;
+  --kraftInk: #e8e8e5;
+  --kraftRule: #8d9193;
 }
 
 html, body {
