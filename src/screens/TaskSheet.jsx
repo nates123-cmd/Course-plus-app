@@ -73,7 +73,7 @@ function Chip({ active, onClick, children, tone }) {
   const accent = tone || t.accent
   return <span onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
     cursor: 'pointer', whiteSpace: 'nowrap', color: active ? t.onAccent : t.t2, background: active ? accent : t.sel,
-    border: '1px solid ' + (active ? accent : 'transparent'), borderRadius: 8, padding: '7px 12px', transition: 'background .12s, color .12s' }}
+    border: '1px solid ' + (active ? accent : 'transparent'), borderRadius: 'calc(8px * var(--rs))', padding: '7px 12px', transition: 'background .12s, color .12s' }}
     onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.tagBg }}
     onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = t.sel }}>{children}</span>
 }
@@ -103,7 +103,7 @@ function RepeatField({ task, onPatch }) {
 
   const numField = (value, onChange, width = 54) => <input type="number" min={1} value={value}
     onChange={(e) => onChange(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-    style={{ width, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg,
+    style={{ width, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.bg,
       fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, padding: '6px 8px' }} />
 
   return <div>
@@ -115,7 +115,7 @@ function RepeatField({ task, onPatch }) {
       {rule && <Chip onClick={clear} tone={t.risk}><Icon n="x" s={13} />Clear</Chip>}
     </div>
 
-    {rule && custom && <div style={{ marginTop: 12, padding: 12, background: t.sel, borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    {rule && custom && <div style={{ marginTop: 12, padding: 12, background: t.sel, borderRadius: 'calc(10px * var(--rs))', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>Every</span>
         {numField(rule.interval, (n) => set({ interval: n }))}
@@ -129,7 +129,7 @@ function RepeatField({ task, onPatch }) {
           return <span key={i} onClick={() => {
             const cur = rule.weekdays || []
             set({ weekdays: on ? cur.filter((d) => d !== i) : [...cur, i] })
-          }} style={{ width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }} style={{ width: 32, height: 32, borderRadius: 'calc(8px * var(--rs))', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', fontFamily: f.ui, fontSize: 12.5, fontWeight: 700,
             color: on ? t.onAccent : t.t2, background: on ? t.accent : t.bg, border: '1px solid ' + (on ? t.accent : t.line2) }}>{L}</span>
         })}
@@ -307,10 +307,10 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
       borderRadius: isMobile ? '20px 20px 0 0' : '18px 18px 0 0', boxShadow: t.shadow, overflow: 'hidden', maxHeight: '86vh',
       display: 'flex', flexDirection: 'column', transform: mounted ? 'translateY(0)' : 'translateY(24px)', transition: 'transform .2s cubic-bezier(.2,.8,.2,1)' }}>
       <div style={{ display: 'flex', justifyContent: 'center', padding: '9px 0 2px', flex: 'none' }}>
-        <span style={{ width: 38, height: 4, borderRadius: 3, background: t.line2 }} /></div>
+        <span style={{ width: 38, height: 4, borderRadius: 'calc(3px * var(--rs))', background: t.line2 }} /></div>
       <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '8px 16px 16px' }}>
-          <span onClick={() => onPatch({ done: !task.done })} style={{ width: 22, height: 22, borderRadius: 7, flex: 'none', marginTop: 2, position: 'relative', cursor: 'pointer', border: '1.5px solid ' + (task.done ? t.accent : t.t3), background: task.done ? t.accent : 'transparent' }}>
+          <span onClick={() => onPatch({ done: !task.done })} style={{ width: 22, height: 22, borderRadius: 'calc(7px * var(--rs))', flex: 'none', marginTop: 2, position: 'relative', cursor: 'pointer', border: '1.5px solid ' + (task.done ? t.accent : t.t3), background: task.done ? t.accent : 'transparent' }}>
             {task.done && <Icon n="check" s={15} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
           <textarea ref={titleRef} value={title} rows={1} onChange={(e) => { setTitle(e.target.value); autosize(e.target) }} onBlur={commitTitle}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} className="selectable"
@@ -320,7 +320,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 16px', flexWrap: 'wrap' }}>
           <span style={{ position: 'relative', display: 'inline-flex' }}>
             <span onClick={() => onReassign && setProjOpen((o) => !o)} title={onReassign ? 'Change project or pillar' : undefined}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: onReassign ? 'pointer' : 'default' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: onReassign ? 'pointer' : 'default' }}>
               {project ? <><AreaDot areaId={project.area} s={7} />{project.name}</>
                 : pillarName ? <><AreaDot areaId={pillarId} s={7} />{pillarName} <span style={{ color: t.t3, fontWeight: 500 }}>· pillar</span></>
                 : <span style={{ color: t.t3, fontWeight: 500 }}>No project</span>}
@@ -374,14 +374,14 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
             : <input autoFocus value={groupNew} onChange={(e) => setGroupNew(e.target.value)}
                 onBlur={commitGroup}
                 onKeyDown={(e) => { if (e.key === 'Enter') commitGroup(); if (e.key === 'Escape') setGroupNew(null) }}
-                placeholder="Group name…" style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0,
+                placeholder="Group name…" style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0,
                   background: t.bg, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 10px' }} />}
         </div>)}
         {task.workType === 'scheduled' && row('Scheduled for', (() => {
           const assigned = task.meetingId || null
           return <span style={{ position: 'relative', display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start' }}>
             <span ref={mtgAnchor} onClick={() => setMtgOpen((o) => !o)} title="Which meeting on your agenda will this be discussed in?"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', borderRadius: 8, padding: '6px 11px',
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px',
                 color: assigned ? t.t1 : t.risk, background: assigned ? t.sel : t.riskBg, border: '1px solid ' + (assigned ? 'transparent' : t.riskLine) }}>
               <Icon n={isPersonLink(assigned) ? 'user' : 'calendar-event'} s={14} />{assigned ? meetingLabel(assigned) : 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
             {isPersonLink(assigned) && (() => { const pl = parsePersonLink(assigned)
@@ -393,15 +393,15 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
             </FloatPop>}
           </span>
         })())}
-        {row('Waiting on', <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.sel, borderRadius: 9, padding: '0 12px', height: 38 }}>
+        {row('Waiting on', <div style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.sel, borderRadius: 'calc(9px * var(--rs))', padding: '0 12px', height: 38 }}>
           <Icon n="player-pause" s={15} c={t.t3} />
           <input value={task.waiting || ''} onChange={(e) => onPatch({ waiting: e.target.value || null })} placeholder="A person or dependency…"
             style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 13, color: t.t1 }} /></div>)}
         {row('Notes', <textarea value={task.notes || ''} onChange={(e) => onPatch({ notes: e.target.value || null })} placeholder="Add detail…" rows={2} className="selectable"
-          style={{ width: '100%', border: '1px solid ' + t.line2, outline: 'none', resize: 'vertical', background: t.bg, borderRadius: 9, padding: '9px 11px', fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1 }} />)}
+          style={{ width: '100%', border: '1px solid ' + t.line2, outline: 'none', resize: 'vertical', background: t.bg, borderRadius: 'calc(9px * var(--rs))', padding: '9px 11px', fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1 }} />)}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 16px', borderTop: '1px solid ' + t.line, background: t.panel, flex: 'none' }}>
-        <button onClick={() => onDelete(task.id)} title="Delete task" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.risk, background: 'transparent', border: '1px solid transparent', borderRadius: 9, padding: '8px 11px', cursor: 'pointer' }}
+        <button onClick={() => onDelete(task.id)} title="Delete task" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.risk, background: 'transparent', border: '1px solid transparent', borderRadius: 'calc(9px * var(--rs))', padding: '8px 11px', cursor: 'pointer' }}
           onMouseEnter={(e) => e.currentTarget.style.background = t.riskBg} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
           <Icon n="trash" s={15} />Delete</button>
         <div style={{ flex: 1 }} />
@@ -426,7 +426,7 @@ function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, on
   const head = (label) => <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px' }}>{label}</div>
   const pl = parsePersonLink(assigned)
   return <div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 4px 4px', padding: '0 10px', height: 36, borderRadius: 8, background: t.sel }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 4px 4px', padding: '0 10px', height: 36, borderRadius: 'calc(8px * var(--rs))', background: t.sel }}>
       <Icon n="sparkles" s={14} c={t.t3} />
       <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Or type it: ask Jon next meeting"
         onKeyDown={(e) => { if (e.key === 'Enter' && resolved) onPickPerson(resolved.name, resolved.meetings) }}

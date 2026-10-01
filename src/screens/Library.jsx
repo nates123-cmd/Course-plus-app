@@ -58,12 +58,12 @@ export function LibraryScreen() {
         {KINDS.map(([id, label]) => (
           <span key={id} onClick={() => setKind(id)} style={{ fontFamily: f.ui, fontSize: 12.5,
             fontWeight: 600, color: kind === id ? t.t1 : t.t3, background: kind === id ? t.sel : 'transparent',
-            borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>{label}</span>
+            borderRadius: 'calc(8px * var(--rs))', padding: '6px 12px', cursor: 'pointer' }}>{label}</span>
         ))}
         {tag && (
           <span onClick={() => setTag(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
             fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.accent, background: t.accentBg,
-            border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '4px 10px', marginLeft: 6, cursor: 'pointer' }}>
+            border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px', marginLeft: 6, cursor: 'pointer' }}>
             #{tag}<Icon n="x" s={12} />
           </span>
         )}
@@ -112,7 +112,7 @@ export function LibraryScreen() {
               {n.incomplete && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui,
                   fontSize: 10.5, fontWeight: 700, color: t.risk, background: t.riskBg,
-                  border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>
+                  border: '1px solid ' + t.riskLine, borderRadius: 'calc(6px * var(--rs))', padding: '1px 7px' }}>
                   <Icon n="alert-triangle" s={11} />Incomplete
                 </span>
               )}
@@ -120,7 +120,7 @@ export function LibraryScreen() {
               {ref && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui,
                   fontSize: 10.5, fontWeight: 600, color: t.accent, background: t.accentBg,
-                  border: '1px solid ' + t.accentLine, borderRadius: 6, padding: '1px 7px' }}>
+                  border: '1px solid ' + t.accentLine, borderRadius: 'calc(6px * var(--rs))', padding: '1px 7px' }}>
                   <Icon n="bookmark" s={11} />Ref
                 </span>
               )}
@@ -134,7 +134,7 @@ export function LibraryScreen() {
               </span>
               <button onClick={(e) => removeNote(n, e)} title="Delete from library"
                 style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', width: 26, height: 26,
-                  borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+                  borderRadius: 'calc(7px * var(--rs))', border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
                 <Icon n="trash-2" s={14} />

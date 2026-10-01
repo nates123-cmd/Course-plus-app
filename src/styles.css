@@ -67,6 +67,103 @@
   --onArea: #16130e;
 }
 
+/* ── LOOK ────────────────────────────────────────────────────────
+   A second axis beside light/dark: [data-look] on <html>, 'classic' (the
+   original Direction B) or 'memo' (Field Notes memo book + Linear type, see
+   DESIGN.md). Toggled from the top bar, persisted as course.look. Fonts, radius
+   scale and palette all hang off these vars, so flipping back is one tap. */
+:root {
+  --f-title: 'Hanken Grotesk', sans-serif;
+  --f-body: 'Hanken Grotesk', sans-serif;
+  --f-ui: 'Hanken Grotesk', sans-serif;
+  --f-meta: 'Hanken Grotesk', sans-serif;
+  --f-label: 'Hanken Grotesk', sans-serif;
+  --f-mono: ui-monospace, monospace;
+  --f-titleW: 600;
+  --f-titleSpacing: -0.02em;
+  --f-labelSpacing: 0.09em;
+  --rs: 1; /* multiplier on every border radius */
+}
+:root[data-look='memo'] {
+  --f-title: 'Inter', sans-serif;
+  --f-body: 'Inter', sans-serif;
+  --f-ui: 'Inter', sans-serif;
+  --f-meta: 'JetBrains Mono', ui-monospace, monospace;
+  --f-label: 'Jost', sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --f-titleW: 600;
+  --f-titleSpacing: -0.035em;
+  --f-labelSpacing: 0.18em;
+  --rs: 0.25;
+  font-feature-settings: 'cv11', 'ss03';
+}
+:root[data-look='memo'][data-theme='light'] {
+  --bg: #f7f3ea;          /* memo-book paper */
+  --panel: #f1ebde;
+  --card: #f7f3ea;        /* cards sit flush on the page: rules, not boxes */
+  --raise: #fbf8f1;
+  --line: #e3d9c5;
+  --line2: #cbbd9f;
+  --t1: #2b2925;          /* print ink */
+  --t2: #625a4c;
+  --t3: #8f8676;
+  --accent: #7a5a2e;      /* kraft, darkened to hold text contrast */
+  --onAccent: #f7f3ea;
+  --accentBg: rgba(176, 145, 98, 0.16);
+  --accentLine: rgba(122, 90, 46, 0.35);
+  --sel: #ece4d3;
+  --tagBg: #ece4d3;
+  --tagText: #4c3729;
+  --shadow: 0 1px 0 rgba(43, 41, 37, 0.06), 0 6px 20px rgba(43, 41, 37, 0.08);
+  --ph: #a39985;
+  --selection: rgba(176, 145, 98, 0.28);
+  --risk: #a2482a;
+  --riskBg: rgba(162, 72, 42, 0.10);
+  --riskLine: rgba(162, 72, 42, 0.28);
+  --good: #5d6b3a;
+  --goodBg: rgba(93, 107, 58, 0.12);
+  --area_arrow: #3b6680;  /* Field Notes steel blue */
+  --area_sds: #8a6a3c;
+  --area_brain: #6b4f5e;
+  --onArea: #f7f3ea;
+  --kraft: #b09162;       /* the cover */
+  --kraftInk: #2b2116;
+  --kraftRule: #4c3729;
+}
+:root[data-look='memo'][data-theme='dark'] {
+  --bg: #1a1814;          /* the black-cover editions */
+  --panel: #1f1c18;
+  --card: #1a1814;
+  --raise: #24211c;
+  --line: #2e2a24;
+  --line2: #3d382f;
+  --t1: #efe7d6;
+  --t2: #a89e8b;
+  --t3: #766d5e;
+  --accent: #c9a46a;
+  --onAccent: #1a1814;
+  --accentBg: rgba(201, 164, 106, 0.13);
+  --accentLine: rgba(201, 164, 106, 0.32);
+  --sel: #2a2620;
+  --tagBg: #2a2620;
+  --tagText: #cbbd9f;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.4);
+  --ph: #6b6355;
+  --selection: rgba(201, 164, 106, 0.22);
+  --risk: #d77d5c;
+  --riskBg: rgba(215, 125, 92, 0.14);
+  --riskLine: rgba(215, 125, 92, 0.30);
+  --good: #9aac70;
+  --goodBg: rgba(154, 172, 112, 0.14);
+  --area_arrow: #8fb0c6;
+  --area_sds: #c9a46a;
+  --area_brain: #b9a0ad;
+  --onArea: #1a1814;
+  --kraft: #8f7448;
+  --kraftInk: #1a1410;
+  --kraftRule: #2b2116;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -83,7 +180,7 @@ html, body {
 body {
   background: var(--bg);
   color: var(--t1);
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--f-body);
   -webkit-font-smoothing: antialiased;
   /* Kill the 300ms tap delay + double-tap-to-zoom; pinch-zoom already off via meta. */
   touch-action: manipulation;
@@ -119,14 +216,14 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
   align-items: center;
   justify-content: center;
   background: var(--bg);
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--f-body);
 }
 .auth-card {
   width: 100%;
   max-width: 340px;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--rs));
   padding: 30px 28px;
   box-shadow: var(--shadow);
 }
@@ -153,7 +250,7 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 }
 .auth-input {
   border: 1px solid var(--line2);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--rs));
   background: var(--bg);
   padding: 10px 13px;
   font-family: inherit;
@@ -177,7 +274,7 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 .auth-btn {
   margin-top: 4px;
   border: 0;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--rs));
   background: var(--accent);
   color: var(--onAccent);
   padding: 10px 13px;
@@ -223,7 +320,7 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
 .tt-content {
   outline: 0;
   padding: 14px 16px;
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--f-body);
   font-size: 15px;
   line-height: 1.62;
   color: var(--t1);
@@ -253,12 +350,12 @@ input, textarea, [contenteditable='true'], .selectable { user-select: text; }
   border-left: 3px solid var(--line2); color: var(--t2); font-style: italic;
 }
 .tt-content pre {
-  background: var(--sel); border: 1px solid var(--line); border-radius: 9px;
+  background: var(--sel); border: 1px solid var(--line); border-radius: calc(9px * var(--rs));
   padding: 11px 13px; overflow-x: auto;
   font-family: ui-monospace, monospace; font-size: 12.5px;
 }
 .tt-content code { font-family: ui-monospace, monospace; font-size: 12.5px; }
-.tt-content :not(pre) > code { background: var(--sel); border-radius: 5px; padding: 1px 5px; }
+.tt-content :not(pre) > code { background: var(--sel); border-radius: calc(5px * var(--rs)); padding: 1px 5px; }
 .tt-content a { color: var(--accent); text-decoration: underline; }
 .tt-content hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 /* Wide pasted tables must scroll inside the editor, never widen the page. */

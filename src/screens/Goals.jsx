@@ -63,7 +63,7 @@ function GoalEditor({ goal, projects, onSave, onCancel }) {
   const [busy, setBusy] = useState(false)
 
   const field = { fontFamily: f.ui, fontSize: 13.5, color: t.t1, background: t.panel,
-    border: '1px solid ' + t.line, borderRadius: 9, padding: '9px 11px', outline: 'none', width: '100%' }
+    border: '1px solid ' + t.line, borderRadius: 'calc(9px * var(--rs))', padding: '9px 11px', outline: 'none', width: '100%' }
 
   const save = async () => {
     if (!title.trim()) return
@@ -211,7 +211,7 @@ function GoalCard({ goal, events, derived, open, onToggle, onEdit, onDelete, onA
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {goal.weight != null && (
                   <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 700, color: t.accent,
-                    background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 6,
+                    background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(6px * var(--rs))',
                     padding: '1px 7px', fontVariantNumeric: 'tabular-nums' }}>{goal.weight}%</span>
                 )}
                 <span style={{ fontFamily: f.title, fontSize: 16.5, fontWeight: f.titleW, color: t.t1 }}>{goal.title}</span>
@@ -257,7 +257,7 @@ function GoalCard({ goal, events, derived, open, onToggle, onEdit, onDelete, onA
                 {[['wins', `Wins (${wins.length})`], ['hindrances', `Hindrances (${openHind.length})`]].map(([id, label]) => (
                   <span key={id} onClick={() => setLane(id)} style={{ fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
                     color: lane === id ? t.t1 : t.t3, background: lane === id ? t.sel : 'transparent',
-                    borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>{label}</span>
+                    borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: 'pointer' }}>{label}</span>
                 ))}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                   {lane === 'wins' && <Btn size="sm" icon="plus" onClick={() => setAdding(!adding)}>Log a win</Btn>}
@@ -273,7 +273,7 @@ function GoalCard({ goal, events, derived, open, onToggle, onEdit, onDelete, onA
                         onKeyDown={(e) => { if (e.key === 'Enter') submitManual() }}
                         placeholder="Something that happened off-app"
                         style={{ flex: 1, fontFamily: f.ui, fontSize: 13.5, color: t.t1, background: t.panel,
-                          border: '1px solid ' + t.line, borderRadius: 9, padding: '8px 11px', outline: 'none' }} />
+                          border: '1px solid ' + t.line, borderRadius: 'calc(9px * var(--rs))', padding: '8px 11px', outline: 'none' }} />
                       <Btn kind="primary" size="sm" onClick={submitManual}>Add</Btn>
                     </div>
                   )}
@@ -368,7 +368,7 @@ function SyncPanel({ candidates, projects, existing, onDone, onCancel }) {
       </div>
 
       {err && <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.risk, background: t.riskBg,
-        border: '1px solid ' + t.riskLine, borderRadius: 9, padding: '8px 11px', marginTop: 12 }}>{err}</div>}
+        border: '1px solid ' + t.riskLine, borderRadius: 'calc(9px * var(--rs))', padding: '8px 11px', marginTop: 12 }}>{err}</div>}
 
       {drafts && (
         <div style={{ marginTop: 14 }}>
@@ -495,7 +495,7 @@ export function GoalsScreen() {
       {banner && (
         <div onClick={() => setBanner(null)} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16,
           fontFamily: f.ui, fontSize: 12.5, color: t.good, background: t.goodBg, border: '1px solid ' + t.line,
-          borderRadius: 9, padding: '8px 12px', cursor: 'pointer' }}>
+          borderRadius: 'calc(9px * var(--rs))', padding: '8px 12px', cursor: 'pointer' }}>
           <Icon n="trophy" s={14} c={t.good} />{banner}
         </div>
       )}

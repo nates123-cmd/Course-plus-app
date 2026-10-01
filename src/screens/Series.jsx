@@ -201,16 +201,16 @@ export function SeriesScreen() {
         </div>
         <div style={{ padding: '12px 18px 0' }}>
           <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} placeholder="Search meetings…"
-            style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
+            style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px 0', minHeight: 0 }}>
           {candidates.length === 0
             ? <div style={{ padding: '24px 8px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>No meetings to add.</div>
             : candidates.map((n) => { const on = pickSel.has(n.id); const other = n.seriesId && n.seriesId !== s.id
                 return <div key={n.id} onClick={() => togglePick(n.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: on ? t.sel : 'transparent' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', borderRadius: 'calc(8px * var(--rs))', cursor: 'pointer', background: on ? t.sel : 'transparent' }}
                   onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.sel }} onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent' }}>
-                  <div style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px solid ' + (on ? t.accent : t.line2), background: on ? t.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 'calc(5px * var(--rs))', border: '1.5px solid ' + (on ? t.accent : t.line2), background: on ? t.accent : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {on && <Icon n="check" s={13} c="#fff" />}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.title}</div>
@@ -252,9 +252,9 @@ export function SeriesScreen() {
     {/* meta row */}
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>{instances.length} meeting{instances.length === 1 ? '' : 's'}</span>
-      {s.cadence && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 7, padding: '2px 9px' }}>{s.cadence}</span>}
+      {s.cadence && <span style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '2px 9px' }}>{s.cadence}</span>}
       {nextBlock && <span onClick={() => go({ screen: 'agenda' })} title="On your calendar"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '2px 9px', cursor: 'pointer' }}>
         <Icon n="calendar" s={12} c={t.accent} />Next {fmtWhen(nextBlock)}</span>}
       {defProj && <span onClick={() => go({ screen: 'project', id: defProj.id })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, color: t.t2, cursor: 'pointer' }}>
         · <AreaDot areaId={defProj.area} s={6} />{defProj.name}</span>}
@@ -266,7 +266,7 @@ export function SeriesScreen() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Cadence</span>
         <input value={cadence} onChange={(e) => setCadence(e.target.value)} placeholder="weekly, biweekly…"
-          style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 180 }} />
+          style={{ border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 180 }} />
       </div>
       {/* calendar binding — the series' link to the REAL recurring meeting */}
       <div>
@@ -275,11 +275,11 @@ export function SeriesScreen() {
           <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>opening this meeting from the Agenda files it here</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          {calTitles.map((ct) => <span key={ct} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+          {calTitles.map((ct) => <span key={ct} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 7px 5px 10px' }}>
             <Icon n="calendar" s={13} c={t.t3} />{ct}
             <span onClick={() => setCalTitles(calTitles.filter((x) => x !== ct))} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span>)}
           <span style={{ position: 'relative' }}>
-            <span onClick={() => setCalOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+            <span onClick={() => setCalOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}>
               <Icon n="plus" s={13} />Link a calendar meeting</span>
             {calOpen && <Popover onClose={() => setCalOpen(false)} width={280} maxHeight={300}>
               {suggestTitles.length === 0
@@ -291,7 +291,7 @@ export function SeriesScreen() {
           <input value={calDraft} onChange={(e) => setCalDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = calDraft.trim(); setCalDraft(''); if (v && !calTitles.includes(v)) setCalTitles([...calTitles, v]) } }}
             placeholder="or type the exact title…"
-            style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 190 }} />
+            style={{ border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 190 }} />
         </div>
         <span style={{ display: 'block', fontFamily: f.ui, fontSize: 11.5, color: t.t3, marginTop: 8 }}>
           The series name itself always matches, so a series named exactly like the calendar block needs nothing here.
@@ -301,7 +301,7 @@ export function SeriesScreen() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Default project</span>
         <span style={{ position: 'relative' }}>
-          <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: projectById(eProject) ? t.t1 : t.t3, background: projectById(eProject) ? t.sel : 'transparent', border: projectById(eProject) ? 'none' : '1px solid ' + t.line, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+          <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: projectById(eProject) ? t.t1 : t.t3, background: projectById(eProject) ? t.sel : 'transparent', border: projectById(eProject) ? 'none' : '1px solid ' + t.line, borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: 'pointer' }}>
             {projectById(eProject) ? <AreaDot areaId={projectById(eProject).area} s={7} /> : null}{projectById(eProject) ? projectById(eProject).name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
           {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
             <PopRow icon="ban" label="No project" on={!eProject} onClick={() => { setEProject(null); setHomeOpen(false) }} />
@@ -318,11 +318,11 @@ export function SeriesScreen() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           {eProjects.map((id) => { const p = projectById(id); if (!p) return null
-            return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+            return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 7px 5px 10px' }}>
               <AreaDot areaId={p.area} s={7} />{p.name}
               <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span> })}
           <span style={{ position: 'relative' }}>
-            <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+            <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}>
               <Icon n="plus" s={13} />Add project</span>
             {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
               {pickerProjects.filter((p) => !eProjects.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
@@ -334,10 +334,10 @@ export function SeriesScreen() {
       <div>
         <Label style={{ marginBottom: 9 }}>Regular attendees</Label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          {people.map((p) => <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+          {people.map((p) => <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 7px 5px 10px' }}>
             {p}<span onClick={() => setPeople(people.filter((x) => x !== p))} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span>)}
           <input value={personDraft} onChange={(e) => setPersonDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson() } }} onBlur={addPerson} placeholder="Add name…"
-            style={{ border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 130 }} />
+            style={{ border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px', width: 130 }} />
         </div>
       </div>
       {/* standing agenda — the literal template, not AI fuel */}
@@ -435,7 +435,7 @@ export function SeriesScreen() {
             <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 700, color: t.t3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Still open</span>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {syn.openThreads.map((o, i) => <div key={i} style={{ display: 'flex', gap: 9, fontFamily: f.ui, fontSize: 13, color: t.t1 }}>
-                <span style={{ width: 6, height: 6, borderRadius: 3, background: t.risk, flex: 'none', marginTop: 6 }} />
+                <span style={{ width: 6, height: 6, borderRadius: 'calc(3px * var(--rs))', background: t.risk, flex: 'none', marginTop: 6 }} />
                 <span style={{ flex: 1 }}>{o.text}{o.sinceDate && <span style={{ color: t.t3 }}> · since {o.sinceDate}</span>}</span></div>)}
             </div></div>}
           {(syn.commitments || []).length > 0 && <div>
@@ -449,7 +449,7 @@ export function SeriesScreen() {
             <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 700, color: t.t3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Decisions</span>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
               {syn.decisions.map((d, i) => <div key={i} style={{ display: 'flex', gap: 9, fontFamily: f.ui, fontSize: 13, color: t.t1 }}>
-                <span style={{ width: 6, height: 6, borderRadius: 3, background: t.accent, flex: 'none', marginTop: 6 }} /><span style={{ flex: 1 }}>{d}</span></div>)}
+                <span style={{ width: 6, height: 6, borderRadius: 'calc(3px * var(--rs))', background: t.accent, flex: 'none', marginTop: 6 }} /><span style={{ flex: 1 }}>{d}</span></div>)}
             </div></div>}
         </div>}
       </Card>
@@ -501,7 +501,7 @@ export function SeriesScreen() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>{n.title}</span>
                     <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{n.date}</span>
-                    {n.incomplete && <span style={{ fontFamily: f.ui, fontSize: 10.5, fontWeight: 700, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>Incomplete</span>}
+                    {n.incomplete && <span style={{ fontFamily: f.ui, fontSize: 10.5, fontWeight: 700, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(6px * var(--rs))', padding: '1px 7px' }}>Incomplete</span>}
                   </div>
                   {n.summary && <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t2, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{n.summary.replace(/[#*\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}</div>}
                   {n.nextSteps && n.nextSteps.trim() && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 6 }}><Icon n="arrow-right" s={12} c={t.t3} />has next steps</span>}
@@ -591,7 +591,7 @@ function SeriesIndex() {
         <Icon n="loader-2" s={15} c={t.t1} />Thinking across {list.length} series…</div>}
       {askErr && <div style={{ color: t.t2, fontFamily: f.ui, fontSize: 13, marginBottom: 12 }}>Couldn’t answer — {String(askErr?.message || askErr)}.</div>}
 
-      <form onSubmit={(e) => { e.preventDefault(); ask() }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.bg, border: '1px solid ' + t.line2, borderRadius: 10, padding: '0 12px', height: 44 }}
+      <form onSubmit={(e) => { e.preventDefault(); ask() }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: t.bg, border: '1px solid ' + t.line2, borderRadius: 'calc(10px * var(--rs))', padding: '0 12px', height: 44 }}
         onFocusCapture={(e) => e.currentTarget.style.borderColor = t.accent} onBlurCapture={(e) => e.currentTarget.style.borderColor = t.line2}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={chat.length ? 'Ask a follow-up…' : 'Ask anything across your recurring meetings…'}
           style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 14, color: t.t1 }} />
@@ -600,7 +600,7 @@ function SeriesIndex() {
 
       {chat.length === 0 && !asking && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 11 }}>
         {ASK_TRY.map((s) => <span key={s} onClick={() => ask(s)}
-          style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, background: t.tagBg, borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}
+          style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, background: t.tagBg, borderRadius: 'calc(7px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}
           onMouseEnter={(e) => e.currentTarget.style.color = t.t1} onMouseLeave={(e) => e.currentTarget.style.color = t.t2}>{s}</span>)}
       </div>}
     </Card>}
@@ -611,7 +611,7 @@ function SeriesIndex() {
         <input autoFocus value={name} onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setName(''); setAdding(false) } }}
           placeholder="e.g. Jon 1:1…"
-          style={{ flex: 1, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
+          style={{ flex: 1, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 14, color: t.t1, padding: '8px 11px' }} />
         <Btn onClick={commit}>Add</Btn>
         <Btn kind="ghost" onClick={() => { setName(''); setAdding(false) }}>Cancel</Btn>
       </div>

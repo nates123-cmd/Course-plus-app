@@ -95,7 +95,7 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
               value={typed} onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') answer(typed) }}
               placeholder="Or say it in your own words…"
-              style={{ flex: 1, fontFamily: f.ui, fontSize: 13, padding: '7px 10px', borderRadius: 8,
+              style={{ flex: 1, fontFamily: f.ui, fontSize: 13, padding: '7px 10px', borderRadius: 'calc(8px * var(--rs))',
                 border: '1px solid ' + t.line, background: t.bg, color: t.t1, outline: 'none' }} />
             <Btn kind="ghost" size="sm" onClick={() => answer(typed)} disabled={!typed.trim() || phase === 'resolving'}>
               {phase === 'resolving' ? 'Thinking…' : 'Send'}
@@ -107,7 +107,7 @@ export function ThinkItThrough({ project, idleDays, onClose, onHold }) {
       {phase === 'resolved' && res && (
         <>
           <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, lineHeight: 1.5, textWrap: 'pretty' }}>{res.reframe}</div>
-          <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 9, background: t.bg, border: '1px solid ' + t.line }}>
+          <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'calc(9px * var(--rs))', background: t.bg, border: '1px solid ' + t.line }}>
             <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>
               {res.resolution.kind === 'task' ? res.resolution.label : KIND_LABEL[res.resolution.kind] || res.resolution.label}
             </div>

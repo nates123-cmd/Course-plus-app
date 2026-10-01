@@ -41,7 +41,7 @@ function Tool({ icon, title, active, disabled, onClick }) {
   return <button type="button" title={title} disabled={disabled}
     onMouseDown={(e) => { e.preventDefault(); onClick() }}
     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 28,
-      borderRadius: 7, border: 0, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
+      borderRadius: 'calc(7px * var(--rs))', border: 0, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
       background: active ? t.accentBg : 'transparent', color: active ? t.accent : t.t2 }}>
     <Icon n={icon} s={15} />
   </button>
@@ -94,7 +94,7 @@ export default function MdEditorInner({ value, onChange, minHeight = 360 }) {
   const cmd = (fn) => () => fn(editor.chain().focus()).run()
 
   return <div className={'tt-editor' + (mode === 'dark' ? ' tt-dark' : '')}
-    style={{ border: '1px solid ' + t.line, borderRadius: 10, background: t.card, overflow: 'hidden' }}>
+    style={{ border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', background: t.card, overflow: 'hidden' }}>
     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, padding: '5px 7px',
       borderBottom: '1px solid ' + t.line, background: t.panel }}>
       <Tool icon="bold" title="Bold" active={is('bold')} onClick={cmd((c) => c.toggleBold())} />
@@ -124,10 +124,10 @@ export default function MdEditorInner({ value, onChange, minHeight = 360 }) {
       <input autoFocus value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink() } if (e.key === 'Escape') setLinkOpen(false) }}
         placeholder="https://… (empty removes the link)"
-        style={{ flex: 1, border: '1px solid ' + t.line2, borderRadius: 7, background: t.bg, padding: '6px 9px',
+        style={{ flex: 1, border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', background: t.bg, padding: '6px 9px',
           fontFamily: f.ui, fontSize: 13, color: t.t1, outline: 0 }} />
       <button type="button" onMouseDown={(e) => { e.preventDefault(); applyLink() }}
-        style={{ border: 0, borderRadius: 7, background: t.accent, color: t.onAccent, padding: '6px 12px',
+        style={{ border: 0, borderRadius: 'calc(7px * var(--rs))', background: t.accent, color: t.onAccent, padding: '6px 12px',
           fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Apply</button>
     </div>}
 

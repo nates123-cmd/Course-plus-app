@@ -57,7 +57,7 @@ function BucketPill({ bucket }) {
   if (!bucket) return null
   const skin = bucket === 'easy' ? { c: t.good, bg: t.goodBg } : bucket === 'miss' ? { c: t.risk, bg: t.riskBg } : { c: t.t2, bg: t.sel }
   return <span style={{ fontFamily: f.ui, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
-    color: skin.c, background: skin.bg, borderRadius: 6, padding: '2px 7px' }}>{BUCKETS[bucket] || bucket}</span>
+    color: skin.c, background: skin.bg, borderRadius: 'calc(6px * var(--rs))', padding: '2px 7px' }}>{BUCKETS[bucket] || bucket}</span>
 }
 
 function Shelf({ dives, loading, loadError, onOpen, onDelete, onNew, filter, setFilter }) {
@@ -84,7 +84,7 @@ function Shelf({ dives, loading, loadError, onOpen, onDelete, onNew, filter, set
   const chip = (id, label, count) => (
     <span key={id} onClick={() => setFilter(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
       fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: filter === id ? t.t1 : t.t3,
-      background: filter === id ? t.sel : 'transparent', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
+      background: filter === id ? t.sel : 'transparent', borderRadius: 'calc(8px * var(--rs))', padding: '6px 12px', cursor: 'pointer' }}>
       {label}{count ? <span style={{ fontSize: 11, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{count}</span> : null}</span>
   )
 
@@ -249,12 +249,12 @@ function BuildPanel({ onClose, onSaved, initial }) {
   const tabBtn = (id, label, icon) => (
     <span key={id} onClick={() => { setTab(id); setCandidates(null); setErr(null) }}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-        color: tab === id ? t.t1 : t.t3, background: tab === id ? t.sel : 'transparent', borderRadius: 8,
+        color: tab === id ? t.t1 : t.t3, background: tab === id ? t.sel : 'transparent', borderRadius: 'calc(8px * var(--rs))',
         padding: '6px 11px', cursor: 'pointer' }}><Icon n={icon} s={14} />{label}</span>
   )
   const pickRow = (id, label, hint, on, onClick) => (
     <div key={id} onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 11px',
-      borderRadius: 9, cursor: 'pointer', background: on ? t.accentBg : 'transparent',
+      borderRadius: 'calc(9px * var(--rs))', cursor: 'pointer', background: on ? t.accentBg : 'transparent',
       border: '1px solid ' + (on ? t.accentLine : 'transparent') }}
       onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.sel }}
       onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent' }}>
@@ -264,13 +264,13 @@ function BuildPanel({ onClose, onSaved, initial }) {
       {hint ? <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, flex: 'none' }}>{hint}</span> : null}
     </div>
   )
-  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 9, outline: 0,
+  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(9px * var(--rs))', outline: 0,
     background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '9px 11px' }
 
   return <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.42)',
     display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px 0' }}>
     <div onClick={(e) => e.stopPropagation()} style={{ flex: '0 0 620px', maxWidth: '95vw', maxHeight: '80vh',
-      background: t.card, border: '1px solid ' + t.line, borderRadius: 16, boxShadow: t.shadow,
+      background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(16px * var(--rs))', boxShadow: t.shadow,
       display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px 14px', borderBottom: '1px solid ' + t.line, flex: 'none' }}>
         {tabBtn('doc', 'From a document', 'file-text')}
@@ -285,7 +285,7 @@ function BuildPanel({ onClose, onSaved, initial }) {
           <Label>Found {candidates.length} drill{candidates.length === 1 ? '' : 's'} — keep the ones worth it</Label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 10 }}>
             {candidates.map((d, i) => <div key={i} onClick={() => setChosen((c) => ({ ...c, [i]: !c[i] }))}
-              style={{ padding: '12px 14px', borderRadius: 11, cursor: 'pointer',
+              style={{ padding: '12px 14px', borderRadius: 'calc(11px * var(--rs))', cursor: 'pointer',
                 background: chosen[i] ? t.accentBg : t.panel, border: '1px solid ' + (chosen[i] ? t.accentLine : t.line) }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <Icon n={chosen[i] ? 'square-check' : 'square'} s={16} c={chosen[i] ? t.accent : t.t3} />
@@ -453,7 +453,7 @@ function Session({ dive, onExit, onChanged }) {
   const restart = () => { setPhase('setup'); setAnswer(''); setGraded(null); setRevealed(false); setErr(null); finalRef.current = '' }
 
   const verdictFor = (i) => (graded?.verdicts || []).find((v) => v.index === i)
-  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 11, outline: 0,
+  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(11px * var(--rs))', outline: 0,
     background: t.bg, fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1, padding: '13px 15px', resize: 'vertical' }
 
   return <div data-screen-label="Study session" style={{ maxWidth: 780, margin: '0 auto', padding: '32px 36px 90px' }}>
@@ -474,7 +474,7 @@ function Session({ dive, onExit, onChanged }) {
       {dive.sourceLabel ? <span>from {dive.sourceLabel}</span> : null}
       {dive.guidance ? <span onClick={() => setTuning(true)} title={dive.guidance}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', color: t.accent,
-          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 8px' }}>
+          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '2px 8px' }}>
         <Icon n="bookmark" s={12} />Your steering is applied</span> : null}
     </div> : null}
 
@@ -487,7 +487,7 @@ function Session({ dive, onExit, onChanged }) {
       <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
         {MODES.map(([id, label]) => <span key={id} onClick={() => setMode(id)}
           style={{ fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: mode === id ? t.onAccent : t.t2,
-            background: mode === id ? t.accent : t.sel, borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>{label}</span>)}
+            background: mode === id ? t.accent : t.sel, borderRadius: 'calc(9px * var(--rs))', padding: '7px 13px', cursor: 'pointer' }}>{label}</span>)}
       </div>
       <div style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, marginTop: 9, lineHeight: 1.5 }}>
         {(MODES.find((m) => m[0] === mode) || [])[2]}
@@ -555,7 +555,7 @@ function Session({ dive, onExit, onChanged }) {
         <div style={{ fontFamily: f.body, fontSize: 15, lineHeight: 1.6, color: t.t1 }}>{graded.feedback}</div>
       </Card> : null}
 
-      {graded.corrections?.length > 0 && <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 12,
+      {graded.corrections?.length > 0 && <div style={{ marginTop: 18, padding: '14px 16px', borderRadius: 'calc(12px * var(--rs))',
         background: t.riskBg, border: '1px solid ' + t.riskLine }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12,
           fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: t.risk }}>

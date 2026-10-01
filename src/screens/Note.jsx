@@ -37,7 +37,7 @@ function TableBlock({ rows, t, f }) {
   if (!rows || !rows.length) return null
   const [head, ...body] = rows
   const cell = { padding: '8px 12px', textAlign: 'left', verticalAlign: 'top', borderBottom: '1px solid ' + t.line }
-  return <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 10 }}>
+  return <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))' }}>
     <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: f.ui, fontSize: 13.5, color: t.t1 }}>
       <thead><tr>{head.map((c, j) => <th key={j} style={{ ...cell, fontWeight: 700, color: t.t2, background: t.sel, whiteSpace: 'nowrap' }}>{c}</th>)}</tr></thead>
       <tbody>{body.map((r, i) => <tr key={i}>{head.map((_, j) => <td key={j} style={cell}>{r[j] ?? ''}</td>)}</tr>)}</tbody>
@@ -54,7 +54,7 @@ function Body({ blocks }) {
       if (b.p) return <p key={i} style={{ margin: 0, fontFamily: f.body, fontSize: 16, lineHeight: 1.68, color: t.t1, textWrap: 'pretty' }}>{inlineMd(b.p)}</p>
       if (b.ul) return <ul key={i} style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {b.ul.map((li, j) => <li key={j} style={{ display: 'flex', gap: 11, fontFamily: f.body, fontSize: 15.5, lineHeight: 1.55, color: t.t1 }}>
-          <span style={{ width: 5, height: 5, borderRadius: 3, background: t.accent, flex: 'none', marginTop: 9 }} />
+          <span style={{ width: 5, height: 5, borderRadius: 'calc(3px * var(--rs))', background: t.accent, flex: 'none', marginTop: 9 }} />
           <span style={{ flex: 1 }}>{inlineMd(li)}</span></li>)}
       </ul>
       if (b.ol) return <ol key={i} style={{ margin: 0, paddingLeft: 0, listStyle: 'none', counterReset: 'ol', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -67,7 +67,7 @@ function Body({ blocks }) {
         {b.links.map((lk, j) => { const tgt = noteByTitle(lk)
           return <span key={j} onClick={() => tgt && go({ screen: 'note', id: tgt.id })}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, color: t.accent,
-              background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: tgt ? 'pointer' : 'default' }}>
+              background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: tgt ? 'pointer' : 'default' }}>
             <Icon n="link" s={12} />{lk}</span> })}
       </div>
       return null
@@ -126,7 +126,7 @@ function RefToggle({ note, onToggle, busy }) {
   return <span onClick={() => { if (!busy) onToggle(!on) }}
     title={on ? 'Reference — click to unmark' : 'Mark as reference'}
     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: busy ? 'default' : 'pointer', fontFamily: f.ui,
-      fontSize: 11.5, fontWeight: 600, borderRadius: 7, padding: '3px 9px', color: on ? t.accent : t.t3,
+      fontSize: 11.5, fontWeight: 600, borderRadius: 'calc(7px * var(--rs))', padding: '3px 9px', color: on ? t.accent : t.t3,
       background: on ? t.accentBg : t.sel, border: '1px solid ' + (on ? t.accentLine : 'transparent'), opacity: busy ? 0.6 : 1 }}>
     <Icon n={busy ? 'loader-2' : 'bookmark'} s={13} />{on ? 'Reference' : 'Mark reference'}</span>
 }
@@ -186,7 +186,7 @@ function ClaudeRail({ note, onClose, onReload }) {
     </div>
 
     {msg && <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, background: t.accentBg, border: '1px solid ' + t.accentLine,
-      borderRadius: 9, padding: '9px 11px', marginBottom: 12, lineHeight: 1.45 }}>{msg}</div>}
+      borderRadius: 'calc(9px * var(--rs))', padding: '9px 11px', marginBottom: 12, lineHeight: 1.45 }}>{msg}</div>}
 
     {preview ? <div>
       <Label style={{ marginBottom: 8 }}>Rewrite preview</Label>
@@ -201,7 +201,7 @@ function ClaudeRail({ note, onClose, onReload }) {
     </div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {acts.map(([id, icon, label, desc]) => { const on = busy === id
         return <div key={id} onClick={() => run(id, label)}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 11,
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'calc(11px * var(--rs))',
             cursor: busy ? 'default' : 'pointer', background: t.card, border: '1px solid ' + t.line,
             opacity: busy && !on ? 0.55 : 1 }}
           onMouseEnter={(e) => { if (!busy) e.currentTarget.style.borderColor = t.accent }}
@@ -210,7 +210,7 @@ function ClaudeRail({ note, onClose, onReload }) {
           <div><div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>{label}</div>
             <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{on ? 'Working…' : desc}</div></div></div> })}
       <div onClick={() => { onClose(); note.project ? go({ screen: 'project', id: note.project }) : go({ screen: 'library' }) }}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 11, cursor: 'pointer',
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 'calc(11px * var(--rs))', cursor: 'pointer',
           background: t.card, border: '1px dashed ' + t.line2 }}
         onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent}
         onMouseLeave={(e) => e.currentTarget.style.borderColor = t.line2}>
@@ -358,7 +358,7 @@ export function NoteScreen() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>{n.date}</span>
       {n.incomplete && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 700,
-        letterSpacing: '0.02em', color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 7, padding: '2px 8px' }}>
+        letterSpacing: '0.02em', color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(7px * var(--rs))', padding: '2px 8px' }}>
         <Icon n="alert-triangle" s={12} />Incomplete</span>}
       {(n.people || []).map((p) => <Person key={p} size="sm">{p}</Person>)}
       {words && <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>· {words} words</span>}
@@ -369,7 +369,7 @@ export function NoteScreen() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Primary project</span>
         <span style={{ position: 'relative' }}>
-          <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: eHomeProj ? t.t1 : t.t3, background: eHomeProj ? t.sel : 'transparent', border: eHomeProj ? 'none' : '1px solid ' + t.line, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+          <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: eHomeProj ? t.t1 : t.t3, background: eHomeProj ? t.sel : 'transparent', border: eHomeProj ? 'none' : '1px solid ' + t.line, borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: 'pointer' }}>
             {eHomeProj ? <AreaDot areaId={eHomeProj.area} s={7} /> : null}{eHomeProj ? eHomeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
           {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
             <PopRow icon="ban" label="No project" on={!eProject} onClick={() => { setHome(null); setHomeOpen(false) }} />
@@ -385,11 +385,11 @@ export function NoteScreen() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           {eProjects.map((id) => { const p = projectById(id); if (!p) return null
-            return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+            return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 7px 5px 10px' }}>
               <AreaDot areaId={p.area} s={7} />{p.name}
               <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span> })}
           <span style={{ position: 'relative' }}>
-            <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+            <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}>
               <Icon n="plus" s={13} />Add project</span>
             {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
               {pickerProjects.filter((p) => !eProjects.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
@@ -401,7 +401,7 @@ export function NoteScreen() {
     </div>}
 
     {n.incomplete && !editing &&<div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 14, padding: '11px 14px',
-      borderRadius: 11, background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
+      borderRadius: 'calc(11px * var(--rs))', background: t.riskBg, border: '1px solid ' + t.riskLine, flexWrap: 'wrap' }}>
       <Icon n="player-pause" s={16} c={t.risk} />
       <span style={{ flex: 1, minWidth: 160, fontFamily: f.ui, fontSize: 12.5, color: t.t1 }}>This meeting was interrupted and never finished. Resume it to add a transcript and synthesize.</span>
       <Btn kind="primary" size="sm" icon="arrow-back-up" onClick={resumeMeeting}>Resume</Btn>
@@ -418,7 +418,7 @@ export function NoteScreen() {
         <Card style={{ padding: '4px 0' }}>
           {n.actions.map((a, i) => <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 16px',
             borderTop: i ? '1px solid ' + t.line : 'none' }}>
-            <span style={{ width: 16, height: 16, borderRadius: 5, border: '1.5px solid ' + t.t3, flex: 'none', marginTop: 1 }} />
+            <span style={{ width: 16, height: 16, borderRadius: 'calc(5px * var(--rs))', border: '1.5px solid ' + t.t3, flex: 'none', marginTop: 1 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1 }}>{a.text}</div>
               <div style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, marginTop: 3 }}>
@@ -432,7 +432,7 @@ export function NoteScreen() {
                       color: t.t2, whiteSpace: 'nowrap', cursor: taskBusy != null ? 'default' : 'pointer', opacity: taskBusy != null && taskBusy !== i ? 0.5 : 1 }}>
                     <Icon n={taskBusy === i ? 'loader-2' : 'plus'} s={12} />To task</span>)}
               <span onClick={() => dismissAction(i)} title="Remove this action item"
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, cursor: 'pointer', color: t.t3 }}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 'calc(6px * var(--rs))', cursor: 'pointer', color: t.t3 }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.firstChild.style.color = t.risk }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.firstChild.style.color = t.t3 }}>
                 <Icon n="x" s={14} c={t.t3} /></span>
@@ -455,7 +455,7 @@ export function NoteScreen() {
     {/* talking points covered in this meeting (ticked off its "To discuss" list) */}
     {!editing && isMeeting && agendaItemsForNote(n.id).length > 0 && <div style={{ marginTop: 18 }}>
       <Label style={{ marginBottom: 8 }}>Covered · {agendaItemsForNote(n.id).length}</Label>
-      <div style={{ background: t.panel, border: '1px solid ' + t.line, borderRadius: 10, padding: '6px 14px' }}>
+      <div style={{ background: t.panel, border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', padding: '6px 14px' }}>
         {agendaItemsForNote(n.id).map((it) => <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0', fontFamily: f.body, fontSize: 14, color: t.t2 }}>
           <Icon n="circle-check" s={15} c={t.good} /><span style={{ flex: 1 }}>{it.label}</span></div>)}
       </div>
@@ -464,7 +464,7 @@ export function NoteScreen() {
     {/* agenda / prep — collapsible */}
     {!editing && n.agenda && n.agenda.trim() && <div style={{ marginTop: 18 }}>
       <div onClick={() => setAgendaOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
-        borderRadius: 10, cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
+        borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
         <Icon n={agendaOpen ? 'chevron-down' : 'chevron-right'} s={14} />
         <Icon n="clipboard-list" s={14} c={t.t3} />Agenda · prep</div>
       {agendaOpen && <div className="selectable" style={{ padding: '14px 16px', fontFamily: f.body, fontSize: 14, lineHeight: 1.65, color: t.t2,
@@ -509,7 +509,7 @@ export function NoteScreen() {
     {/* raw transcript collapsible */}
     {!editing && n.transcript && <div ref={(el) => { if (el && route.transcript && !el.dataset.scrolled) { el.dataset.scrolled = '1'; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120) } }} style={{ marginTop: 22 }}>
       <div onClick={() => setRawOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px',
-        borderRadius: 10, cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
+        borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
         <Icon n={rawOpen ? 'chevron-down' : 'chevron-right'} s={14} />
         <Icon n="file-text" s={14} c={t.t3} />Transcript
         <span style={{ color: t.t3 }}>· {words ? words + ' words · ' : ''}source material</span></div>
@@ -523,7 +523,7 @@ export function NoteScreen() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {n.related.map((r, i) => { const tgt = noteByTitle(r.title)
         return <div key={i} onClick={() => tgt && go({ screen: 'note', id: tgt.id })} style={{ display: 'flex', alignItems: 'flex-start',
-          gap: 9, padding: '9px 10px', borderRadius: 9, cursor: tgt ? 'pointer' : 'default' }}
+          gap: 9, padding: '9px 10px', borderRadius: 'calc(9px * var(--rs))', cursor: tgt ? 'pointer' : 'default' }}
           onMouseEnter={(e) => { if (tgt) e.currentTarget.style.background = t.sel }}
           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
           <Icon n={(KIND[r.kind] || KIND.note).icon} s={14} c={t.t3} style={{ marginTop: 2 }} />

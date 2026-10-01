@@ -75,7 +75,7 @@ export function DocChat({ doc, onClose, projectContext = '', projectName = '', a
         return <span key={opt.id} onClick={() => setScope(opt.id)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
             color: active ? t.accent : t.t3, background: active ? t.accentBg : t.sel, border: '1px solid ' + (active ? t.accentLine : 'transparent'),
-            borderRadius: 7, padding: '4px 9px' }}>
+            borderRadius: 'calc(7px * var(--rs))', padding: '4px 9px' }}>
           <Icon n={opt.icon} s={12} c={active ? t.accent : t.t3} />{opt.label}</span>
       })}
     </div>}
@@ -107,12 +107,12 @@ export function DocChat({ doc, onClose, projectContext = '', projectName = '', a
     <div style={{ padding: '12px 14px', borderTop: '1px solid ' + t.line, display: 'flex', alignItems: 'flex-end', gap: 9 }}>
       <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onKeyDown} rows={1}
         placeholder="Ask about this document…"
-        style={{ flex: 1, resize: 'none', maxHeight: 120, border: '1px solid ' + t.line2, borderRadius: 10, background: t.card,
+        style={{ flex: 1, resize: 'none', maxHeight: 120, border: '1px solid ' + t.line2, borderRadius: 'calc(10px * var(--rs))', background: t.card,
           padding: '9px 12px', fontFamily: f.ui, fontSize: 14, lineHeight: 1.45, color: t.t1, outline: 'none' }}
         onFocus={(e) => e.currentTarget.style.borderColor = t.accent}
         onBlur={(e) => e.currentTarget.style.borderColor = t.line2} />
       <button onClick={() => send()} disabled={busy || !input.trim()} title="Send"
-        style={{ flex: 'none', width: 38, height: 38, borderRadius: 10, border: 0, cursor: busy || !input.trim() ? 'default' : 'pointer',
+        style={{ flex: 'none', width: 38, height: 38, borderRadius: 'calc(10px * var(--rs))', border: 0, cursor: busy || !input.trim() ? 'default' : 'pointer',
           background: input.trim() ? t.accent : t.sel, color: input.trim() ? '#fff' : t.t3, display: 'grid', placeItems: 'center', opacity: busy ? 0.6 : 1 }}>
         <Icon n="arrow-up" s={18} c={input.trim() ? '#fff' : t.t3} />
       </button>

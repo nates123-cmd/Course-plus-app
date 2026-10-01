@@ -20,7 +20,7 @@ function StatusPill({ status }) {
     skipped: { icon: 'minus', label: 'Not interpreted', c: t.t3, bg: t.sel, line: 'transparent' },
   }[status] || { icon: 'circle', label: status, c: t.t3, bg: t.sel, line: 'transparent' }
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11,
-    fontWeight: 600, color: skin.c, background: skin.bg, border: '1px solid ' + skin.line, borderRadius: 7, padding: '2px 8px' }}>
+    fontWeight: 600, color: skin.c, background: skin.bg, border: '1px solid ' + skin.line, borderRadius: 'calc(7px * var(--rs))', padding: '2px 8px' }}>
     <Icon n={skin.icon} s={12} />{skin.label}</span>
 }
 
@@ -67,7 +67,7 @@ function AssetRow({ asset, onChange }) {
 
     {/* inline preview */}
     {asset.kind === 'image' && url && <div style={{ borderTop: '1px solid ' + t.line, background: t.bg, padding: 10 }}>
-      <img src={url} alt={asset.filename} style={{ maxWidth: '100%', maxHeight: 360, borderRadius: 8, display: 'block', margin: '0 auto' }} /></div>}
+      <img src={url} alt={asset.filename} style={{ maxWidth: '100%', maxHeight: 360, borderRadius: 'calc(8px * var(--rs))', display: 'block', margin: '0 auto' }} /></div>}
     {asset.kind === 'pdf' && url && <div style={{ borderTop: '1px solid ' + t.line, background: t.bg }}>
       <iframe src={url} title={asset.filename} style={{ width: '100%', height: 420, border: 0 }} /></div>}
 
@@ -122,7 +122,7 @@ export function Assets({ projectId = null, noteId = null }) {
       onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
       onDragLeave={() => setDrag(false)}
       onDrop={onDrop}
-      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px', borderRadius: 12, cursor: 'pointer',
+      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px', borderRadius: 'calc(12px * var(--rs))', cursor: 'pointer',
         border: '1.5px dashed ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, marginBottom: rows.length ? 12 : 0,
         transition: 'border-color .14s, background .14s' }}>
       <Icon n={busy ? 'loader-2' : 'upload'} s={18} c={t.accent} />
@@ -137,7 +137,7 @@ export function Assets({ projectId = null, noteId = null }) {
     </div>
 
     {err && <div style={{ fontFamily: f.ui, fontSize: 12, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine,
-      borderRadius: 9, padding: '8px 11px', marginBottom: 12 }}>{err}</div>}
+      borderRadius: 'calc(9px * var(--rs))', padding: '8px 11px', marginBottom: 12 }}>{err}</div>}
 
     {rows.length > 0 && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {rows.map((a) => <AssetRow key={a.id} asset={a} onChange={reload} />)}

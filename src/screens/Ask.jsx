@@ -74,13 +74,13 @@ export function AskScreen() {
     {scopeProj && <div style={{ marginTop: 10 }}>
       <span onClick={() => go({ screen: 'ask' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui,
         fontSize: 12, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine,
-        borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
+        borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px', cursor: 'pointer' }}>
         <AreaDot areaId={scopeProj.area} s={6} />{scopeProj.name}<Icon n="x" s={12} /></span>
       <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginLeft: 9 }}>Open in Ask to search every document</span>
     </div>}
 
     <form onSubmit={onSubmit} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 20, background: t.card,
-      border: '1px solid ' + t.line2, borderRadius: 11, padding: '0 14px', height: 48 }}
+      border: '1px solid ' + t.line2, borderRadius: 'calc(11px * var(--rs))', padding: '0 14px', height: 48 }}
       onFocusCapture={(e) => e.currentTarget.style.borderColor = t.accent}
       onBlurCapture={(e) => e.currentTarget.style.borderColor = t.line2}>
       <Icon n="sparkles" s={17} c={t.accent} />
@@ -97,7 +97,7 @@ export function AskScreen() {
       <Label style={{ marginBottom: 10 }}>Try</Label>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ASK_SUGGESTIONS.map((s) => <div key={s} onClick={() => run(s)}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer',
             background: t.card, border: '1px solid ' + t.line, fontFamily: f.body, fontSize: 14, color: t.t1 }}
           onMouseEnter={(e) => e.currentTarget.style.borderColor = t.line2}
           onMouseLeave={(e) => e.currentTarget.style.borderColor = t.line}>
@@ -125,7 +125,7 @@ export function AskScreen() {
     {state === 'answered' && result && <div style={{ marginTop: 26 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
         {chips.map((c, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui,
-          fontSize: 11.5, fontWeight: 500, color: t.t2, background: t.tagBg, borderRadius: 7, padding: '4px 10px' }}>
+          fontSize: 11.5, fontWeight: 500, color: t.t2, background: t.tagBg, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px' }}>
           {c.icon && <Icon n={c.icon} s={12} c={t.t3} />}{c.text}</span>)}
       </div>
       <Card style={{ padding: '20px 22px', borderColor: t.accentLine }}>

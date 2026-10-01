@@ -5,16 +5,18 @@
 // `t` carries BOTH the document-surface tokens (bg/card/accent…) and the
 // work/status tokens (risk/good/area hues) so kit + screens read `t.*` exactly
 // like the prototype's tk(dir, mode) return value.
-export const FONT = "'Hanken Grotesk', sans-serif"
+// Every face/weight/spacing is a CSS var so the LOOK ([data-look] on <html>,
+// 'classic' | 'memo') can swap type without a re-render. See DESIGN.md.
+export const FONT = 'var(--f-ui)'
 
 // Direction B font roles (the prototype's FONTS.B). Provided through context as
 // `f` so ported component code (`const { t, f } = useApp()`) works verbatim.
 export const FONTS = {
   B: {
-    title: "'Hanken Grotesk', sans-serif", body: "'Hanken Grotesk', sans-serif",
-    meta: "'Hanken Grotesk', sans-serif", ui: "'Hanken Grotesk', sans-serif",
-    titleW: 600, titleSpacing: '-0.02em', uiSpacing: '0', mono: false,
-    label: "'Hanken Grotesk', sans-serif", labelSpacing: '0.09em',
+    title: 'var(--f-title)', body: 'var(--f-body)',
+    meta: 'var(--f-meta)', ui: 'var(--f-ui)',
+    titleW: 'var(--f-titleW)', titleSpacing: 'var(--f-titleSpacing)', uiSpacing: '0', mono: false,
+    label: 'var(--f-label)', labelSpacing: 'var(--f-labelSpacing)',
   },
 }
 export const F = FONTS.B

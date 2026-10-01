@@ -61,7 +61,7 @@ function SectionHead({ label, action, onAction, onAdd, collapsible, collapsed, o
     <div style={{ flex: 1 }} />
     {action && <span onClick={onAction} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
       fontFamily: f.ui, fontSize: 12, fontWeight: 500, color: t.accent, cursor: 'pointer' }}>{action}</span>}
-    {onAdd && <button onClick={onAdd} title="Add to this project" style={{ width: 24, height: 24, borderRadius: 7,
+    {onAdd && <button onClick={onAdd} title="Add to this project" style={{ width: 24, height: 24, borderRadius: 'calc(7px * var(--rs))',
       display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', border: '1px solid ' + t.line2,
       background: 'transparent', color: t.t2, cursor: 'pointer', transition: 'border-color .14s, color .14s, background .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; e.currentTarget.style.background = t.accentBg }}
@@ -128,7 +128,7 @@ function ProjectHeader({ project, reload }) {
     <div style={{ position: 'relative', display: 'inline-flex', marginBottom: 10 }}>
       <div onClick={() => setAreaOpen((o) => !o)} title="Change pillar" style={{ display: 'inline-flex', alignItems: 'center',
         gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: areaOpen ? t.t1 : t.t3, cursor: 'pointer',
-        background: areaOpen ? t.sel : 'transparent', borderRadius: 7, padding: '4px 8px' }}
+        background: areaOpen ? t.sel : 'transparent', borderRadius: 'calc(7px * var(--rs))', padding: '4px 8px' }}
         onMouseEnter={(e) => { if (!areaOpen) e.currentTarget.style.color = t.t2 }}
         onMouseLeave={(e) => { if (!areaOpen) e.currentTarget.style.color = t.t3 }}>
         <Icon n="folder" s={13} /><span>{project.areaName || 'Unfiled'}</span><Icon n="chevron-down" s={12} /></div>
@@ -144,7 +144,7 @@ function ProjectHeader({ project, reload }) {
               <input autoFocus value={newPillar} onChange={(e) => setNewPillar(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') createPillar(); if (e.key === 'Escape') setNewPillar(null) }}
                 onBlur={createPillar} placeholder="New pillar name…"
-                style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card,
+                style={{ width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', outline: 0, background: t.card,
                   fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }} /></div>}
         <div style={{ height: 1, background: t.line, margin: '6px 4px' }} />
         <PopRow icon="arrow-up-right" label={'Open ' + (project.areaName || 'pillar')} onClick={() => { setAreaOpen(false); go({ screen: 'area', id: project.area }) }} />
@@ -158,7 +158,7 @@ function ProjectHeader({ project, reload }) {
             background: 'transparent', fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
             color: t.t1, lineHeight: 1.1, padding: '0 0 2px' }} />
       : <div onClick={beginTitle} title="Click to rename" style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW,
-          letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.1, textWrap: 'pretty', cursor: 'text', borderRadius: 6 }}>{project.name}</div>}
+          letterSpacing: f.titleSpacing, color: t.t1, lineHeight: 1.1, textWrap: 'pretty', cursor: 'text', borderRadius: 'calc(6px * var(--rs))' }}>{project.name}</div>}
 
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
       <span style={{ position: 'relative' }}>
@@ -209,7 +209,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
   }
   return <div {...handlers} {...dragProps}
     className="task-row" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px 11px 8px',
-      borderRadius: 10, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'manipulation',
+      borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'manipulation',
       position: 'relative', overflow: 'hidden', background: t.card, opacity: dragging ? 0.4 : noDrag ? 0.72 : 1,
       border: '1px solid ' + (pressing ? t.line2 : t.line),
       transform: pressing ? 'scale(0.99)' : 'scale(1)', transition: 'border-color .2s, transform .2s, opacity .15s' }}>
@@ -221,7 +221,7 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
           onMouseEnter={() => setGrip(true)} onMouseLeave={() => setGrip(false)}
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, flex: 'none', zIndex: 1, cursor: 'grab' }}>
           <Icon n="grip-vertical" s={15} c={t.t3} /></span>}
-    <span style={{ width: 17, height: 17, borderRadius: 5, flex: 'none', position: 'relative', zIndex: 1,
+    <span style={{ width: 17, height: 17, borderRadius: 'calc(5px * var(--rs))', flex: 'none', position: 'relative', zIndex: 1,
       border: '1.5px solid ' + (x.done ? t.accent : t.t3), background: x.done ? t.accent : 'transparent' }}>
       {x.done && <Icon n="check" s={12} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: x.done ? t.t3 : t.t1,
@@ -235,19 +235,19 @@ function TaskRow({ x, onToggle, onOpen, onDragStart, onDragOver, onDrop, onDragE
     {x.srcMeeting && !x.done && <span onClick={(e) => { e.stopPropagation(); if (srcMeeting) go({ screen: 'note', id: x.srcMeeting }) }}
       title={srcMeeting ? 'From meeting: ' + srcMeeting.title : 'From a meeting'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', zIndex: 1, cursor: srcMeeting ? 'pointer' : 'default',
-        fontFamily: f.ui, fontSize: 10.5, fontWeight: 600, color: t.t3, background: t.tagBg, borderRadius: 6, padding: '2px 7px', maxWidth: 130 }}>
+        fontFamily: f.ui, fontSize: 10.5, fontWeight: 600, color: t.t3, background: t.tagBg, borderRadius: 'calc(6px * var(--rs))', padding: '2px 7px', maxWidth: 130 }}>
       <Icon n="users" s={11} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>meeting</span></span>}
     {onLane && !x.done && <button onClick={(e) => { e.stopPropagation(); onLane(x.id) }}
       title={laneUp ? 'Pull into Now' : 'Send to Icebox'} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
       flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
       color: laneUp ? t.accent : t.t3, background: 'transparent', border: '1px solid ' + (laneUp ? t.accentLine : t.line2),
-      borderRadius: 7, padding: '3px 8px', transition: 'border-color .14s, color .14s, background .14s' }}
+      borderRadius: 'calc(7px * var(--rs))', padding: '3px 8px', transition: 'border-color .14s, color .14s, background .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.background = laneUp ? t.accentBg : t.sel }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
       <Icon n={laneUp ? 'arrow-up' : 'arrow-down'} s={12} />{laneUp ? 'Now' : 'Icebox'}</button>}
     {onDismiss && !x.done && <button onClick={(e) => { e.stopPropagation(); onDismiss(x.id) }} title="Dismiss this task"
       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', zIndex: 1, width: 24, height: 24,
-        borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+        borderRadius: 'calc(7px * var(--rs))', border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
       <Icon n="x" s={14} /></button>}
@@ -443,7 +443,7 @@ function Tasks({ project, reload }) {
       <span style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
         color: over ? t.risk : t.t3 }}>{nowList.length} of {nowCap} pulled</span>
       {over && <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.risk, background: t.riskBg,
-        border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>over your line</span>}
+        border: '1px solid ' + t.riskLine, borderRadius: 'calc(6px * var(--rs))', padding: '1px 7px' }}>over your line</span>}
       <div style={{ flex: 1 }} />
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => setNowCap((c) => Math.max(1, c - 1))} title="Lower the Now limit" style={stepBtn(t)}><Icon n="minus" s={13} /></button>
@@ -454,7 +454,7 @@ function Tasks({ project, reload }) {
       {nowList.map((x) => <TaskRow key={x.id} x={x} onToggle={toggle} onOpen={(id) => setSheetTask(findTask(id))}
         {...nowH} dragging={drag?.id === x.id} onLane={(id) => moveLane(id, 'back')} laneUp={false} />)}
       {nowList.length < nowCap && <div onDragOver={onLaneOver('now')} onDrop={onDrop}
-        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 10,
+        style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 'calc(10px * var(--rs))',
         border: '1.5px dashed ' + t.line2, fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>
         <Icon n="arrow-up" s={14} c={t.t3} />
         <span>Slot open. Pull a task up from Icebox, or tap ↑ Now on one below.</span></div>}
@@ -474,7 +474,7 @@ function Tasks({ project, reload }) {
         return <div key={name} style={{ marginTop: 12 }}>
           <div onClick={() => setOpenGroups((g) => ({ ...g, [name]: !open }))}
             style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12, fontWeight: 600,
-              color: t.t2, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+              color: t.t2, cursor: 'pointer', padding: '6px 8px', borderRadius: 'calc(8px * var(--rs))' }}
             onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
             <Icon n={open ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
@@ -489,17 +489,17 @@ function Tasks({ project, reload }) {
         </div>
       })}
       <div style={{ marginTop: 6 }}>
-        {adding ? <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 10,
+        {adding ? <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 14px', borderRadius: 'calc(10px * var(--rs))',
           border: '1px solid ' + t.line2, background: t.card }}>
-          <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none' }} />
+          <span style={{ width: 17, height: 17, borderRadius: 'calc(5px * var(--rs))', border: '1.5px dashed ' + t.t3, flex: 'none' }} />
           <input autoFocus value={text} onChange={(e) => setText(e.target.value)} onBlur={commit}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setText(''); setAdding(false) } }}
             placeholder="New task…" style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.body, fontSize: 14.5, color: t.t1 }} />
         </div> : <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 11,
-          padding: '10px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: f.ui, fontSize: 13, color: t.t3 }}
+          padding: '10px 14px', borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer', fontFamily: f.ui, fontSize: 13, color: t.t3 }}
           onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-          <span style={{ width: 17, height: 17, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none',
+          <span style={{ width: 17, height: 17, borderRadius: 'calc(5px * var(--rs))', border: '1.5px dashed ' + t.t3, flex: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={11} /></span>
           <span style={{ whiteSpace: 'nowrap' }}>New task</span></div>}
       </div>
@@ -507,7 +507,7 @@ function Tasks({ project, reload }) {
 
     {scheduledTasks.length > 0 && <div style={{ marginTop: 14 }}>
       <div onClick={() => setShowScheduled((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
-        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 'calc(8px * var(--rs))' }}
         onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
         <Icon n={showScheduled ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
@@ -522,7 +522,7 @@ function Tasks({ project, reload }) {
 
     {doneTasks.length > 0 && <div style={{ marginTop: 14 }}>
       <div onClick={() => setShowDone((s) => !s)} style={{ display: 'flex', alignItems: 'center', gap: 7,
-        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 8 }}
+        fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 8px', borderRadius: 'calc(8px * var(--rs))' }}
         onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
         <Icon n={showDone ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
@@ -553,7 +553,7 @@ function Consider({ project }) {
   if (!items.length) return null
   const act = (label, icon, onClick, tone) => <button onClick={onClick} title={label}
     style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flex: 'none', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
-      color: tone || t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 7, padding: '4px 8px', cursor: 'pointer' }}
+      color: tone || t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', padding: '4px 8px', cursor: 'pointer' }}
     onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
     <Icon n={icon} s={12.5} />{label}</button>
   return <div style={{ marginTop: 20 }}>
@@ -564,12 +564,12 @@ function Consider({ project }) {
     </div>
     {open && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {items.map((x) => { const n = x.srcMeeting ? noteById(x.srcMeeting) : null
-        return <div key={x.id} style={{ padding: '10px 12px 10px 14px', borderRadius: 10, border: '1px dashed ' + t.line2, background: t.card }}>
+        return <div key={x.id} style={{ padding: '10px 12px 10px 14px', borderRadius: 'calc(10px * var(--rs))', border: '1px dashed ' + t.line2, background: t.card }}>
           <div style={{ fontFamily: f.body, fontSize: 14, color: t.t1, lineHeight: 1.4 }}>{x.label}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
             <span onClick={() => x.srcMeeting && setSource(x)} title="Where this came from"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0, maxWidth: '100%', fontFamily: f.ui, fontSize: 11.5, fontWeight: 600,
-                color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '3px 8px', cursor: 'pointer' }}>
+                color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '3px 8px', cursor: 'pointer' }}>
               <Icon n="info-circle" s={12.5} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n ? n.title + (n.date ? ' · ' + n.date.replace(/, \d{4}$/, '') : '') : 'From a meeting'}</span></span>
             <div style={{ flex: 1 }} />
@@ -584,7 +584,7 @@ function Consider({ project }) {
 }
 
 // small square stepper button for the Now WIP cap
-const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+const stepBtn = (t) => ({ width: 24, height: 24, borderRadius: 'calc(7px * var(--rs))', display: 'flex', alignItems: 'center', justifyContent: 'center',
   flex: 'none', border: '1px solid ' + t.line2, background: 'transparent', color: t.t2, cursor: 'pointer' })
 
 // ── Capture — one open input: paste a transcript, drop a file, or jot a note.
@@ -662,7 +662,7 @@ function Capture({ project, reload }) {
 
   return <div onDragOver={(e) => { e.preventDefault(); if (!drag) setDrag(true) }} onDragLeave={() => setDrag(false)}
     onDrop={(e) => { e.preventDefault(); setDrag(false); doFiles(e.dataTransfer.files) }}
-    style={{ border: '1px solid ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, borderRadius: 12, padding: 12, transition: 'border-color .14s, background .14s' }}>
+    style={{ border: '1px solid ' + (drag ? t.accent : t.line2), background: drag ? t.accentBg : t.card, borderRadius: 'calc(12px * var(--rs))', padding: 12, transition: 'border-color .14s, background .14s' }}>
     <textarea value={text} onChange={(e) => { setText(e.target.value); if (pending) setPending(null); if (!e.target.value.trim()) setPasteKind(null) }} onPaste={onPaste}
       onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
       placeholder="Throw something in: paste an email, Teams thread, a table, an update, or jot a note."
@@ -672,14 +672,14 @@ function Capture({ project, reload }) {
       {CAP_TYPES.map(([id, label, icon]) => { const on = pending === id
         return <span key={id} onClick={() => setPending(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
           fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
-          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 8, padding: '5px 10px' }}>
+          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px' }}>
           <Icon n={icon} s={12} />{label}</span> })}
       <div style={{ flex: 1 }} />
       <Btn kind="ghost" size="sm" onClick={() => setPending(null)}>Cancel</Btn>
       <Btn kind="primary" size="sm" icon={busy ? 'loader-2' : (pending === 'transcript' ? 'wand' : 'corner-down-left')} onClick={busy ? undefined : () => fileAs(pending)}>{pending === 'transcript' ? 'Synthesize' : 'File as ' + CAP_LABEL[pending]}</Btn>
     </div>}
     <div style={{ display: pending ? 'none' : 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-      <button onClick={() => fileRef.current?.click()} title="Attach a file" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}>
+      <button onClick={() => fileRef.current?.click()} title="Attach a file" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t2, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', padding: '6px 10px', cursor: 'pointer' }}>
         <Icon n="paperclip" s={14} />Attach</button>
       <input ref={fileRef} type="file" multiple hidden onChange={(e) => { doFiles(e.target.files); e.target.value = '' }} />
       <span style={{ flex: 1, minWidth: 0, fontFamily: f.ui, fontSize: 11, color: t.t3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status || 'Confirm the type before it files. ⌘↵'}</span>
@@ -738,7 +738,7 @@ function Library({ project, meetings, docNotes, reload }) {
         if (id !== 'all' && n === 0) return null
         return <span key={id} onClick={() => setFilter(id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
           fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
-          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 8, padding: '5px 11px' }}>
+          background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'), borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px' }}>
           {label}<span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: on ? t.onAccent : t.t3 }}>{n}</span></span>
       })}
     </div>
@@ -782,7 +782,7 @@ function LibRow({ it, first, pinned, onPin, onRemove }) {
     {it.del && <button onClick={onRemove} onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
       title="Delete from library"
       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 'none', zIndex: 1, width: 26, height: 26,
-        borderRadius: 7, border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
+        borderRadius: 'calc(7px * var(--rs))', border: '1px solid transparent', background: 'transparent', color: t.t3, cursor: 'pointer', transition: 'background .14s, color .14s' }}
       onMouseEnter={(e) => { e.currentTarget.style.background = t.riskBg; e.currentTarget.style.color = t.risk }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
       <Icon n="trash-2" s={14} /></button>}
@@ -932,7 +932,7 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
       <Btn kind="outline" size="sm" icon="sparkles" onClick={() => { setComposing(true); setAdding(false); setUpdating(false) }}>Generate with {genName}</Btn>
     </div>}
 
-    {updating && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+    {updating && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 'calc(12px * var(--rs))', padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
         <Icon n="file-diff" s={14} c={t.accent} />
         <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Update doc from a meeting</span>
@@ -943,30 +943,30 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Document</span>
         {[['existing', 'Existing artifact'], ['paste', 'Paste']].map(([id, label]) => {
           const on = docSrc === id; const disabled = id === 'existing' && rows.length === 0
-          return <span key={id} onClick={() => !disabled && setDocSrc(id)} style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+          return <span key={id} onClick={() => !disabled && setDocSrc(id)} style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1, color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px' }}>{label}</span>
         })}
       </div>
       {docSrc === 'existing'
-        ? <select value={docArtId || ''} onChange={(e) => setDocArtId(e.target.value)} style={{ width: '100%', marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
+        ? <select value={docArtId || ''} onChange={(e) => setDocArtId(e.target.value)} style={{ width: '100%', marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
             {rows.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
           </select>
         : <>
             <input value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="Document title…"
-              style={{ width: '100%', marginBottom: 6, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }} />
+              style={{ width: '100%', marginBottom: 6, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }} />
             <textarea value={docBody} onChange={(e) => setDocBody(e.target.value)} onPaste={(e) => handleTablePaste(e, docBody, setDocBody)} placeholder="Paste the current document here…"
-              style={{ width: '100%', minHeight: 110, marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
+              style={{ width: '100%', minHeight: 110, marginBottom: 8, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, resize: 'vertical', background: t.bg, fontFamily: 'var(--f-mono)', fontSize: 12.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
           </>}
       {/* meeting source */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8, flexWrap: 'wrap' }}>
         <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>From meeting</span>
         {meetings.length
-          ? <select value={meetingId || ''} onChange={(e) => setMeetingId(e.target.value)} style={{ flex: 1, minWidth: 160, border: '1px solid ' + t.line2, borderRadius: 8, background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
+          ? <select value={meetingId || ''} onChange={(e) => setMeetingId(e.target.value)} style={{ flex: 1, minWidth: 160, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '7px 9px' }}>
               {meetings.map((m) => <option key={m.id} value={m.id}>{m.title}{m.transcript ? '' : ' (no transcript)'}</option>)}
             </select>
           : <span style={{ fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No meetings on this project yet — add one first.</span>}
       </div>
       <textarea value={uInstr} onChange={(e) => setUInstr(e.target.value)} placeholder="Optional — extra instructions…"
-        style={{ width: '100%', minHeight: 42, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, resize: 'vertical', background: t.bg, fontFamily: f.body, fontSize: 13, color: t.t1, padding: '8px 10px' }} />
+        style={{ width: '100%', minHeight: 42, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, resize: 'vertical', background: t.bg, fontFamily: f.body, fontSize: 13, color: t.t1, padding: '8px 10px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
         <Btn kind="primary" size="sm" icon="wand" onClick={docSrc === 'existing' ? openRevise : runRevisePaste}>Revise the document</Btn>
         {/* Still here for the disconnected case: editing the real file on a work
@@ -976,22 +976,22 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
       </div>
     </div>}
 
-    {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+    {adding && <div style={{ background: t.card, border: '1px solid ' + t.line2, borderRadius: 'calc(12px * var(--rs))', padding: 12, marginBottom: 12 }}>
       <input autoFocus value={mTitle} onChange={(e) => setMTitle(e.target.value)} placeholder="Title (e.g. Pricing CSV, Cover email)…"
         style={{ width: '100%', border: 0, outline: 0, background: 'transparent', fontFamily: f.title, fontSize: 17, fontWeight: f.titleW, color: t.t1, marginBottom: 8 }} />
       <textarea value={mBody} onChange={(e) => setMBody(e.target.value)} className="selectable"
         onKeyDown={(e) => { if (e.key === 'Escape') setAdding(false) }}
         onPaste={(e) => handleCsvPaste(e, mBody, setMBody)}
         placeholder="Paste raw content — paste a table from Excel/Sheets and it becomes CSV. Stored verbatim."
-        style={{ width: '100%', minHeight: 120, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
-          background: t.bg, fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
+        style={{ width: '100%', minHeight: 120, border: '1px solid ' + t.line2, borderRadius: 'calc(9px * var(--rs))', outline: 0, resize: 'vertical',
+          background: t.bg, fontFamily: 'var(--f-mono)', fontSize: 12.5, lineHeight: 1.55, color: t.t1, padding: '9px 11px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
         <Btn kind="primary" size="sm" icon="check" onClick={addManual}>Add artifact</Btn>
         <Btn kind="ghost" size="sm" onClick={() => setAdding(false)}>Cancel</Btn>
       </div>
     </div>}
 
-    {composing && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 12, padding: 12, marginBottom: 12 }}>
+    {composing && <div style={{ background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 'calc(12px * var(--rs))', padding: 12, marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
         <Icon n="sparkles" s={14} c={t.accent} />
         <span style={{ fontFamily: f.label, fontSize: 10, fontWeight: 600, letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Ask {genName}</span>
@@ -1008,7 +1008,7 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
           const on = genScope === id
           return <span key={id} onClick={() => setGenScope(id)} title={id === 'pillar' ? 'Also feed every sibling project in the pillar (summary level)' : 'Everything in this project'}
             style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
-              background: on ? t.accent : t.sel, borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+              background: on ? t.accent : t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px' }}>{label}</span>
         })}
       </div>}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 9 }}>
@@ -1017,13 +1017,13 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
           return <span key={c.id} onClick={() => setTypeId(c.id)} title={c.desc} style={{ display: 'inline-flex', alignItems: 'center',
             gap: 6, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2,
             background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'),
-            borderRadius: 8, padding: '6px 11px' }}><Icon n={c.icon} s={13} />{c.name}</span>
+            borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px' }}><Icon n={c.icon} s={13} />{c.name}</span>
         })}
       </div>
       <textarea autoFocus value={prompt} onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run(); if (e.key === 'Escape') setComposing(false) }}
         placeholder={typeId === 'csv' ? 'What columns do you want? Any extra instructions…' : `Optional — extra instructions for ${aiName}…`}
-        style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 9, outline: 0, resize: 'vertical',
+        style={{ width: '100%', minHeight: 54, border: '1px solid ' + t.line2, borderRadius: 'calc(9px * var(--rs))', outline: 0, resize: 'vertical',
           background: t.bg, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, padding: '9px 11px' }} />
       <div style={{ display: 'flex', gap: 7, marginTop: 8 }}>
         <Btn kind="primary" size="sm" icon="sparkles" onClick={run}>{mcpMode ? 'Generate in Claude.ai' : 'Generate'}</Btn>
@@ -1057,20 +1057,20 @@ function Artifacts({ project, notes, meetings = [], reload, compact = false }) {
               <span>{a.provenance || 'Composed'}</span>{a.at && <Fragment><span style={{ opacity: 0.5 }}>·</span><span>{timeAgo(a.at)}</span></Fragment>}
             </div>
           </div>
-          {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.onAccent, background: t.accent, borderRadius: 6, padding: '2px 7px' }}>New</span>}
+          {isNew && <span style={{ fontFamily: f.label, fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.onAccent, background: t.accent, borderRadius: 'calc(6px * var(--rs))', padding: '2px 7px' }}>New</span>}
           <Icon n="chevron-right" s={15} c={t.t3} />
         </div>
       })}
     </Card> : !busy && <div onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-      borderRadius: 11, cursor: 'pointer', border: '1px dashed ' + t.line2, fontFamily: f.ui, fontSize: 13, color: t.t3 }}
+      borderRadius: 'calc(11px * var(--rs))', cursor: 'pointer', border: '1px dashed ' + t.line2, fontFamily: f.ui, fontSize: 13, color: t.t3 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
-      <span style={{ width: 18, height: 18, borderRadius: 5, border: '1.5px dashed ' + t.t3, flex: 'none', display: 'flex',
+      <span style={{ width: 18, height: 18, borderRadius: 'calc(5px * var(--rs))', border: '1.5px dashed ' + t.t3, flex: 'none', display: 'flex',
         alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={12} /></span>No artifacts yet — add a file or generate one</div>)}
 
     {toast && <div style={{ position: 'fixed', left: '50%', bottom: 26, transform: 'translateX(-50%)', zIndex: 470, animation: 'toast-in .2s ease-out',
       display: 'flex', alignItems: 'center', gap: 10, background: t.card, border: '1px solid ' + t.accentLine,
-      borderRadius: 12, boxShadow: t.shadow, padding: '11px 15px', maxWidth: '90vw' }}>
+      borderRadius: 'calc(12px * var(--rs))', boxShadow: t.shadow, padding: '11px 15px', maxWidth: '90vw' }}>
       <Icon n="sparkles" s={16} c={t.accent} />
       <span style={{ fontFamily: f.ui, fontSize: 13, color: t.t1 }}>{aiName} added <b style={{ fontWeight: 600 }}>{toast}</b> to Artifacts</span></div>}
   </div>
@@ -1093,7 +1093,7 @@ function ScopedAsk({ project }) {
         textTransform: 'uppercase', color: t.t3 }}>Ask within {project.name}</span>
     </div>
     <form onSubmit={submit} style={{ display: 'flex', alignItems: 'center', gap: 8, background: t.card,
-      border: '1px solid ' + t.line2, borderRadius: 9, padding: '0 11px', height: 38 }}>
+      border: '1px solid ' + t.line2, borderRadius: 'calc(9px * var(--rs))', padding: '0 11px', height: 38 }}>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. what's blocking the close?"
         style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 12.5, color: t.t1 }} />
       <button type="submit" style={{ border: 0, background: 'transparent', cursor: 'pointer', color: t.accent, display: 'flex' }}>
@@ -1123,7 +1123,7 @@ function Related({ project, owned, linked }) {
     <SectionHead label="Related" />
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       {linked.map((n) => <div key={n.id} onClick={() => go({ screen: 'note', id: n.id })} style={{ display: 'flex',
-        alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 9, cursor: 'pointer' }}
+        alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 'calc(9px * var(--rs))', cursor: 'pointer' }}
         onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
         <Icon n="arrows-split" s={14} c={areaColor(t, n.area || project.area)} style={{ marginTop: 2 }} />
@@ -1132,7 +1132,7 @@ function Related({ project, owned, linked }) {
           <div style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, marginTop: 1 }}>cross-project meeting</div>
         </div></div>)}
       {rel.slice(0, 5).map((r, i) => <div key={'r' + i} onClick={() => r.id && go({ screen: 'note', id: r.id })}
-        style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 9, cursor: r.id ? 'pointer' : 'default' }}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 'calc(9px * var(--rs))', cursor: r.id ? 'pointer' : 'default' }}
         onMouseEnter={(e) => { if (r.id) e.currentTarget.style.background = t.sel }}
         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
         <Icon n={(KIND[r.kind] || KIND.note).icon} s={14} c={t.t3} style={{ marginTop: 2 }} />
@@ -1141,7 +1141,7 @@ function Related({ project, owned, linked }) {
           <div style={{ fontFamily: f.ui, fontSize: 10.5, color: t.t3, marginTop: 1 }}>{r.reason || 'related note'}</div>
         </div></div>)}
       {!rel.length && siblings.slice(0, 5).map((p) => <div key={p.id} onClick={() => go({ screen: 'project', id: p.id })}
-        style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 9, cursor: 'pointer' }}
+        style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', borderRadius: 'calc(9px * var(--rs))', cursor: 'pointer' }}
         onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
         <AreaDot areaId={p.area} s={8} />

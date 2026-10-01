@@ -15,6 +15,7 @@ import { TaskSheet, useLongPress } from './TaskSheet'
 import { AddTaskInline } from './AddTask'
 import { updateTask, updateProject, createUpdate, reorderProjects, deleteAreaCascade } from '../lib/db'
 import { recurrenceLabel } from '../lib/recurrence'
+import { MemoCover, MemoHead, StatusCircle } from '../theme/memo'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const todayLabel = () => {
@@ -82,7 +83,7 @@ function ProjectCard({ p, drag }) {
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Icon n="square-check" s={13} /><span>{`${open} open task${open === 1 ? '' : 's'}`}</span></span>
         {dueToday > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: t.risk, fontWeight: 600,
-          background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 6, padding: '1px 7px' }}>
+          background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(6px * var(--rs))', padding: '1px 7px' }}>
           <Icon n="alarm" s={13} c={t.risk} /><span>{`${dueToday} due today`}</span></span>}
         {openActions > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Icon n="checkup-list" s={13} /><span>{`${openActions} open item${openActions === 1 ? '' : 's'}`}</span></span>}
@@ -154,20 +155,43 @@ function LiveGrid({ a, live }) {
 
 // ── one cross-project open-task row ─────────────────────────────
 function OpenTaskRow({ x, first, onToggle, onOpen }) {
-  const { t, f, go } = useApp()
+  const { t, f, go, look } = useApp()
   const { pressing, handlers } = useLongPress(() => onOpen(x), () => onToggle(x), 450)
   const due = dueText(x)
   const stop = {
     onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(),
     onClick: (e) => { e.stopPropagation(); go(x.projectId ? { screen: 'project', id: x.projectId } : { screen: 'area', id: x.area }) },
   }
+  // Memo look: project rides ABOVE the title as a caps label (like a form line),
+  // so the title gets the full row width and wraps instead of squeezing to "Hando…".
+  if (look === 'memo') return <div {...handlers} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0',
+    borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
+    touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
+    background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
+    {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
+      background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
+    <span style={{ marginTop: 17, zIndex: 1, display: 'inline-flex' }}>
+      <StatusCircle state={x.taskStatus === 'now' ? 'now' : x.waiting ? 'waiting' : 'icebox'} c={x.waiting ? t.t3 : t.accent} /></span>
+    <span style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
+      <span {...stop} title="Open project" style={{ display: 'block', fontFamily: f.label, fontSize: 10, fontWeight: 700, letterSpacing: f.labelSpacing,
+        textTransform: 'uppercase', color: areaColor(t, x.area), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 2 }}>
+        {x.projectName}{x.waiting ? ' · waiting' : ''}</span>
+      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        fontFamily: f.body, fontSize: 15, fontWeight: 500, letterSpacing: '-0.012em', lineHeight: 1.35, color: t.t1 }}>{x.label}</span>
+    </span>
+    {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1, marginTop: 18 }} />}
+    {due ? <span style={{ flex: 'none', zIndex: 1, marginTop: 18, fontFamily: f.meta, fontSize: 11, fontWeight: 500, textTransform: 'uppercase',
+      color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>
+      : x.next && <span style={{ flex: 'none', zIndex: 1, marginTop: 18, fontFamily: f.label, fontSize: 9.5, fontWeight: 700,
+      letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Next</span>}
+  </div>
   return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
     borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
     touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
     background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
     {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
       background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
-    <span style={{ width: 17, height: 17, borderRadius: 5, flex: 'none', zIndex: 1,
+    <span style={{ width: 17, height: 17, borderRadius: 'calc(5px * var(--rs))', flex: 'none', zIndex: 1,
       border: '1.5px solid ' + t.t3, background: 'transparent' }} />
     <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14.5, color: t.t1, overflow: 'hidden',
       textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
@@ -178,7 +202,7 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
     {x.next && !due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.label, fontSize: 9, fontWeight: 700,
       letterSpacing: '0.12em', textTransform: 'uppercase', color: t.accent }}>Next</span>}
     <span {...stop} title="Open project" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, maxWidth: 150,
-      fontFamily: f.ui, fontSize: 11.5, fontWeight: 500, color: t.t2, background: t.sel, borderRadius: 7, padding: '3px 9px', cursor: 'pointer' }}
+      fontFamily: f.ui, fontSize: 11.5, fontWeight: 500, color: t.t2, background: t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '3px 9px', cursor: 'pointer' }}
       onMouseEnter={(e) => e.currentTarget.style.color = t.t1}
       onMouseLeave={(e) => e.currentTarget.style.color = t.t2}>
       <AreaDot areaId={x.area} s={6} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.projectName}</span></span>
@@ -206,7 +230,7 @@ const FILTERS = [
 
 // ── Open tasks card (cross-project) ─────────────────────────────
 function OpenTasks({ projects, sheetTask, setSheetTask }) {
-  const { t, f } = useApp()
+  const { t, f, look } = useApp()
   const { reload, looseTasks, areas, patchTask, removeTask } = useData()
   const [filter, setFilter] = usePersisted('course.openTasksFilter.v2', 'focus')
   const [pillar, setPillar] = usePersisted('course.openTasksPillar.v1', 'all')
@@ -264,7 +288,7 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
     return <span key={fl.id} onClick={() => setFilter(fl.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
       fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
       color: on ? t.onAccent : t.t2, background: on ? t.accent : t.sel, border: '1px solid ' + (on ? t.accent : 'transparent'),
-      borderRadius: 8, padding: '5px 11px', transition: 'background .12s, color .12s' }}
+      borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', transition: 'background .12s, color .12s' }}
       onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = t.tagBg }}
       onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = t.sel }}>
       {fl.label}<span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700,
@@ -272,19 +296,21 @@ function OpenTasks({ projects, sheetTask, setSheetTask }) {
   }
 
   return <div style={{ marginTop: 30 }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+    {look === 'memo'
+      ? <div style={{ marginBottom: 12 }}><MemoHead label="Open tasks" meta={`${rows.length} ${filter === 'all' ? 'on deck' : 'shown'}`} /></div>
+      : <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
       <Icon n="checkup-list" s={16} c={t.t2} />
       <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>Open tasks</span>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{rows.length} {filter === 'all' ? 'on deck' : 'shown'}</span>
       <div style={{ flex: 1, height: 1, background: t.line }} />
-    </div>
+    </div>}
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12, flexWrap: 'wrap' }}>
       {FILTERS.map(chip)}
       {pillarsPresent.length > 1 && <span style={{ position: 'relative', display: 'inline-flex', marginLeft: 'auto' }}>
         <span onClick={() => setPillarOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
           fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
           color: activePillar === 'all' ? t.t2 : t.t1, background: t.sel, border: '1px solid ' + (activePillar === 'all' ? 'transparent' : t.line2),
-          borderRadius: 8, padding: '5px 10px' }}
+          borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px' }}
           onMouseEnter={(e) => e.currentTarget.style.background = t.tagBg}
           onMouseLeave={(e) => e.currentTarget.style.background = t.sel}>
           {activePillar !== 'all' && <AreaDot areaId={activePillar} s={7} />}
@@ -367,19 +393,23 @@ function ResurfaceBanner() {
 
 // ── In-focus row — one pulled Now-lane task inside a project group ──
 function NowRow({ x, first, onToggle, onOpen }) {
-  const { t, f } = useApp()
+  const { t, f, look } = useApp()
+  const memo = look === 'memo'
   const { pressing, handlers } = useLongPress(() => onOpen(x), () => onToggle(x), 450)
   const due = dueText(x)
-  return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 14px', cursor: 'pointer',
+  return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: memo ? '9px 0' : '10px 14px', cursor: 'pointer',
     userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
     borderTop: first ? 'none' : '1px solid ' + t.line, background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
     {pressing && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '100%', transformOrigin: 'left',
       background: t.sel, animation: 'taskHold 0.45s linear forwards', pointerEvents: 'none' }} />}
-    <span style={{ width: 16, height: 16, borderRadius: 5, flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />
-    <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: 14, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
+    {memo ? <StatusCircle state="now" c={t.accent} />
+      : <span style={{ width: 16, height: 16, borderRadius: 'calc(5px * var(--rs))', flex: 'none', zIndex: 1, border: '1.5px solid ' + t.t3, background: 'transparent' }} />}
+    <span style={{ flex: 1, minWidth: 0, zIndex: 1, fontFamily: f.body, fontSize: memo ? 15 : 14, fontWeight: memo ? 500 : 400,
+      letterSpacing: memo ? '-0.012em' : 0, color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.label}</span>
     {x.recurrence && <Icon n="repeat" s={12.5} c={t.t3} title={recurrenceLabel(x.recurrence) || 'Repeats'} style={{ zIndex: 1 }} />}
     {(() => { const st = stateTagFor(x); return st && <StateTag kind={st.kind} label={st.label} /> })()}
-    {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
+    {due && <span style={{ flex: 'none', zIndex: 1, fontFamily: f.meta, fontSize: memo ? 11 : 11.5, fontWeight: memo ? 500 : 600,
+      textTransform: memo ? 'uppercase' : 'none', color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>}
   </div>
 }
 
@@ -388,7 +418,8 @@ function NowRow({ x, first, onToggle, onOpen }) {
 // items you committed to focus on) is the first thing seen on the Work overview.
 // Project-level active state (status active | sent) governs which projects show.
 function NowFocus({ projects }) {
-  const { t, f, go } = useApp()
+  const { t, f, go, look } = useApp()
+  const memo = look === 'memo'
   const { reload, patchTask, removeTask } = useData()
   const [nowCap] = usePersisted('course.nowCap', 3)
   const [sheetTask, setSheetTask] = useState(null)
@@ -410,29 +441,34 @@ function NowFocus({ projects }) {
   }
 
   return <div style={{ marginTop: 30 }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+    {look === 'memo'
+      ? <div style={{ marginBottom: 12 }}><MemoHead label="In focus now" meta={`${totalNow} pulled · ${groups.length} project${groups.length === 1 ? '' : 's'}`} /></div>
+      : <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
       <Icon n="player-play" s={16} c={t.accent} />
       <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>In focus now</span>
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{totalNow} pulled across {groups.length} project{groups.length === 1 ? '' : 's'}</span>
       <div style={{ flex: 1, height: 1, background: t.line }} />
-    </div>
+    </div>}
     {groups.length === 0
       ? <Card style={{ padding: '18px 16px', textAlign: 'center', fontFamily: f.ui, fontSize: 13, color: t.t3 }}>
           Nothing pulled into Now yet. Open a project and pull a task up to put it in focus.</Card>
-      : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+      : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: memo ? '0 28px' : 12 }}>
           {groups.map(({ p, now }) => {
             const over = now.length > nowCap
             return <Card key={p.id} style={{ padding: 0, overflow: 'hidden' }}>
               <div onClick={() => go({ screen: 'project', id: p.id })} style={{ display: 'flex', alignItems: 'center', gap: 8,
-                padding: '11px 14px', cursor: 'pointer', borderBottom: '1px solid ' + t.line }}
+                padding: memo ? '12px 0 0' : '11px 14px', cursor: 'pointer', borderBottom: memo ? 0 : '1px solid ' + t.line }}
                 onMouseEnter={(e) => e.currentTarget.style.background = t.sel} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                <AreaDot areaId={p.area} s={8} />
-                <span style={{ flex: 1, minWidth: 0, fontFamily: f.title, fontSize: 14.5, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
+                {!memo && <AreaDot areaId={p.area} s={8} />}
+                <span style={memo
+                  ? { flex: 1, minWidth: 0, fontFamily: f.label, fontSize: 10.5, fontWeight: 700, letterSpacing: f.labelSpacing, textTransform: 'uppercase',
+                      color: areaColor(t, p.area), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+                  : { flex: 1, minWidth: 0, fontFamily: f.title, fontSize: 14.5, fontWeight: f.titleW, letterSpacing: f.titleSpacing,
                   color: t.t1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                 <span style={{ fontFamily: f.ui, fontSize: 11, fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: over ? t.risk : t.t3 }}>{now.length}{over ? ' of ' + nowCap : ''} in Now</span>
                 <Icon n="chevron-right" s={15} c={t.t3} />
               </div>
-              <div style={{ padding: '4px 0' }}>
+              <div style={{ padding: memo ? '0 0 4px' : '4px 0' }}>
                 {now.map((x, i) => <NowRow key={x.id} x={x} first={i === 0} onToggle={toggle}
                   onOpen={() => setSheetTask({ task: { ...x, projectId: p.id, projectName: p.name, area: p.area, projStatus: p.status }, projectId: p.id })} />)}
               </div>
@@ -457,7 +493,7 @@ function ProjectShelf({ label, projects, area, open, onToggle }) {
   if (!projects.length) return null
   return <div style={{ marginTop: 12 }}>
     <div onClick={onToggle} style={{ display: 'inline-flex', alignItems: 'center', gap: 7,
-      fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 8 }}
+      fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t3, cursor: 'pointer', padding: '6px 9px', borderRadius: 'calc(8px * var(--rs))' }}
       onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
       <Icon n={open ? 'chevron-down' : 'chevron-right'} s={13} c={t.t3} />
@@ -472,7 +508,8 @@ function ProjectShelf({ label, projects, area, open, onToggle }) {
 }
 
 export function OverviewScreen() {
-  const { t, f } = useApp()
+  const { t, f, look, isMobile } = useApp()
+  const memo = look === 'memo'
   const { areas, allProjects } = useData()
   const [sheetTask, setSheetTask] = useState(null)
   const [ideasOpen, setIdeasOpen] = useState({})
@@ -490,15 +527,25 @@ export function OverviewScreen() {
   const totalActive = projects.filter((p) => p.status === 'active').length
   const populatedAreas = areas.filter((a) => liveOf(a).length || ideasOf(a).length || holdOf(a).length)
 
+  const pulled = (p) => (p.tasks || []).filter((x) => x.taskStatus === 'now' && !x.done).length
+  const focusProjects = projects.filter((p) => (p.status === 'active' || p.status === 'sent') && pulled(p))
+  const focusTasks = focusProjects.reduce((n, p) => n + pulled(p), 0)
+
   return <div data-screen-label="Work overview" style={{ maxWidth: 980, margin: '0 auto', padding: '34px 36px 80px' }}>
-    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 6 }}>
+    {memo ? <div style={{ margin: isMobile ? '-34px -36px 0' : 0 }}>
+      <MemoCover title="Work" fields={[
+        { label: 'Date', value: todayLabel() },
+        { label: 'In focus', dashed: true, value: `${focusTasks} task${focusTasks === 1 ? '' : 's'} · ${focusProjects.length} of ${totalActive} project${totalActive === 1 ? '' : 's'}` },
+        { label: 'Areas', dashed: true, value: populatedAreas.map((a) => a.name).join(', ') || '—' },
+      ]} /></div>
+    : <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 6 }}>
       <div>
         <div style={{ fontFamily: f.title, fontSize: 30, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1 }}>Work</div>
         <div style={{ fontFamily: f.ui, fontSize: 13, color: t.t2, marginTop: 4 }}>
           {totalActive} active project{totalActive === 1 ? '' : 's'} across {populatedAreas.length} area{populatedAreas.length === 1 ? '' : 's'}</div>
       </div>
       <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3, fontVariantNumeric: 'tabular-nums' }}>{todayLabel()}</span>
-    </div>
+    </div>}
 
     <ResurfaceBanner />
 
@@ -511,11 +558,12 @@ export function OverviewScreen() {
       const ideas = ideasOf(a)
       const hold = holdOf(a)
       return <div key={a.id} style={{ marginTop: 30 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
+        {memo ? <div style={{ marginBottom: 12 }}><MemoHead label={a.name} meta={`${live.length} project${live.length === 1 ? '' : 's'}`} /></div>
+        : <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
           <span style={{ fontFamily: f.title, fontSize: 16, fontWeight: f.titleW, letterSpacing: f.titleSpacing, color: t.t1, whiteSpace: 'nowrap' }}>{a.name}</span>
           <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap' }}>{`${live.length} project${live.length === 1 ? '' : 's'}`}</span>
           <div style={{ flex: 1, height: 1, background: t.line }} />
-        </div>
+        </div>}
         {live.length > 0 && <LiveGrid a={a} live={live} />}
         <ProjectShelf label="Waiting" projects={hold} area={a}
           open={!!holdOpen[a.id]} onToggle={() => setHoldOpen((o) => ({ ...o, [a.id]: !o[a.id] }))} />
@@ -611,7 +659,7 @@ export function AreaScreen() {
       <div style={{ flex: 1 }} />
       <button onClick={deleting ? undefined : removeArea} title="Delete this area"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-          color: t.t3, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 8, padding: '6px 11px', cursor: deleting ? 'default' : 'pointer', transition: 'color .14s, border-color .14s' }}
+          color: t.t3, background: 'transparent', border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px', cursor: deleting ? 'default' : 'pointer', transition: 'color .14s, border-color .14s' }}
         onMouseEnter={(e) => { if (!deleting) { e.currentTarget.style.color = t.risk; e.currentTarget.style.borderColor = t.riskLine } }}
         onMouseLeave={(e) => { e.currentTarget.style.color = t.t3; e.currentTarget.style.borderColor = t.line2 }}>
         <Icon n={deleting ? 'loader-2' : 'trash-2'} s={14} />{deleting ? 'Deleting…' : 'Delete area'}</button>

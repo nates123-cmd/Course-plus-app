@@ -127,14 +127,14 @@ function BlockRow({ block, series, note, onOpen, onHold, onDelete }) {
         fontFamily: f.ui, fontSize: 11, fontWeight: 600,
         color: series ? t.accent : t.t2, background: series ? t.accentBg : t.tagBg,
         border: '1px solid ' + (series ? t.accentLine : 'transparent'),
-        borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+        borderRadius: 'calc(6px * var(--rs))', padding: '2px 8px', whiteSpace: 'nowrap' }}>
         {series && <Icon n="repeat" s={11} c={t.accent} />}{badge}</span>
       <span
         className="task-grip"
         onClick={(e) => { e.stopPropagation(); onDelete(block) }}
         title="Delete from agenda"
         style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 24, height: 24, borderRadius: 7, cursor: 'pointer', opacity: hover ? 1 : 0,
+          width: 24, height: 24, borderRadius: 'calc(7px * var(--rs))', cursor: 'pointer', opacity: hover ? 1 : 0,
           transition: 'opacity .12s, color .12s', color: t.t3 }}
         onMouseEnter={(e) => e.currentTarget.style.color = t.risk}
         onMouseLeave={(e) => e.currentTarget.style.color = t.t3}
@@ -328,7 +328,7 @@ export function AgendaScreen() {
             </div>
             <Icon n="arrow-up-right" s={15} c={t.t3} />
             <span className="task-grip" onClick={async (e) => { e.stopPropagation(); if (!window.confirm(`Delete the notes for “${n.title}”?`)) return; removeNoteLocal(n.id); try { await deleteNote(n.id) } catch { reload() } }}
-              title="Delete these notes" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, cursor: 'pointer', color: t.t3 }}
+              title="Delete these notes" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 'calc(7px * var(--rs))', cursor: 'pointer', color: t.t3 }}
               onMouseEnter={(e) => e.currentTarget.style.color = t.risk} onMouseLeave={(e) => e.currentTarget.style.color = t.t3}><Icon n="trash" s={15} c="currentColor" /></span>
           </div>)}
         </Card>

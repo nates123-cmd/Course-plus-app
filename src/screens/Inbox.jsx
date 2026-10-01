@@ -362,7 +362,7 @@ export function InboxScreen() {
                   <span style={{ position: 'relative', display: 'inline-flex' }}>
                     <span onClick={() => setAssignFor(assignOpen ? null : it.id)} title="File somewhere else"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-                        color: t.t1, background: assignOpen ? t.tagBg : t.sel, borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
+                        color: t.t1, background: assignOpen ? t.tagBg : t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px', cursor: 'pointer' }}>
                       <AreaDot areaId={sp.area} s={6} />{sp.name}<Icon n="chevron-down" s={11} c={t.t3} />
                     </span>
                     {assignOpen && (
@@ -373,7 +373,7 @@ export function InboxScreen() {
                 )}
 
                 {m && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 7, padding: '4px 10px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px' }}>
                     <AreaDot areaId={m.home} s={6} />{m.homeLabel}
                     <span style={{ color: t.t3, fontWeight: 500 }}>
                       · splits to {m.routes.map((r) => `${projectName(r.project)} (${r.count})`).join(', ')}

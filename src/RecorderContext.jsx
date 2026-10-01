@@ -731,11 +731,11 @@ export function FloatingRecorder() {
 
   return <div style={{ position: 'fixed', zIndex: 460, width: 'min(286px, calc(100vw - 32px))',
     right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(16px + env(safe-area-inset-bottom))',
-    background: t.card, border: '1px solid ' + (live ? t.riskLine : t.line2), borderRadius: 14,
+    background: t.card, border: '1px solid ' + (live ? t.riskLine : t.line2), borderRadius: 'calc(14px * var(--rs))',
     boxShadow: t.shadow, overflow: 'hidden' }}>
     <div onClick={open} title="Return to recording" style={{ display: 'flex', alignItems: 'center', gap: 11,
       padding: '11px 13px', cursor: 'pointer', background: live ? t.riskBg : 'transparent' }}>
-      <span className={live ? 'rec-pulse' : undefined} style={{ position: 'relative', width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex',
+      <span className={live ? 'rec-pulse' : undefined} style={{ position: 'relative', width: 34, height: 34, borderRadius: 'calc(9px * var(--rs))', flex: 'none', display: 'flex',
         alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + (live ? t.riskLine : t.line) }}>
         {busy ? <Icon n="loader-2" s={17} c={t.accent} />
           : <Icon n="microphone" s={17} c={live ? t.risk : t.t2} />}
@@ -745,7 +745,7 @@ export function FloatingRecorder() {
           <span style={{ fontFamily: f.meta, fontSize: 14, fontWeight: 600, color: t.t1, fontVariantNumeric: 'tabular-nums' }}>{fmtClock(seconds)}</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11,
             fontWeight: 600, color: live ? t.risk : t.t3 }}>
-            {live && <span style={{ width: 6, height: 6, borderRadius: 3, background: t.risk }} />}
+            {live && <span style={{ width: 6, height: 6, borderRadius: 'calc(3px * var(--rs))', background: t.risk }} />}
             {status}</span>
         </div>
         <div style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 500, color: t.t2, marginTop: 1, overflow: 'hidden',
@@ -761,8 +761,8 @@ export function FloatingRecorder() {
       <div style={{ flex: 1 }} />
       <button onClick={(e) => { e.stopPropagation(); rec.stopAndTranscribe() }} title="Stop & transcribe"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-          color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }}>
-        <span style={{ width: 11, height: 11, borderRadius: 3, background: t.risk }} />Stop</button>
+          color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px', cursor: 'pointer' }}>
+        <span style={{ width: 11, height: 11, borderRadius: 'calc(3px * var(--rs))', background: t.risk }} />Stop</button>
     </div>}
   </div>
 }

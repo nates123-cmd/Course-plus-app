@@ -30,7 +30,7 @@ function Sheet({ title, sub, onClose, children, footer }) {
   return <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 420, background: 'rgba(0,0,0,0.42)',
     display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '6vh 16px 0' }}>
     <div onClick={(e) => e.stopPropagation()} style={{ flex: '0 0 660px', maxWidth: '95vw', maxHeight: '84vh',
-      background: t.card, border: '1px solid ' + t.line, borderRadius: 16, boxShadow: t.shadow,
+      background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(16px * var(--rs))', boxShadow: t.shadow,
       display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '14px 10px 12px 16px',
         borderBottom: '1px solid ' + t.line, flex: 'none' }}>
@@ -64,7 +64,7 @@ export function TunePanel({ dive, sourceText, onClose, onSaved }) {
   const toggleWeight = (i, w) => patch(i, { weight: points[i].weight === w ? undefined : w })
   const addPoint = () => { setPoints((ps) => [...ps, { text: '' }]); setOpenNote(null) }
 
-  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 9, outline: 0,
+  const inputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(9px * var(--rs))', outline: 0,
     background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '8px 10px' }
 
   const runRevise = async () => {
@@ -107,7 +107,7 @@ export function TunePanel({ dive, sourceText, onClose, onSaved }) {
 
   const chip = (on, label, icon, onClick, tone) => (
     <span onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-      fontFamily: f.ui, fontSize: 11, fontWeight: 600, borderRadius: 7, padding: '3px 8px',
+      fontFamily: f.ui, fontSize: 11, fontWeight: 600, borderRadius: 'calc(7px * var(--rs))', padding: '3px 8px',
       color: on ? (tone === 'risk' ? t.risk : t.accent) : t.t3,
       background: on ? (tone === 'risk' ? t.riskBg : t.accentBg) : 'transparent',
       border: '1px solid ' + (on ? (tone === 'risk' ? t.riskLine : t.accentLine) : t.line2) }}>
@@ -148,7 +148,7 @@ export function TunePanel({ dive, sourceText, onClose, onSaved }) {
       {revised.guidance ? <div style={{ marginTop: 18 }}>
         <Label>What it will remember</Label>
         <div style={{ whiteSpace: 'pre-wrap', fontFamily: f.ui, fontSize: 12.5, color: t.t2, marginTop: 7,
-          lineHeight: 1.55, background: t.panel, border: '1px solid ' + t.line, borderRadius: 10, padding: '11px 13px' }}>{revised.guidance}</div>
+          lineHeight: 1.55, background: t.panel, border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', padding: '11px 13px' }}>{revised.guidance}</div>
       </div> : null}
     </> : <>
       {guidance ? <div style={{ marginBottom: 18 }}>
@@ -164,7 +164,7 @@ export function TunePanel({ dive, sourceText, onClose, onSaved }) {
       <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {points.map((k, i) => {
           const dropped = !!k.drop
-          return <div key={i} style={{ padding: '9px 10px', borderRadius: 10, border: '1px solid ' + t.line,
+          return <div key={i} style={{ padding: '9px 10px', borderRadius: 'calc(10px * var(--rs))', border: '1px solid ' + t.line,
             background: dropped ? 'transparent' : t.panel, opacity: dropped ? 0.5 : 1 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, width: 14, flex: 'none', paddingTop: 8 }}>{i + 1}</span>
@@ -235,7 +235,7 @@ export function AskPanel({ dive, sourceText, onClose }) {
     setBusy(false)
   }
 
-  const inputStyle = { flex: 1, border: '1px solid ' + t.line2, borderRadius: 10, outline: 0,
+  const inputStyle = { flex: 1, border: '1px solid ' + t.line2, borderRadius: 'calc(10px * var(--rs))', outline: 0,
     background: t.bg, fontFamily: f.ui, fontSize: 13, color: t.t1, padding: '10px 12px' }
 
   return <Sheet title={'Ask about ' + dive.title} onClose={onClose}

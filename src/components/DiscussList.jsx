@@ -96,7 +96,7 @@ export function DiscussList({ titles, addTitle, noteId = null, compact = false, 
       const on = !!checked[r.id]
       return <div key={r.kind + r.id} style={{ display: 'flex', alignItems: 'center', gap: compact ? 9 : 11, padding: rowPad, borderTop: compact ? 'none' : '1px solid ' + t.line }}>
         <span onClick={() => tick(r)} title={r.kind === 'task' ? 'Covered — marks the task done' : 'Covered'}
-          style={{ width: compact ? 16 : 18, height: compact ? 16 : 18, borderRadius: 5, flex: 'none', cursor: 'pointer', position: 'relative', border: '1.5px solid ' + (on ? t.accent : t.t3), background: on ? t.accent : 'transparent' }}>
+          style={{ width: compact ? 16 : 18, height: compact ? 16 : 18, borderRadius: 'calc(5px * var(--rs))', flex: 'none', cursor: 'pointer', position: 'relative', border: '1.5px solid ' + (on ? t.accent : t.t3), background: on ? t.accent : 'transparent' }}>
           {on && <Icon n="check" s={compact ? 11 : 13} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
         <span onClick={() => openRow(r)} style={{ flex: 1, minWidth: 0, fontFamily: f.body, fontSize: compact ? 13 : 14, color: on ? t.t3 : t.t1, textDecoration: on ? 'line-through' : 'none', cursor: r.kind === 'task' ? 'pointer' : 'default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: compact ? 'nowrap' : 'normal' }}>{r.label}</span>
         {r.kind === 'task'
@@ -126,7 +126,7 @@ export function DiscussList({ titles, addTitle, noteId = null, compact = false, 
           <Icon n="arrow-down-left" s={13} />From tasks</span>
         {pickOpen && <Popover onClose={() => { setPickOpen(false); setQ('') }} align="right" width={300} maxHeight={340}>
           <input value={q} autoFocus onChange={(e) => setQ(e.target.value)} placeholder="Find a task…" className="selectable"
-            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px', marginBottom: 4 }} />
+            style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.bg, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px', marginBottom: 4 }} />
           {candidates.map((x) => <PopRow key={x.id} icon="circle" label={x.label} hint={x.where} onClick={() => pull(x)} />)}
           {candidates.length === 0 && <div style={{ padding: '8px 10px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>No open tasks match.</div>}
         </Popover>}

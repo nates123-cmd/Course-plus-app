@@ -43,12 +43,12 @@ function DiffView({ before, after }) {
     return { ops: collapseUnchanged(raw, 2), stat: diffStat(raw) }
   }, [before, after])
 
-  const line = { fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, padding: '1px 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
+  const line = { fontFamily: 'var(--f-mono)', fontSize: 12.5, lineHeight: 1.55, padding: '1px 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }
   return <div>
     <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginBottom: 8 }}>
       {stat.changed ? <><span style={{ color: t.good, fontWeight: 600 }}>+{stat.added}</span> · <span style={{ color: t.risk, fontWeight: 600 }}>−{stat.removed}</span> lines</> : 'No changes to the document.'}
     </div>
-    <div style={{ border: '1px solid ' + t.line, borderRadius: 10, background: t.card, overflow: 'hidden', padding: '6px 0' }}>
+    <div style={{ border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', background: t.card, overflow: 'hidden', padding: '6px 0' }}>
       {ops.map((op, i) => {
         if (op.type === 'skip') return <div key={i} style={{ ...line, color: t.t3, background: t.sel, fontStyle: 'italic', padding: '3px 10px' }}>… {op.count} unchanged line{op.count === 1 ? '' : 's'}</div>
         const bg = op.type === 'add' ? t.goodBg || t.accentBg : op.type === 'del' ? t.riskBg : 'transparent'
@@ -119,7 +119,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
       <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t2, lineHeight: 1.55, marginBottom: 8 }}>
         These aren’t in the diff below and won’t be applied — {aiName} couldn’t point at exactly one spot in the document for them. Make them by hand, or go back and be more specific.
       </div>
-      {result.failed.map((e, i) => <div key={i} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11.5, color: t.t2, lineHeight: 1.5, marginTop: 6, paddingLeft: 10, borderLeft: '2px solid ' + t.line2 }}>
+      {result.failed.map((e, i) => <div key={i} style={{ fontFamily: 'var(--f-mono)', fontSize: 11.5, color: t.t2, lineHeight: 1.5, marginTop: 6, paddingLeft: 10, borderLeft: '2px solid ' + t.line2 }}>
         <span style={{ color: t.t3 }}>{e.reason} — </span>{(e.replace || '(deletion)').slice(0, 220)}
       </div>)}
     </Card>}
@@ -142,7 +142,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
       {meetings.length === 0
         ? <span style={{ fontFamily: f.ui, fontSize: 12.5, color: t.t3 }}>No meetings on this project yet.</span>
         : <select value={meetingId || ''} onChange={(e) => setMeetingId(e.target.value || null)}
-            style={{ flex: 1, minWidth: 220, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 13.5, color: t.t1, padding: '8px 10px' }}>
+            style={{ flex: 1, minWidth: 220, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 13.5, color: t.t1, padding: '8px 10px' }}>
             <option value="">No meeting — instructions only</option>
             {meetings.map((m) => <option key={m.id} value={m.id}>{m.title}{m.date ? ` · ${m.date}` : ''}</option>)}
           </select>}
@@ -151,7 +151,7 @@ export function DocRevise({ artifact, meetings = [], initialMeetingId = null, on
     <Label style={{ marginBottom: 9 }}>Instructions {mtg ? '(optional)' : ''}</Label>
     <textarea value={instr} onChange={(e) => setInstr(e.target.value)} rows={3}
       placeholder={mtg ? 'Anything to emphasize or leave alone…' : 'e.g. tighten the summary and add a risks section'}
-      style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', border: '1px solid ' + t.line2, borderRadius: 10, background: t.card, padding: '10px 12px', outline: 'none', fontFamily: f.ui, fontSize: 13.5, lineHeight: 1.5, color: t.t1 }}
+      style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', border: '1px solid ' + t.line2, borderRadius: 'calc(10px * var(--rs))', background: t.card, padding: '10px 12px', outline: 'none', fontFamily: f.ui, fontSize: 13.5, lineHeight: 1.5, color: t.t1 }}
       onFocus={(e) => e.currentTarget.style.borderColor = t.accent} onBlur={(e) => e.currentTarget.style.borderColor = t.line2} />
     {errLine}
   </Sheet>

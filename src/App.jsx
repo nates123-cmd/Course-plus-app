@@ -72,7 +72,7 @@ function SidebarContent({ onClose }) {
     try { const id = await createProject(areaId, nm, { sort: (areas.find((a) => a.id === areaId)?.projects.length) || 0 }); await reload(); setOpen((o) => ({ ...o, [areaId]: true })); go({ screen: 'project', id }); onClose && onClose() }
     catch (e) { window.alert('Could not add project: ' + (e?.message || e)) }
   }
-  const addInputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 7, outline: 0,
+  const addInputStyle = { width: '100%', border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', outline: 0,
     background: t.card, fontFamily: F.ui, fontSize: 12.5, color: t.t1, padding: '6px 9px' }
   const inboxCount = inbox.length
 
@@ -84,11 +84,11 @@ function SidebarContent({ onClose }) {
     return <div key={p.id} {...dragProps} onClick={(e) => { navOrTab(e, { screen: 'project', id: p.id }); onClose && onClose() }}
       style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 12.5,
         fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
-        padding: `6px 10px 6px ${indent}px`, borderRadius: 7, margin: '1px 0', opacity: drag && drag.dragging ? 0.4 : 1,
+        padding: `6px 10px 6px ${indent}px`, borderRadius: 'calc(7px * var(--rs))', margin: '1px 0', opacity: drag && drag.dragging ? 0.4 : 1,
         background: active ? t.sel : 'transparent', borderLeft: '2px solid ' + (active ? t.accent : 'transparent') }}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, flex: 'none',
+      <span style={{ width: 6, height: 6, borderRadius: 'calc(3px * var(--rs))', flex: 'none',
         background: p.status === 'active' ? t.accent : p.status === 'on-hold' ? t.risk : t.t3 }} />
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
     </div>
@@ -99,7 +99,7 @@ function SidebarContent({ onClose }) {
     const openF = !!open[key]
     return <div onClick={() => toggle(key)} style={{ display: 'flex', alignItems: 'center', gap: 7,
       fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: t.t3, cursor: 'pointer',
-      padding: `5px 10px 5px ${indent}px`, borderRadius: 7, margin: '1px 0' }}
+      padding: `5px 10px 5px ${indent}px`, borderRadius: 'calc(7px * var(--rs))', margin: '1px 0' }}
       onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
       <Icon n={openF ? 'chevron-down' : 'chevron-right'} s={12} c={t.t3} />
@@ -114,13 +114,13 @@ function SidebarContent({ onClose }) {
     return <div onClick={(e) => { navOrTab(e, { screen }); onClose && onClose() }}
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: F.ui,
         fontSize: 13, fontWeight: active ? 600 : 500, color: active ? t.t1 : t.t2, cursor: 'pointer',
-        background: active ? t.sel : 'transparent', borderRadius: 8, padding: '8px 10px', marginBottom: 1,
+        background: active ? t.sel : 'transparent', borderRadius: 'calc(8px * var(--rs))', padding: '8px 10px', marginBottom: 1,
         borderLeft: '2px solid ' + (active ? t.accent : 'transparent') }}
       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = t.sel }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Icon n={icon} s={16} c={active ? t.t1 : t.t2} />{label}</span>
       {badge ? <span style={{ fontFamily: F.ui, fontSize: 11, fontWeight: 600, color: t.t1,
-        background: t.accentBg, border: '1px solid ' + t.accentLine, padding: '0 7px', borderRadius: 10 }}>{badge}</span> : null}
+        background: t.accentBg, border: '1px solid ' + t.accentLine, padding: '0 7px', borderRadius: 'calc(10px * var(--rs))' }}>{badge}</span> : null}
     </div>
   }
 
@@ -144,7 +144,7 @@ function SidebarContent({ onClose }) {
       <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing,
         textTransform: 'uppercase', color: t.t3, flex: 1 }}>Areas</span>
       <span onClick={() => { setAdding('area'); setNewName('') }} title="New area"
-        style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', color: t.t3, borderRadius: 5, padding: 2 }}
+        style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', color: t.t3, borderRadius: 'calc(5px * var(--rs))', padding: 2 }}
         onMouseEnter={(e) => e.currentTarget.style.color = t.accent} onMouseLeave={(e) => e.currentTarget.style.color = t.t3}>
         <Icon n="plus" s={14} /></span>
     </div>
@@ -168,7 +168,7 @@ function SidebarContent({ onClose }) {
         return <div key={a.id}>
           <div onClick={(e) => { navOrTab(e, { screen: 'area', id: a.id }); onClose && onClose() }}
             style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600,
-              color: areaActive ? t.t1 : t.t2, cursor: 'pointer', padding: '6px 10px', borderRadius: 7,
+              color: areaActive ? t.t1 : t.t2, cursor: 'pointer', padding: '6px 10px', borderRadius: 'calc(7px * var(--rs))',
               background: areaActive ? t.sel : 'transparent', borderLeft: '2px solid ' + (areaActive ? t.accent : 'transparent') }}
             onMouseEnter={(e) => { if (!areaActive) e.currentTarget.style.background = t.sel }}
             onMouseLeave={(e) => { if (!areaActive) e.currentTarget.style.background = 'transparent' }}>
@@ -207,7 +207,7 @@ function SidebarContent({ onClose }) {
                     placeholder="New project…" style={addInputStyle} /></div>
               : <div onClick={() => { setAdding(a.id); setNewName('') }}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: F.ui, fontSize: 12, color: t.t3,
-                    cursor: 'pointer', padding: '5px 10px 5px 28px', borderRadius: 7, margin: '1px 0' }}
+                    cursor: 'pointer', padding: '5px 10px 5px 28px', borderRadius: 'calc(7px * var(--rs))', margin: '1px 0' }}
                   onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t2 }}
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
                   <Icon n="plus" s={12} />Add project</div>}
@@ -230,7 +230,7 @@ function SidebarContent({ onClose }) {
       textTransform: 'uppercase', color: t.t3, padding: '20px 10px 8px' }}>Topics</div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 8px 6px' }}>
       {TOPICS.map((tp) => <span key={tp} onClick={(e) => { navOrTab(e, { screen: 'library', tag: tp }); onClose && onClose() }}
-        style={{ fontFamily: F.ui, fontSize: 11, fontWeight: 500, color: t.tagText, background: t.tagBg, borderRadius: 6, padding: '2px 9px', cursor: 'pointer' }}>{tp}</span>)}
+        style={{ fontFamily: F.ui, fontSize: 11, fontWeight: 500, color: t.tagText, background: t.tagBg, borderRadius: 'calc(6px * var(--rs))', padding: '2px 9px', cursor: 'pointer' }}>{tp}</span>)}
     </div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: F.ui, fontSize: 10.5, color: t.t3,
       padding: '14px 10px 0', marginTop: 8, borderTop: '1px solid ' + t.line }}>
@@ -291,14 +291,14 @@ function GlobalSearch() {
       : item.type === 'doc' ? (item.kind === 'meeting' ? 'Meeting' : item.kind === 'artifact' ? 'Artifact' : 'Note')
       : (STATUS[item.status] ? STATUS[item.status].label : null)
     return <div onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); choose(item, e) }}
-      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', background: on ? t.sel : 'transparent' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 7, flex: 'none', background: on ? t.card : t.sel, border: '1px solid ' + (on ? t.line2 : 'transparent') }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '8px 12px', borderRadius: 'calc(9px * var(--rs))', cursor: 'pointer', background: on ? t.sel : 'transparent' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 'calc(7px * var(--rs))', flex: 'none', background: on ? t.card : t.sel, border: '1px solid ' + (on ? t.line2 : 'transparent') }}>
         {item.type === 'project' ? <AreaDot areaId={item.area} s={9} /> : <Icon n={iconN} s={15} c={item.done ? t.t3 : t.t2} />}</span>
       <span style={{ flex: 1, minWidth: 0, fontFamily: F.ui, fontSize: 13, fontWeight: 500, color: item.done ? t.t3 : t.t1,
         textDecoration: item.done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{matchHi(item.title)}</span>
       {item.sub ? <span style={{ flex: 'none', fontFamily: F.ui, fontSize: 11.5, color: t.t3, whiteSpace: 'nowrap', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.sub}</span> : null}
       {tag ? <span style={{ flex: 'none', fontFamily: F.ui, fontSize: 10, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase',
-        color: item.next ? t.accent : t.t3, background: item.next ? t.accentBg : t.tagBg, border: '1px solid ' + (item.next ? t.accentLine : 'transparent'), borderRadius: 6, padding: '2px 7px' }}>{tag}</span> : null}
+        color: item.next ? t.accent : t.t3, background: item.next ? t.accentBg : t.tagBg, border: '1px solid ' + (item.next ? t.accentLine : 'transparent'), borderRadius: 'calc(6px * var(--rs))', padding: '2px 7px' }}>{tag}</span> : null}
     </div>
   }
   const askI = flat.length - 1; const askOn = active === askI; const showPanel = open && focused
@@ -310,7 +310,7 @@ function GlobalSearch() {
         onFocus={() => { setFocused(true); setOpen(true) }} onBlur={() => setFocused(false)} onKeyDown={onKey}
         placeholder="Search notes, tasks, projects…" style={{ flex: 1, border: 0, outline: 0, background: 'transparent', fontFamily: F.ui, fontSize: 13, color: t.t1 }} />
       {q ? <Icon n="x" s={15} c={t.t3} style={{ cursor: 'pointer' }} onMouseDown={(e) => { e.preventDefault(); setQ(''); inputRef.current && inputRef.current.focus() }} />
-        : <span style={{ fontFamily: F.ui, fontSize: 10.5, color: t.t3, border: '1px solid ' + t.line2, borderRadius: 5, padding: '1px 6px' }}>/</span>}
+        : <span style={{ fontFamily: F.ui, fontSize: 10.5, color: t.t3, border: '1px solid ' + t.line2, borderRadius: 'calc(5px * var(--rs))', padding: '1px 6px' }}>/</span>}
     </div>
     {showPanel && <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 250, background: t.card,
       border: '1px solid ' + t.accent, borderTop: 'none', borderRadius: '0 0 12px 12px', boxShadow: t.shadow, overflow: 'hidden' }}>
@@ -328,7 +328,7 @@ function GlobalSearch() {
         <span style={{ flex: 1, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>
           {qTrim ? <>Ask Course — “<span style={{ color: t.accent }}>{qTrim}</span>”</> : 'Ask Course across everything'}</span>
         <span style={{ fontFamily: F.ui, fontSize: 11, color: t.t3 }}>searches contents</span>
-        <span style={{ fontFamily: F.ui, fontSize: 10.5, color: t.t3, border: '1px solid ' + t.line2, borderRadius: 5, padding: '1px 6px' }}>↵</span>
+        <span style={{ fontFamily: F.ui, fontSize: 10.5, color: t.t3, border: '1px solid ' + t.line2, borderRadius: 'calc(5px * var(--rs))', padding: '1px 6px' }}>↵</span>
       </div>
     </div>}
   </div>
@@ -336,7 +336,7 @@ function GlobalSearch() {
 
 // ── Top bar ─────────────────────────────────────────────────────
 function TopBar({ onMenu, onCapture, isMobile }) {
-  const { mode, setMode, ai, setAi, aiName, aiDest, setAiDest, mcpMode, back, canBack } = useApp()
+  const { mode, setMode, look, setLook, ai, setAi, aiName, aiDest, setAiDest, mcpMode, back, canBack } = useApp()
   // AI engine toggle (Claude <-> Gemini). State lives in app context so every
   // "Generate with <engine>" label across the app hot-switches with it; the same
   // localStorage key drives lib/claude.js#aiProvider routing.
@@ -357,7 +357,7 @@ function TopBar({ onMenu, onCapture, isMobile }) {
         : 'Running on API credits — tap to hand AI tasks to claude.ai (uses your subscription, $0 API)'}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: 'pointer',
         fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: mcpMode ? t.accent : t.t3,
-        background: mcpMode ? t.accentBg : 'transparent', border: '1px solid ' + (mcpMode ? t.accentLine : t.line2), borderRadius: 8 }}>
+        background: mcpMode ? t.accentBg : 'transparent', border: '1px solid ' + (mcpMode ? t.accentLine : t.line2), borderRadius: 'calc(8px * var(--rs))' }}>
       {mcpMode ? 'Claude.ai' : 'Credits'}
     </button>
     <button onClick={() => !mcpMode && setAi(NEXT[ai] || 'claude')} disabled={mcpMode}
@@ -365,9 +365,12 @@ function TopBar({ onMenu, onCapture, isMobile }) {
       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 10px', cursor: mcpMode ? 'default' : 'pointer',
         opacity: mcpMode ? 0.4 : 1,
         fontFamily: F.ui, fontSize: 12, fontWeight: 600, color: altOn ? t.accent : t.t3,
-        background: altOn ? t.accentBg : 'transparent', border: '1px solid ' + (altOn ? t.accentLine : t.line2), borderRadius: 8 }}>
+        background: altOn ? t.accentBg : 'transparent', border: '1px solid ' + (altOn ? t.accentLine : t.line2), borderRadius: 'calc(8px * var(--rs))' }}>
       <Icon n="sparkles" s={14} c={altOn ? t.accent : t.t3} />{mcpMode ? 'Claude' : aiName}
     </button>
+    <IconBtn n={look === 'memo' ? 'notebook' : 'layout-grid'} s={18}
+      title={look === 'memo' ? 'Look: Memo book — tap for the classic look' : 'Look: Classic — tap for the memo book look'}
+      onClick={() => setLook(look === 'memo' ? 'classic' : 'memo')} />
     <IconBtn n={mode === 'dark' ? 'moon' : 'sun'} s={18} title="Toggle light / dark" onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} />
     <Btn kind="primary" icon="plus" onClick={onCapture}>New</Btn>
   </div>
@@ -452,31 +455,31 @@ function QuickCapture({ onClose, initial }) {
   return <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(0,0,0,0.42)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: expanded ? 0 : '12vh 0 0' }}>
     <div onClick={(e) => e.stopPropagation()} style={{
       ...(expanded ? { position: 'fixed', top: '4vh', bottom: '4vh', left: 'max(26px, calc((100vw - 920px) / 2))', right: 'max(26px, calc((100vw - 920px) / 2))' } : { flex: '0 0 560px', maxWidth: '92vw' }),
-      background: t.card, border: '1px solid ' + t.line, borderRadius: 16, boxShadow: t.shadow, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(16px * var(--rs))', boxShadow: t.shadow, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 14px', borderBottom: '1px solid ' + t.line, flex: 'none' }}>
         {[['auto', 'Auto', 'sparkles'], ['note', 'Note', 'file-text'], ['meeting', 'Meeting', 'users'], ['task', 'Task', 'square-check'], ['project', 'Project', 'folder']].map(([id, label, icon]) =>
-          <span key={id} onClick={() => { setKind(id); if (id === 'auto') setAutoResult(null) }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600, color: kind === id ? t.t1 : t.t3, background: kind === id ? t.sel : 'transparent', borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }}>
+          <span key={id} onClick={() => { setKind(id); if (id === 'auto') setAutoResult(null) }} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: F.ui, fontSize: 12.5, fontWeight: 600, color: kind === id ? t.t1 : t.t3, background: kind === id ? t.sel : 'transparent', borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px', cursor: 'pointer' }}>
             <Icon n={icon} s={14} />{label}</span>)}
         <div style={{ flex: 1 }} />
         <IconBtn n={expanded ? 'arrows-diagonal-minimize-2' : 'arrows-diagonal'} s={17} title={expanded ? 'Collapse' : 'Expand to full page'} onClick={() => setExpanded((e) => !e)} />
         <IconBtn n="x" s={18} onClick={onClose} />
       </div>
-      {autoResult && kind !== 'auto' && <div style={{ margin: '12px 14px 0', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', borderRadius: 10, background: t.accentBg, border: '1px solid ' + t.accentLine }}>
+      {autoResult && kind !== 'auto' && <div style={{ margin: '12px 14px 0', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', borderRadius: 'calc(10px * var(--rs))', background: t.accentBg, border: '1px solid ' + t.accentLine }}>
         <Icon n="sparkles" s={14} c={t.accent} />
         <span style={{ fontFamily: F.ui, fontSize: 12.5, color: t.t2 }}>Sorted as <span style={{ color: t.t1, fontWeight: 600 }}>{({ note: 'Note', meeting: 'Meeting', task: 'Task', project: 'Project' })[autoResult.kind]}</span>{autoResult.home ? <> · suggested <span style={{ color: t.t1, fontWeight: 600 }}>{projectName(autoResult.home)}</span></> : ''} — adjust or confirm below.</span></div>}
       {kind === 'meeting' && <div style={{ margin: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {/* Quick record — one tap: starts recording now, auto-fills title/summary/next steps/project after */}
-        <div onClick={recordQuick} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 11, cursor: 'pointer', background: t.accent, border: '1px solid ' + t.accent }}
+        <div onClick={recordQuick} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 'calc(11px * var(--rs))', cursor: 'pointer', background: t.accent, border: '1px solid ' + t.accent }}
           onMouseEnter={(e) => e.currentTarget.style.opacity = 0.92} onMouseLeave={(e) => e.currentTarget.style.opacity = 1}>
-          <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.18)' }}><Icon n="bolt" s={16} c={t.onAccent} /></span>
+          <span style={{ width: 30, height: 30, borderRadius: 'calc(8px * var(--rs))', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.18)' }}><Icon n="bolt" s={16} c={t.onAccent} /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.onAccent }}>Quick record</div>
             <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.onAccent, opacity: 0.82 }}>Starts recording now — title, summary &amp; next steps filled in after</div></div>
           <Icon n="arrow-right" s={16} c={t.onAccent} /></div>
         {/* Open meeting page — full composer (prep, notes, people, then record) */}
-        <div onClick={record} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 11, cursor: 'pointer', background: t.accentBg, border: '1px solid ' + t.accentLine }}
+        <div onClick={record} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 13px', borderRadius: 'calc(11px * var(--rs))', cursor: 'pointer', background: t.accentBg, border: '1px solid ' + t.accentLine }}
           onMouseEnter={(e) => e.currentTarget.style.borderColor = t.accent} onMouseLeave={(e) => e.currentTarget.style.borderColor = t.accentLine}>
-          <span style={{ width: 30, height: 30, borderRadius: 8, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="microphone" s={16} c={t.accent} /></span>
+          <span style={{ width: 30, height: 30, borderRadius: 'calc(8px * var(--rs))', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="microphone" s={16} c={t.accent} /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Open meeting page</div>
             <div style={{ fontFamily: F.ui, fontSize: 11.5, color: t.t3 }}>Prep, notes, people — then record yourself</div></div>
@@ -498,7 +501,7 @@ function QuickCapture({ onClose, initial }) {
         </> : isProject ? <>
           <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing, textTransform: 'uppercase', color: t.t3, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon n="layout-grid" s={12} />Project</span>
           <span style={{ position: 'relative' }}>
-            <span onClick={() => setAreaOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }}>
+            <span onClick={() => setAreaOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px', cursor: 'pointer' }}>
               <AreaDot areaId={areaObj?.id} s={7} />{areaObj?.name}<Icon n="chevron-down" s={12} c={t.t3} /></span>
             {areaOpen && <Popover onClose={() => setAreaOpen(false)} width={210} bottom="calc(100% + 6px)">
               {areas.map((a) => <PopRow key={a.id} dot={areaColor(t, a.id)} label={a.name} hint={(a.projects.length || 0) + ' projects'} on={area === a.id} onClick={() => { setArea(a.id); setAreaOpen(false) }} />)}</Popover>}
@@ -513,7 +516,7 @@ function QuickCapture({ onClose, initial }) {
         </> : <>
           <span style={{ fontFamily: F.label, fontSize: 10, fontWeight: 600, letterSpacing: F.labelSpacing, textTransform: 'uppercase', color: t.accent, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Icon n="sparkles" s={12} />Suggested home</span>
           <span style={{ position: 'relative' }}>
-            <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }}>
+            <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: F.ui, fontSize: 13, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px', cursor: 'pointer' }}>
               {homeProj ? <><AreaDot areaId={homeProj.area} s={7} />{homeProj.name}</> : <span style={{ color: t.t3, fontWeight: 500 }}>Choose project…</span>}<Icon n="chevron-down" s={12} c={t.t3} /></span>
             {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={230} bottom="calc(100% + 6px)" maxHeight={260}>
               <PopRow icon="inbox" label="No project — leave in inbox" on={!home} onClick={() => { setHome(null); setHomeOpen(false) }} />
@@ -538,7 +541,7 @@ function QuickRecordFab() {
   if (route.screen === 'record' || route.screen === 'meeting') return null
   return <button onClick={() => go({ screen: 'meeting', quick: true })} aria-label="Quick record a meeting" title="Quick record"
     style={{ position: 'fixed', zIndex: 455, right: 'max(16px, env(safe-area-inset-right))', bottom: 'calc(18px + env(safe-area-inset-bottom))',
-      width: 62, height: 62, borderRadius: 31, border: 'none', background: t.accent, boxShadow: t.shadow,
+      width: 62, height: 62, borderRadius: 'calc(31px * var(--rs))', border: 'none', background: t.accent, boxShadow: t.shadow,
       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
     <Icon n="microphone" s={27} c={t.onAccent} /></button>
 }
@@ -622,7 +625,7 @@ function TabBar() {
         <Icon n={TAB_ICON[tab.route?.screen] || 'file-text'} s={14} c={on ? t.t2 : t.t3} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title(tab.route)}</span>
         {multi && <span onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }} title="Close tab (⌘W)"
-          style={{ display: 'inline-flex', borderRadius: 5, padding: 1, color: t.t3, flex: 'none' }}
+          style={{ display: 'inline-flex', borderRadius: 'calc(5px * var(--rs))', padding: 1, color: t.t3, flex: 'none' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t1 }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
           <Icon n="x" s={13} /></span>}
@@ -630,7 +633,7 @@ function TabBar() {
     })}
     <span onClick={newTab} title="New tab (⌘T)"
       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
-        marginLeft: 2, marginBottom: 4, borderRadius: 7, cursor: 'pointer', color: t.t3, flex: 'none' }}
+        marginLeft: 2, marginBottom: 4, borderRadius: 'calc(7px * var(--rs))', cursor: 'pointer', color: t.t3, flex: 'none' }}
       onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t1 }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.t3 }}>
       <Icon n="plus" s={16} /></span>
@@ -654,6 +657,10 @@ export default function App() {
   const [drawer, setDrawer] = useState(false)
   const [capture, setCapture] = useState(false)
   const [mode, setModeRaw] = useState(() => localStorage.getItem('course.mode') || 'light')
+  // Look ('memo' | 'classic'), a second axis beside light/dark. 'memo' is the
+  // Field Notes x Linear restyle (DESIGN.md); 'classic' is the original, kept so
+  // the restyle is one tap to undo.
+  const [look, setLookRaw] = useState(() => { try { return localStorage.getItem('course.look') === 'classic' ? 'classic' : 'memo' } catch { return 'memo' } })
   // AI engine ('claude' | 'gemini'). Lives here (not TopBar-local) so the whole
   // tree re-renders on toggle and every "Generate with X" label hot-switches.
   // lib/claude.js#aiProvider reads the same localStorage key for actual routing.
@@ -672,6 +679,7 @@ export default function App() {
   const route = activeTab.route
 
   const setMode = (m) => { setModeRaw(m); localStorage.setItem('course.mode', m) }
+  const setLook = (v) => { setLookRaw(v); try { localStorage.setItem('course.look', v) } catch {} }
   const setAi = (v) => { setAiRaw(v); try { localStorage.setItem('course.ai', v) } catch {} }
   const setAiDest = (v) => { setAiDestRaw(v); try { localStorage.setItem('course.aiDest', v) } catch {} }
   const sameRoute = (a, b) => a && b && a.screen === b.screen && a.id === b.id
@@ -698,6 +706,7 @@ export default function App() {
 
   useEffect(() => { try { localStorage.setItem('course.tabs', JSON.stringify(tabState)) } catch {} }, [tabState])
   useEffect(() => { document.documentElement.setAttribute('data-theme', mode) }, [mode])
+  useEffect(() => { document.documentElement.setAttribute('data-look', look) }, [look])
   useEffect(() => { if (!isMobile) setDrawer(false) }, [isMobile])
   // Keyboard: ⌘T new tab, ⌘W close active, ⌘1–9 jump to tab N. (Tauri honors
   // these; some are reserved by the browser in the plain PWA.)
@@ -712,11 +721,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [tabs, activeId])
 
-  const ctx = useMemo(() => ({ t, f: F, mode, setMode, ai, setAi, aiName: ai === 'gemini' ? 'Gemini' : 'Claude',
+  const ctx = useMemo(() => ({ t, f: F, mode, setMode, look, setLook, ai, setAi, aiName: ai === 'gemini' ? 'Gemini' : 'Claude',
     aiDest, setAiDest, mcpMode: aiDest === 'mcp',
     route, go, back, navOrTab, canBack: activeTab.hist.length > 0,
     tabs, activeId, openTab, newTab, selectTab, closeTab,
-    isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, ai, aiDest, tabState, isMobile])
+    isMobile, openCapture: (cfg) => setCapture(cfg || true) }), [mode, look, ai, aiDest, tabState, isMobile])
 
   if (status === 'loading') return <FullScreenMsg spin>Loading your work…</FullScreenMsg>
   if (status === 'error') return <FullScreenMsg>Couldn’t load — {String(error?.message || error)}.&nbsp;<span onClick={reload} style={{ color: t.t1, textDecoration: 'underline', cursor: 'pointer' }}>retry</span></FullScreenMsg>

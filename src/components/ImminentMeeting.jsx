@@ -72,8 +72,8 @@ export function ImminentMeeting() {
 
   return <div style={{ position: 'fixed', top: 'max(16px, env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
     zIndex: 480, width: 380, maxWidth: 'calc(100vw - 24px)', background: t.card, border: '1px solid ' + t.accentLine,
-    borderRadius: 14, boxShadow: t.shadow, padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-    <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.accentBg }}>
+    borderRadius: 'calc(14px * var(--rs))', boxShadow: t.shadow, padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+    <span style={{ width: 34, height: 34, borderRadius: 'calc(9px * var(--rs))', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.accentBg }}>
       <Icon n="calendar-event" s={18} c={t.accent} /></span>
     <div onClick={open} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -83,8 +83,8 @@ export function ImminentMeeting() {
       <div style={{ fontFamily: f.body, fontSize: 14.5, fontWeight: 500, color: t.t1, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meeting.title}</div>
     </div>
     <button onClick={open} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600,
-      color: t.onAccent, background: t.accent, border: 0, borderRadius: 9, padding: '7px 12px', cursor: 'pointer' }}>Open</button>
+      color: t.onAccent, background: t.accent, border: 0, borderRadius: 'calc(9px * var(--rs))', padding: '7px 12px', cursor: 'pointer' }}>Open</button>
     <button onClick={dismiss} title="Dismiss" style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
-      borderRadius: 8, border: 0, background: 'transparent', color: t.t3, cursor: 'pointer' }}><Icon n="x" s={16} /></button>
+      borderRadius: 'calc(8px * var(--rs))', border: 0, background: 'transparent', color: t.t3, cursor: 'pointer' }}><Icon n="x" s={16} /></button>
   </div>
 }

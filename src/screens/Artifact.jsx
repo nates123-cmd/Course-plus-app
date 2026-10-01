@@ -18,7 +18,7 @@ function CsvTable({ grid }) {
   const cell = { border: '1px solid ' + t.line2, padding: '7px 11px', fontFamily: f.body, fontSize: 13.5, lineHeight: 1.5, color: t.t1, textAlign: 'left', verticalAlign: 'top', whiteSpace: 'pre-wrap' }
   const cols = grid[0].length
   return (
-    <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 12, background: t.card }}>
+    <div style={{ overflowX: 'auto', border: '1px solid ' + t.line, borderRadius: 'calc(12px * var(--rs))', background: t.card }}>
       <table style={{ borderCollapse: 'collapse', width: '100%' }}>
         <thead><tr>{grid[0].map((c, i) => (
           <th key={i} style={{ ...cell, fontFamily: f.ui, fontWeight: 700, fontSize: 12, background: t.sel, color: t.t2 }}>{c}</th>
@@ -166,7 +166,7 @@ export function ArtifactScreen() {
         ? (isFile
             ? <textarea value={eBody} onChange={(e) => setEBody(e.target.value)} onPaste={(e) => handleCsvPaste(e, eBody, setEBody)} autoFocus
                 style={{ width: '100%', minHeight: '52vh', boxSizing: 'border-box', resize: 'vertical', background: t.card, border: '1px solid ' + t.line2,
-                  borderRadius: 12, padding: '16px 18px', outline: 'none', color: t.t1, fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6 }}
+                  borderRadius: 'calc(12px * var(--rs))', padding: '16px 18px', outline: 'none', color: t.t1, fontFamily: 'var(--f-mono)', fontSize: 13, lineHeight: 1.6 }}
                 onFocus={(e) => e.currentTarget.style.borderColor = t.accent} onBlur={(e) => e.currentTarget.style.borderColor = t.line2} />
             : <MdEditor value={eBody} onChange={setEBody} minHeight={460} />)
         : isFile
@@ -179,8 +179,8 @@ export function ArtifactScreen() {
                 </div>}
                 {grid
                   ? <CsvTable grid={grid} />
-                  : <pre className="selectable" style={{ margin: 0, overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 12,
-                      padding: '16px 18px', fontFamily: 'ui-monospace, monospace', fontSize: 13, lineHeight: 1.6, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>}
+                  : <pre className="selectable" style={{ margin: 0, overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(12px * var(--rs))',
+                      padding: '16px 18px', fontFamily: 'var(--f-mono)', fontSize: 13, lineHeight: 1.6, color: t.t1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.body || '(empty)'}</pre>}
               </>
             })()
           : <Card style={{ padding: '20px 22px' }} className="selectable"><RichText text={a.body || ''} /></Card>}

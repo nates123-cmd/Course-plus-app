@@ -54,10 +54,10 @@ function VoiceEnroll({ onDone }) {
 
   const saving = status === 'saving'
   const loadingModel = rec.enrollStatus === 'loading-model'
-  return <div style={{ marginTop: 8, padding: '11px 13px', borderRadius: 10, background: t.accentBg, border: '1px solid ' + t.accentLine }}>
+  return <div style={{ marginTop: 8, padding: '11px 13px', borderRadius: 'calc(10px * var(--rs))', background: t.accentBg, border: '1px solid ' + t.accentLine }}>
     {status === 'recording'
       ? <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <span style={{ width: 9, height: 9, borderRadius: 5, background: t.risk, flex: 'none' }} className="rec-pulse" />
+          <span style={{ width: 9, height: 9, borderRadius: 'calc(5px * var(--rs))', background: t.risk, flex: 'none' }} className="rec-pulse" />
           <span style={{ flex: 1, fontFamily: f.ui, fontSize: 12.5, color: t.t1, fontVariantNumeric: 'tabular-nums' }}>
             Recording your voice… <b>{secs}s</b> / {ENROLL_MAX}s — keep talking (read anything)</span>
           <Btn kind="primary" size="sm" icon="player-stop" onClick={finish}>Done</Btn>
@@ -112,9 +112,9 @@ function SpeakerRow({ sp, people, onRename }) {
     <Avatar name={val || sp} s={26} />
     <input value={val} onChange={(e) => setVal(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur() }} className="selectable"
-      style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1, padding: '5px 10px' }} />
+      style={{ width: 150, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1, padding: '5px 10px' }} />
     {people.filter((p) => p && p !== val).slice(0, 5).map((p) => <span key={p} onClick={() => { setVal(p); onRename(sp, p) }} title={'Label as ' + p}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 7, padding: '4px 9px', cursor: 'pointer' }}>
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t2, background: t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 9px', cursor: 'pointer' }}>
       <Icon n="user" s={11} c={t.t3} />{p}</span>)}
   </div>
 }
@@ -164,7 +164,7 @@ function Levels({ live, getAnalyser, color, faint, bars = 36, h = 44 }) {
   }, [live, getAnalyser, color, faint, bars])
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: h }}>
     {Array.from({ length: bars }).map((_, i) => <span key={i} ref={(el) => { refs.current[i] = el }} style={{
-      width: 3, borderRadius: 3, flex: 'none', background: faint, height: 6, transformOrigin: 'center', opacity: 0.5 }} />)}
+      width: 3, borderRadius: 'calc(3px * var(--rs))', flex: 'none', background: faint, height: 6, transformOrigin: 'center', opacity: 0.5 }} />)}
   </div>
 }
 
@@ -179,7 +179,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
   return <div {...handlers} style={{ display: 'flex', alignItems: 'flex-start', gap: 11, padding: '11px 16px',
     borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
     touchAction: 'manipulation', background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
-    <span style={{ width: 16, height: 16, borderRadius: 5, flex: 'none', marginTop: 1, position: 'relative',
+    <span style={{ width: 16, height: 16, borderRadius: 'calc(5px * var(--rs))', flex: 'none', marginTop: 1, position: 'relative',
       border: '1.5px solid ' + (a.done ? t.accent : t.t3), background: a.done ? t.accent : 'transparent' }}>
       {a.done && <Icon n="check" s={11} c={t.onAccent} style={{ position: 'absolute', inset: 0, margin: 'auto' }} />}</span>
     <div style={{ flex: 1, minWidth: 0 }}>
@@ -192,7 +192,7 @@ function RecActionRow({ a, first, onToggle, onOpen, onDismiss }) {
     </div>
     <span onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onDismiss(a.id) }}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} title="Dismiss — remove this action"
-      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, flex: 'none',
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 'calc(7px * var(--rs))', flex: 'none',
         cursor: 'pointer', background: hov ? t.riskBg : 'transparent', transition: 'background .14s' }}>
       <Icon n="x" s={15} c={hov ? t.risk : t.t3} /></span>
   </div>
@@ -346,7 +346,7 @@ export function RecordScreen() {
   }
 
   const pad = isMobile ? '26px 18px 90px' : '30px 36px 90px'
-  const editorBox = { background: t.card, border: '1px solid ' + t.line, borderRadius: 14, overflow: 'hidden' }
+  const editorBox = { background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(14px * var(--rs))', overflow: 'hidden' }
 
   return <div data-screen-label="Meeting" style={{ maxWidth: 880, margin: '0 auto', padding: pad }}>
     <div onClick={() => go({ screen: 'overview' })} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -395,18 +395,18 @@ export function RecordScreen() {
       })()}
       {rec.seriesId && seriesById(rec.seriesId) && <span onClick={() => go({ screen: 'series', id: rec.seriesId })} title="Part of a recurring series"
         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent,
-          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '2px 9px', cursor: 'pointer' }}>
+          background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '2px 9px', cursor: 'pointer' }}>
         <Icon n="repeat" s={12} c={t.accent} />{seriesById(rec.seriesId).name}</span>}
     </div>
     {/* Quick vs Full mode — only switchable before a session starts. Quick hides
         every pre-field, records on one tap, and auto-synthesizes + auto-fills
         title/project from the content when you stop. */}
     {phase === 'idle' && <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14, flexWrap: 'wrap' }}>
-      <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+      <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 'calc(9px * var(--rs))', padding: 2 }}>
         {[['quick', 'Quick', 'bolt'], ['full', 'Full', 'list-details']].map(([id, label, icon]) => {
           const on = quick === (id === 'quick')
           return <span key={id} onClick={() => rec.setMeta({ quick: id === 'quick' })}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 'calc(7px * var(--rs))', padding: '4px 11px' }}>
             <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
         })}
       </div>
@@ -421,7 +421,7 @@ export function RecordScreen() {
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Save to</span>
       {/* pillar — defaults to Arrow */}
       <span style={{ position: 'relative' }}>
-        <span onClick={() => setPillarOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: destArea ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+        <span onClick={() => setPillarOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: destArea ? t.t1 : t.t3, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: 'pointer' }}>
           <Icon n="folder" s={13} c={t.t3} />{destArea ? destArea.name : 'Library'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
         {pillarOpen && <Popover onClose={() => setPillarOpen(false)} width={220} maxHeight={300}>
           <PopRow icon="stack-2" label="Library only (no pillar)" on={!destArea} onClick={() => { rec.setMeta({ pillar: null, home: null }); setPillarOpen(false) }} />
@@ -432,7 +432,7 @@ export function RecordScreen() {
       <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>·</span>
       {/* project — only this pillar's projects */}
       <span style={{ position: 'relative' }}>
-        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: homeProj ? t.sel : 'transparent', border: homeProj ? 'none' : '1px solid ' + t.line, borderRadius: 8, padding: '5px 11px', cursor: 'pointer' }}>
+        <span onClick={() => setHomeOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: homeProj ? t.t1 : t.t3, background: homeProj ? t.sel : 'transparent', border: homeProj ? 'none' : '1px solid ' + t.line, borderRadius: 'calc(8px * var(--rs))', padding: '5px 11px', cursor: 'pointer' }}>
           {homeProj ? homeProj.name : 'No project'}<Icon n="chevron-down" s={12} c={t.t3} /></span>
         {homeOpen && <Popover onClose={() => setHomeOpen(false)} width={232} maxHeight={300}>
           <PopRow icon="ban" label="No project — pillar only" on={!home} onClick={() => { rec.setMeta({ home: null }); setHomeOpen(false) }} />
@@ -457,13 +457,13 @@ export function RecordScreen() {
         <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>who's here / who spoke — also labels a pasted transcript</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-        {people.map((nm) => <span key={nm} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 20, padding: '4px 7px 4px 11px' }}>
+        {people.map((nm) => <span key={nm} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(20px * var(--rs))', padding: '4px 7px 4px 11px' }}>
           <Icon n="user" s={12} c={t.t2} />{nm}
           <span onClick={() => removePerson(nm)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={12} /></span></span>)}
         <input value={personDraft} onChange={(e) => setPersonDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerson() } }} onBlur={addPerson}
           placeholder="Add a name…" className="selectable"
-          style={{ width: 130, border: '1px solid ' + t.line2, borderRadius: 8, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px' }} />
+          style={{ width: 130, border: '1px solid ' + t.line2, borderRadius: 'calc(8px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12.5, color: t.t1, padding: '5px 10px' }} />
       </div>
     </div>}
 
@@ -475,11 +475,11 @@ export function RecordScreen() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         {linked.map((id) => { const p = projectById(id); if (!p) return null
-          return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 8, padding: '5px 7px 5px 10px' }}>
+          return <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.t1, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 7px 5px 10px' }}>
             <AreaDot areaId={p.area} s={7} />{p.name}
             <span onClick={() => removeProj(id)} title="Remove" style={{ display: 'inline-flex', cursor: 'pointer', color: t.t3 }}><Icon n="x" s={13} /></span></span> })}
         <span style={{ position: 'relative' }}>
-          <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+          <span onClick={() => setProjOpen((o) => !o)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}>
             <Icon n="plus" s={13} />Add project</span>
           {projOpen && <Popover onClose={() => setProjOpen(false)} width={232} maxHeight={280}>
             {pickerProjects.filter((p) => !linked.includes(p.id)).map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} onClick={() => { addProj(p.id); setProjOpen(false) }} />)}
@@ -511,7 +511,7 @@ export function RecordScreen() {
           onOpen={(id) => setSheetId(id)}
           onDismiss={(id) => setActions((xs) => xs.filter((x) => x.id !== id))} />)}
       </Card>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: '1px solid ' + t.line2, background: t.card }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 'calc(10px * var(--rs))', border: '1px solid ' + t.line2, background: t.card }}>
         <Icon n="plus" s={15} c={t.t3} />
         <input value={actionDraft} onChange={(e) => setActionDraft(e.target.value)} onBlur={addAction}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addAction() } }}
@@ -524,11 +524,11 @@ export function RecordScreen() {
     <div style={{ marginTop: 22 }}>
       {!quick && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <Label style={{ margin: 0 }}>Transcript</Label>
-        <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+        <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 'calc(9px * var(--rs))', padding: 2 }}>
           {[['paste', 'Paste', 'clipboard'], ['record', 'Record', 'microphone']].map(([id, label, icon]) => {
             const on = source === id
             return <span key={id} onClick={() => { if (!tuneLocked || phase === 'idle') rec.setMeta({ source: id }) }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 'calc(7px * var(--rs))', padding: '4px 11px' }}>
               <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
           })}
         </div>
@@ -545,12 +545,12 @@ export function RecordScreen() {
             {/* engine picker — cloud (speaker labels) vs on-device Whisper (private, free) */}
             {!quick && browserWhisperSupported && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Transcribe with</span>
-              <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 9, padding: 2 }}>
+              <div style={{ display: 'inline-flex', background: t.sel, borderRadius: 'calc(9px * var(--rs))', padding: 2 }}>
                 {[['cloud', 'Cloud · speaker labels', 'cloud'], ['browser', 'On device · private', 'device-laptop']].map(([id, label, icon]) => {
                   const on = engine === id
                   const locked = phase !== 'idle' && phase !== 'recording' && phase !== 'paused'
                   return <span key={id} onClick={() => { if (!locked) rec.setMeta({ engine: id }) }} title={id === 'browser' ? 'Runs in your browser — nothing leaves this device, no cost, optional on-device Me vs Computer labels' : 'AssemblyAI — identifies who said what'}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1, color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 7, padding: '4px 11px' }}>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 12, fontWeight: 600, cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1, color: on ? t.t1 : t.t3, background: on ? t.card : 'transparent', border: '1px solid ' + (on ? t.line2 : 'transparent'), borderRadius: 'calc(7px * var(--rs))', padding: '4px 11px' }}>
                     <Icon n={icon} s={13} c={on ? t.accent : t.t3} />{label}</span>
                 })}
               </div>
@@ -562,13 +562,13 @@ export function RecordScreen() {
               {rec.hasVoice
                 ? <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span onClick={() => { if (!tuneLocked) rec.setLabelSpeakers(!rec.labelSpeakers) }} title="Tell your voice apart from the person on the call — runs on this device (experimental)"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: rec.labelSpeakers ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: rec.labelSpeakers ? t.t1 : t.t3, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
                       <Icon n="users" s={13} c={rec.labelSpeakers ? t.accent : t.t3} />Label Me vs Computer {rec.labelSpeakers ? 'on' : 'off'}</span>
                     <span onClick={() => setEnrollOpen(true)} style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, cursor: 'pointer', textDecoration: 'underline' }}>re-record voice</span>
                     <span onClick={() => { rec.clearVoice(); setEnrollOpen(false) }} title="Forget my voiceprint" style={{ fontFamily: f.ui, fontSize: 11, color: t.t3, cursor: 'pointer' }}>remove</span>
                   </div>
                 : <span onClick={() => setEnrollOpen(true)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: 'pointer' }}>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t3, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: 'pointer' }}>
                     <Icon n="users" s={13} c={t.t3} />Label speakers · Me vs Computer…</span>}
               {enrollOpen && <VoiceEnroll onDone={() => setEnrollOpen(false)} />}
             </div>}
@@ -578,7 +578,7 @@ export function RecordScreen() {
                 const locked = phase !== 'idle'
                 return <span onClick={() => { if (!locked) rec.setMeta({ tabAudio: !tabAudio }) }}
                   title="Also record a browser tab's audio (Teams/Zoom/Meet) — you'll pick the tab and tick &quot;Share tab audio&quot; when recording starts"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: tabAudio ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1 }}>
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: tabAudio ? t.t1 : t.t3, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: locked ? 'default' : 'pointer', opacity: locked ? 0.6 : 1 }}>
                   <Icon n="device-desktop" s={13} c={tabAudio ? t.accent : t.t3} />Capture call audio {tabAudio ? 'on' : 'off'}</span>
               })()}
               {tabAudio && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>records both sides — pick the meeting tab &amp; tick &ldquo;Share tab audio&rdquo;</span>}
@@ -587,19 +587,19 @@ export function RecordScreen() {
             <Card style={{ padding: '22px 24px', background: t.panel }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
                 {phase === 'recording' || phase === 'paused' ? (
-                  <button onClick={() => rec.stopAndTranscribe()} title="Stop recording" style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', cursor: 'pointer', border: '1px solid ' + t.riskLine, background: t.riskBg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                    {live && <span className="rec-pulse" style={{ position: 'absolute', inset: -1, borderRadius: 31 }} />}
-                    <span style={{ width: 18, height: 18, borderRadius: 4, background: t.risk }} /></button>
+                  <button onClick={() => rec.stopAndTranscribe()} title="Stop recording" style={{ width: 60, height: 60, borderRadius: 'calc(30px * var(--rs))', flex: 'none', cursor: 'pointer', border: '1px solid ' + t.riskLine, background: t.riskBg, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    {live && <span className="rec-pulse" style={{ position: 'absolute', inset: -1, borderRadius: 'calc(31px * var(--rs))' }} />}
+                    <span style={{ width: 18, height: 18, borderRadius: 'calc(4px * var(--rs))', background: t.risk }} /></button>
                 ) : phase === 'transcribing' ? (
-                  <div style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', border: '1px solid ' + t.line2, background: t.card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="loader-2" s={24} c={t.t3} /></div>
+                  <div style={{ width: 60, height: 60, borderRadius: 'calc(30px * var(--rs))', flex: 'none', border: '1px solid ' + t.line2, background: t.card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="loader-2" s={24} c={t.t3} /></div>
                 ) : (
-                  <button onClick={() => rec.start()} title={phase === 'idle' ? 'Start recording' : 'Record again'} style={{ width: 60, height: 60, borderRadius: 30, flex: 'none', cursor: 'pointer', border: '1px solid ' + t.accentLine, background: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="microphone" s={26} c={t.accent} /></button>
+                  <button onClick={() => rec.start()} title={phase === 'idle' ? 'Start recording' : 'Record again'} style={{ width: 60, height: 60, borderRadius: 'calc(30px * var(--rs))', flex: 'none', cursor: 'pointer', border: '1px solid ' + t.accentLine, background: t.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="microphone" s={26} c={t.accent} /></button>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
                     <span style={{ fontFamily: f.meta, fontSize: 30, fontWeight: 600, color: phase === 'idle' ? t.t3 : t.t1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.01em' }}>{fmtClock(seconds)}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 12.5, fontWeight: 500, color: live ? t.risk : t.t2 }}>
-                      {live && <span style={{ width: 7, height: 7, borderRadius: 4, background: t.risk }} />}{statusText}</span>
+                      {live && <span style={{ width: 7, height: 7, borderRadius: 'calc(4px * var(--rs))', background: t.risk }} />}{statusText}</span>
                   </div>
                   <div style={{ marginTop: 6 }}><Levels live={live} getAnalyser={rec.getAnalyser} color={t.accent} faint={t.line2} /></div>
                   {tabMixed && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent }}>
@@ -614,24 +614,24 @@ export function RecordScreen() {
             </Card>
             {/* storage-full warning — recording continues in memory, but a reload
                 mid-recording would no longer be recoverable */}
-            {storageWarn && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 8, padding: '7px 11px' }}>
+            {storageWarn && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(8px * var(--rs))', padding: '7px 11px' }}>
               <Icon n="alert-triangle" s={14} c={t.risk} />Device storage is full — crash recovery is off. Don't reload until you've stopped &amp; transcribed.</div>}
             {/* pinned moments — flagged times, removable */}
             {pins.length > 0 && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.t3 }}><Icon n="pin" s={12} c={t.t3} />Pinned</span>
               {pins.map((p) => <span key={p.at} onClick={() => rec.removePin(p.at)} title="Remove pin"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.meta, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '3px 8px', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.meta, fontSize: 11.5, fontWeight: 600, color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '3px 8px', cursor: 'pointer', fontVariantNumeric: 'tabular-nums' }}>
                 {fmtClock(p.at)}<Icon n="x" s={11} c={t.accent} /></span>)}
             </div>}
             {/* tuning — speaker labels only exist on the cloud engine */}
             {!quick && engine === 'cloud' && <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
               <span onClick={() => !tuneLocked && rec.setMeta({ diarize: !diarize })} title="Identify who said what"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 8, padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: diarize ? t.t1 : t.t3, background: t.sel, borderRadius: 'calc(8px * var(--rs))', padding: '5px 10px', cursor: tuneLocked ? 'default' : 'pointer', opacity: tuneLocked ? 0.6 : 1 }}>
                 <Icon n="users" s={13} c={diarize ? t.accent : t.t3} />Speaker labels {diarize ? 'on' : 'off'}</span>
               {diarize && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>
                 <input type="number" min={1} max={10} disabled={tuneLocked} value={speakerCount ?? ''} placeholder="auto"
                   onChange={(e) => { const v = parseInt(e.target.value, 10); rec.setMeta({ speakers: Number.isInteger(v) && v >= 1 ? v : null }) }}
-                  style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 7, outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
+                  style={{ width: 52, border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', outline: 0, background: t.card, fontFamily: f.ui, fontSize: 12, color: t.t1, padding: '3px 7px' }} />
                 <span>expected speakers</span></span>}
             </div>}
           </>}
@@ -673,17 +673,17 @@ export function RecordScreen() {
     {/* synthesize bar — hidden in quick mode (auto-synthesizes), except as a
         retry path if auto-synth failed and we're parked at 'ready'. */}
     {showSynthBar && (!quick || phase === 'ready') && <Card style={{ marginTop: 18, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
-      <span style={{ width: 34, height: 34, borderRadius: 9, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
+      <span style={{ width: 34, height: 34, borderRadius: 'calc(9px * var(--rs))', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.card, border: '1px solid ' + t.accentLine }}><Icon n="sparkles" s={17} c={t.accent} /></span>
       <div style={{ flex: 1, minWidth: 140 }}>
         <div style={{ fontFamily: f.ui, fontSize: 13.5, fontWeight: 600, color: t.t1 }}>Synthesize</div>
         <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 1 }}>{transcriptText ? `${lines.length} turns${speakers.length ? ' · ' + speakers.length + ' speakers' : ''} · ` : ''}summary, action items & tags</div>
       </div>
       {/* detail level */}
-      <div style={{ display: 'inline-flex', background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 9, padding: 2 }}>
+      <div style={{ display: 'inline-flex', background: t.card, border: '1px solid ' + t.accentLine, borderRadius: 'calc(9px * var(--rs))', padding: 2 }}>
         {[['low', 'Brief'], ['medium', 'Medium'], ['high', 'Detailed']].map(([id, label]) => {
           const on = detail === id
           return <span key={id} onClick={() => rec.setMeta({ detail: id })} title={id === 'high' ? 'In-depth — best for building an artifact' : id === 'low' ? 'Highest-level — key points only' : 'Balanced overview'}
-            style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2, background: on ? t.accent : 'transparent', borderRadius: 7, padding: '4px 10px' }}>{label}</span>
+            style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', color: on ? t.onAccent : t.t2, background: on ? t.accent : 'transparent', borderRadius: 'calc(7px * var(--rs))', padding: '4px 10px' }}>{label}</span>
         })}
       </div>
       <Btn kind="primary" size="sm" icon={synthBusy ? 'loader-2' : 'wand'} onClick={() => !synthBusy && canSynth && rec.synthesize()}>{synthBusy ? 'Synthesizing…' : 'Synthesize'}</Btn>
@@ -692,7 +692,7 @@ export function RecordScreen() {
 
     {/* synthesized result */}
     {phase === 'done' && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {cost && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: f.ui, fontSize: 11.5, color: t.t3, background: t.card, border: '1px solid ' + t.line, borderRadius: 10, padding: '8px 13px' }}>
+      {cost && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontFamily: f.ui, fontSize: 11.5, color: t.t3, background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', padding: '8px 13px' }}>
         <Icon n="coin" s={14} c={t.t3} />
         <span style={{ fontWeight: 600, color: t.t2 }}>Cost {usd(cost.total)}</span>
         {cost.transcribe > 0 && <span>· transcribe {usd(cost.transcribe)} ({fmtClock(seconds)})</span>}

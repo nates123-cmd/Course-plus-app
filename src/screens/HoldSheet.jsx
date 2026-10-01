@@ -42,7 +42,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
       borderRadius: isMobile ? '20px 20px 0 0' : '18px 18px 0 0', boxShadow: t.shadow, overflow: 'hidden', maxHeight: '86vh',
       display: 'flex', flexDirection: 'column', transform: mounted ? 'translateY(0)' : 'translateY(24px)', transition: 'transform .2s cubic-bezier(.2,.8,.2,1)' }}>
       <div style={{ display: 'flex', justifyContent: 'center', padding: '9px 0 2px', flex: 'none' }}>
-        <span style={{ width: 38, height: 4, borderRadius: 3, background: t.line2 }} /></div>
+        <span style={{ width: 38, height: 4, borderRadius: 'calc(3px * var(--rs))', background: t.line2 }} /></div>
 
       <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, padding: '8px 20px 4px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 4 }}>
@@ -59,7 +59,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
         <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') confirm() }}
           placeholder="What's it waiting on? (e.g. revised scope from Haritha)"
-          rows={2} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + t.line2, borderRadius: 10, outline: 0,
+          rows={2} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid ' + t.line2, borderRadius: 'calc(10px * var(--rs))', outline: 0,
             background: t.bg, fontFamily: f.body, fontSize: 14, color: t.t1, padding: '10px 12px', resize: 'vertical', lineHeight: 1.5 }} />
 
         <div style={{ marginTop: 18 }}>
@@ -69,7 +69,7 @@ export function HoldSheet({ project, onConfirm, onClose }) {
               icon="calendar" variant="accent" bottom />
             {[['+1 wk', 7], ['+2 wks', 14], ['+1 mo', 30], ['+3 mos', 90]].map(([lbl, n]) =>
               <span key={lbl} onClick={() => setResurfaceOn(addDays(TODAY, n))} style={{ cursor: 'pointer',
-                fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t3, background: t.sel, borderRadius: 7, padding: '4px 8px' }}
+                fontFamily: f.ui, fontSize: 11.5, fontWeight: 600, color: t.t3, background: t.sel, borderRadius: 'calc(7px * var(--rs))', padding: '4px 8px' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = t.tagBg; e.currentTarget.style.color = t.t2 }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t3 }}>{lbl}</span>)}
           </div>

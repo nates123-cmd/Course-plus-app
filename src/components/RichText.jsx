@@ -31,9 +31,9 @@ export function RichText({ text, style }) {
     del: ({ node, ...p }) => <del {...p} style={{ opacity: 0.6 }} />,
     blockquote: ({ node, ...p }) => <blockquote {...p} style={{ margin: '0 0 12px', padding: '4px 0 4px 14px', borderLeft: '3px solid ' + t.line2, color: t.t2, fontStyle: 'italic' }} />,
     code: ({ node, inline, ...p }) => inline
-      ? <code {...p} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5, background: t.sel, borderRadius: 5, padding: '1px 5px', color: t.t1 }} />
-      : <code {...p} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5, lineHeight: 1.55, color: t.t1 }} />,
-    pre: ({ node, ...p }) => <pre {...p} style={{ margin: '0 0 12px', overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 10, padding: '12px 14px' }} />,
+      ? <code {...p} style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, background: t.sel, borderRadius: 'calc(5px * var(--rs))', padding: '1px 5px', color: t.t1 }} />
+      : <code {...p} style={{ fontFamily: 'var(--f-mono)', fontSize: 12.5, lineHeight: 1.55, color: t.t1 }} />,
+    pre: ({ node, ...p }) => <pre {...p} style={{ margin: '0 0 12px', overflow: 'auto', background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(10px * var(--rs))', padding: '12px 14px' }} />,
     hr: () => <hr style={{ border: 0, borderTop: '1px solid ' + t.line, margin: '16px 0' }} />,
     table: ({ node, ...p }) => <div style={{ overflowX: 'auto', margin: '0 0 14px' }}><table {...p} style={{ borderCollapse: 'collapse', width: '100%' }} /></div>,
     th: ({ node, ...p }) => <th {...p} style={{ ...cell, fontFamily: f.ui, fontWeight: 700, fontSize: 12.5, background: t.sel, color: t.t2 }} />,
@@ -43,7 +43,7 @@ export function RichText({ text, style }) {
         const title = decodeURIComponent(href.slice(6))
         const tgt = noteByTitle(title)
         return <span onClick={() => tgt && go({ screen: 'note', id: tgt.id })}
-          style={{ color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 7, padding: '1px 7px', cursor: tgt ? 'pointer' : 'default', fontSize: 13.5 }}>{children}</span>
+          style={{ color: t.accent, background: t.accentBg, border: '1px solid ' + t.accentLine, borderRadius: 'calc(7px * var(--rs))', padding: '1px 7px', cursor: tgt ? 'pointer' : 'default', fontSize: 13.5 }}>{children}</span>
       }
       return <a {...p} href={href} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: 'underline' }}>{children}</a>
     },

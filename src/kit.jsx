@@ -37,7 +37,7 @@ export function Tag({ children, onClick, active }) {
   const { t, f } = useApp()
   return <span onClick={onClick} style={{ fontFamily: f.ui, fontSize: 11.5, fontWeight: 500,
     color: active ? t.onAccent : t.tagText, background: active ? t.accent : t.tagBg,
-    borderRadius: 6, padding: '2px 9px', whiteSpace: 'nowrap', cursor: onClick ? 'pointer' : 'default' }}>{children}</span>
+    borderRadius: 'calc(6px * var(--rs))', padding: '2px 9px', whiteSpace: 'nowrap', cursor: onClick ? 'pointer' : 'default' }}>{children}</span>
 }
 
 // StateTag — the row-level "why isn't this moving" marker. Two states earn one:
@@ -55,7 +55,7 @@ export function StateTag({ kind, label }) {
     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none', zIndex: 1, maxWidth: 150,
       fontFamily: f.ui, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
       color: risk ? t.risk : t.t2, background: risk ? t.riskBg : t.tagBg,
-      border: '1px solid ' + (risk ? t.riskLine : 'transparent'), borderRadius: 6, padding: '2px 8px' }}>
+      border: '1px solid ' + (risk ? t.riskLine : 'transparent'), borderRadius: 'calc(6px * var(--rs))', padding: '2px 8px' }}>
     <Icon n={risk ? 'player-pause' : deferred ? 'player-play' : 'calendar'} s={11} />
     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span></span>
 }
@@ -76,7 +76,7 @@ export function Person({ children, size = 'md' }) {
   const fs = size === 'sm' ? 11 : 11.5
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: fs,
     fontWeight: 600, color: t.t1, background: t.accentBg, border: '1px solid ' + t.accentLine,
-    borderRadius: 20, padding: '2px 10px', whiteSpace: 'nowrap' }}>
+    borderRadius: 'calc(20px * var(--rs))', padding: '2px 10px', whiteSpace: 'nowrap' }}>
     <Icon n="user" s={11} c={t.t2} />{children}</span>
 }
 
@@ -96,7 +96,7 @@ export function Btn({ children, icon, iconRight, kind = 'ghost', onClick, size =
   const pad = size === 'sm' ? '6px 11px' : size === 'lg' ? '10px 18px' : '8px 14px'
   const fs = size === 'sm' ? 12 : size === 'lg' ? 14 : 13
   const base = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-    fontFamily: f.ui, fontSize: fs, fontWeight: 600, letterSpacing: f.uiSpacing, borderRadius: 9, padding: pad,
+    fontFamily: f.ui, fontSize: fs, fontWeight: 600, letterSpacing: f.uiSpacing, borderRadius: 'calc(9px * var(--rs))', padding: pad,
     cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .14s, border-color .14s, color .14s',
     border: '1px solid transparent', ...style }
   const skin = kind === 'primary' ? { background: t.accent, color: t.onAccent }
@@ -116,15 +116,15 @@ export function Btn({ children, icon, iconRight, kind = 'ghost', onClick, size =
 export function IconBtn({ n, s = 18, onClick, title, badge, active }) {
   const { t } = useApp()
   return <button title={title} onClick={onClick} style={{ position: 'relative', display: 'inline-flex',
-    alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 'calc(9px * var(--rs))',
     background: active ? t.sel : 'transparent', border: 0, cursor: 'pointer', color: t.t2,
     transition: 'background .14s, color .14s' }}
     onMouseEnter={(e) => { e.currentTarget.style.background = t.sel; e.currentTarget.style.color = t.t1 }}
     onMouseLeave={(e) => { e.currentTarget.style.background = active ? t.sel : 'transparent'; e.currentTarget.style.color = t.t2 }}>
     <Icon n={n} s={s} />
-    {badge ? <span style={{ position: 'absolute', top: 5, right: 4, minWidth: 15, height: 15, borderRadius: 8,
+    {badge ? <span style={{ position: 'absolute', top: 5, right: 4, minWidth: 15, height: 15, borderRadius: 'calc(8px * var(--rs))',
       background: t.accent, color: t.onAccent, fontSize: 9.5, fontWeight: 700, display: 'flex', alignItems: 'center',
-      justifyContent: 'center', padding: '0 4px', fontFamily: "'Hanken Grotesk', sans-serif" }}>{badge}</span> : null}
+      justifyContent: 'center', padding: '0 4px', fontFamily: 'var(--f-ui)' }}>{badge}</span> : null}
   </button>
 }
 
@@ -153,7 +153,7 @@ export function StatusPill({ id, onClick, open, size = 'md' }) {
   const s = STATUS[id] || STATUS.idea; const sk = statusSkin(t, id)
   const fs = size === 'sm' ? 10.5 : 11
   return <span onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
-    fontFamily: f.ui, fontSize: fs, fontWeight: 600, letterSpacing: '0.02em', borderRadius: 7,
+    fontFamily: f.ui, fontSize: fs, fontWeight: 600, letterSpacing: '0.02em', borderRadius: 'calc(7px * var(--rs))',
     border: '1px solid ' + (sk.line || 'transparent'), padding: '3px 9px', color: sk.color, background: sk.bg,
     cursor: onClick ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
     {s.label}{onClick && <Icon n={open ? 'chevron-up' : 'chevron-down'} s={11} style={{ opacity: 0.7 }} />}</span>
@@ -168,8 +168,8 @@ export function SynthPill({ status }) {
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: f.ui, fontSize: 10.5,
     fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: accent ? t.accent : t.t3,
     background: accent ? t.accentBg : 'transparent', border: '1px solid ' + (accent ? t.accentLine : t.line2),
-    borderRadius: 6, padding: '2px 8px' }}>
-    <span style={{ width: 5, height: 5, borderRadius: 3, background: accent ? t.accent : t.t3 }} />{label}</span>
+    borderRadius: 'calc(6px * var(--rs))', padding: '2px 8px' }}>
+    <span style={{ width: 5, height: 5, borderRadius: 'calc(3px * var(--rs))', background: accent ? t.accent : t.t3 }} />{label}</span>
 }
 
 // Priority dot (P1/P2/P3)
@@ -179,7 +179,7 @@ export function Priority({ level }) {
   const c = level === 1 ? t.risk : level === 2 ? t.accent : t.t3
   return <span title={'P' + level} style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
     fontFamily: f.ui, fontSize: 10.5, fontWeight: 700, color: c, letterSpacing: '0.04em' }}>
-    <span style={{ width: 6, height: 6, borderRadius: 3, background: c }} />P{level}</span>
+    <span style={{ width: 6, height: 6, borderRadius: 'calc(3px * var(--rs))', background: c }} />P{level}</span>
 }
 
 // ── Generic popover (anchored) ──────────────────────────────────
@@ -193,17 +193,17 @@ export function Popover({ children, onClose, align = 'left', width = 220, top = 
   }, [])
   const pos = bottom != null ? { bottom } : { top }
   return <div ref={ref} style={{ position: 'absolute', ...pos, [align]: 0, zIndex: 200, minWidth: width,
-    background: t.card, border: '1px solid ' + t.line, borderRadius: 12, padding: 6, boxShadow: t.shadow,
+    background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(12px * var(--rs))', padding: 6, boxShadow: t.shadow,
     maxHeight, overflowY: maxHeight ? 'auto' : 'visible' }}>{children}</div>
 }
 
 export function PopRow({ icon, dot, label, hint, on, onClick }) {
   const { t, f } = useApp()
   return <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px',
-    borderRadius: 8, cursor: 'pointer', background: on ? t.sel : 'transparent' }}
+    borderRadius: 'calc(8px * var(--rs))', cursor: 'pointer', background: on ? t.sel : 'transparent' }}
     onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
     onMouseLeave={(e) => e.currentTarget.style.background = on ? t.sel : 'transparent'}>
-    {dot && <span style={{ width: 8, height: 8, borderRadius: 4, background: dot, flex: 'none' }} />}
+    {dot && <span style={{ width: 8, height: 8, borderRadius: 'calc(4px * var(--rs))', background: dot, flex: 'none' }} />}
     {icon && <Icon n={icon} s={15} c={t.t2} />}
     <span style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 500, color: on ? t.accent : t.t1 }}>{label}</span>
     {hint && <span style={{ marginLeft: 'auto', fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{hint}</span>}
@@ -211,11 +211,15 @@ export function PopRow({ icon, dot, label, hint, on, onClick }) {
 }
 
 export function Card({ children, style, onClick, hover, className }) {
-  const { t } = useApp()
-  return <div className={className} onClick={onClick} style={{ background: t.card, border: '1px solid ' + t.line, borderRadius: 14,
+  const { t, look } = useApp()
+  // Memo look (DESIGN.md): groups are ruled sections on the page, not boxes.
+  const skin = look === 'memo'
+    ? { background: 'transparent', border: 0, borderTop: '1px solid ' + t.line2, borderRadius: 0 }
+    : { background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(14px * var(--rs))' }
+  return <div className={className} onClick={onClick} style={{ ...skin,
     transition: 'border-color .14s, background .14s', cursor: onClick ? 'pointer' : 'default', ...style }}
-    onMouseEnter={hover ? (e) => e.currentTarget.style.borderColor = t.line2 : undefined}
-    onMouseLeave={hover ? (e) => e.currentTarget.style.borderColor = t.line : undefined}>
+    onMouseEnter={hover && look !== 'memo' ? (e) => e.currentTarget.style.borderColor = t.line2 : undefined}
+    onMouseLeave={hover && look !== 'memo' ? (e) => e.currentTarget.style.borderColor = t.line : undefined}>
     {children}</div>
 }
 
@@ -261,7 +265,7 @@ export function inlineMd(text) {
     if (m.index > last) out.push(s.slice(last, m.index))
     if (m[2] != null || m[3] != null) out.push(<strong key={k++}>{m[2] ?? m[3]}</strong>)
     else if (m[4] != null) out.push(<em key={k++}>{m[4]}</em>)
-    else if (m[5] != null) out.push(<code key={k++} style={{ fontFamily: 'ui-monospace, monospace', fontSize: '0.92em' }}>{m[5]}</code>)
+    else if (m[5] != null) out.push(<code key={k++} style={{ fontFamily: 'var(--f-mono)', fontSize: '0.92em' }}>{m[5]}</code>)
     last = m.index + m[0].length
   }
   if (last < s.length) out.push(s.slice(last))
@@ -423,7 +427,7 @@ export function MiniCal({ value, onPick, onClear }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
       {cells.map((d, i) => d == null ? <span key={i} /> :
         <span key={i} onClick={() => onPick({ y: view.y, m: view.m, d })} style={{ height: 30, display: 'flex',
-          alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 7,
+          alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 'calc(7px * var(--rs))',
           fontFamily: f.ui, fontSize: 12.5, fontWeight: selOn === d ? 700 : isToday(d) ? 600 : 500,
           color: selOn === d ? t.onAccent : isToday(d) ? t.accent : t.t1,
           background: selOn === d ? t.accent : 'transparent',
@@ -469,7 +473,7 @@ export function FloatPop({ anchorRef, children, onClose, width = 262, estHeight 
   }, [])
   return createPortal(<div ref={ref} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
     style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, zIndex: 1000, width,
-      background: t.card, border: '1px solid ' + t.line, borderRadius: 12, padding: 6, boxShadow: t.shadow,
+      background: t.card, border: '1px solid ' + t.line, borderRadius: 'calc(12px * var(--rs))', padding: 6, boxShadow: t.shadow,
       maxHeight: maxHeight ? `min(${maxHeight}px, calc(100vh - 20px))` : 'calc(100vh - 20px)', overflowY: 'auto', visibility: pos ? 'visible' : 'hidden' }}>{children}</div>, document.body)
 }
 
@@ -485,7 +489,7 @@ export function DatePill({ value, onChange, label = 'Due', empty = '+ Add date',
     <span onClick={() => setOpen((o) => !o)} title="Set date" style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
       cursor: 'pointer', fontFamily: f.ui, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
       color: has ? skin.c : t.t3, background: has ? skin.bg : t.sel,
-      border: '1px solid ' + (has ? skin.ln : 'transparent'), borderRadius: 7, padding: '3px 9px',
+      border: '1px solid ' + (has ? skin.ln : 'transparent'), borderRadius: 'calc(7px * var(--rs))', padding: '3px 9px',
       transition: 'background .14s, border-color .14s' }}
       onMouseEnter={(e) => { if (!has) e.currentTarget.style.background = t.tagBg }}
       onMouseLeave={(e) => { if (!has) e.currentTarget.style.background = t.sel }}>
