@@ -218,6 +218,41 @@ export async function route(
 }
 
 /**
+ * Suggest-only: classify without writing anything. Used by reminder triage,
+ * where Nate confirms (or changes) the destination before anything is filed.
+ * Returns the items plus the project names they may reference, so a picker can
+ * offer the same list. Throws on classifier failure; the caller decides.
+ */
+export async function suggest(
+  admin: SupabaseClient,
+  ownerId: string,
+  text: string,
+): Promise<{ items: RoutedItem[]; projects: string[] }> {
+  const { names } = await openProjects(admin, ownerId)
+  const items = await classify(text, names)
+  return { items, projects: names }
+}
+
+/**
+ * Write one item Nate has already confirmed, with no classification. The item
+ * goes straight to its writer and is recorded in capture_log like any routed
+ * capture, so it stays reviewable. There is no inbox fallback and no Telegram
+ * escalation: he is looking at the screen, so a failure is returned to him.
+ */
+export async function applyItem(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+  raw: string,
+  src: string,
+): Promise<string> {
+  const { byName } = await openProjects(admin, ownerId)
+  const result = await dispatch(admin, ownerId, item, byName, raw, src)
+  await recordLog(admin, ownerId, raw, src, [{ ...result, kind: item.kind, confidence: item.confidence }])
+  return result.line
+}
+
+/**
  * The capture log is what makes writing directly to real tables safe to rely
  * on. Without it a misroute is silent — the capture is gone into an app Nate
  * has no reason to open. With it, "recent captures" is a reviewable strip and
