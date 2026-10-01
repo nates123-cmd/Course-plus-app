@@ -37,7 +37,11 @@ export type Kind =
   | 'ink_thought'
   | 'break_lookup'
   | 'break_flashcard'
+  | 'cue_add'
   | 'unknown'
+
+/** Cue's `recommendations.media_type` values a capture can produce. */
+export type CueMedia = 'movie' | 'tv' | 'book' | 'podcast' | 'music' | 'article' | 'video'
 
 export interface RoutedItem {
   kind: Kind
@@ -58,6 +62,8 @@ export interface RoutedItem {
   project: string | null
   /** ISO `YYYY-MM-DD`, already resolved from "tomorrow"/"Thursday". */
   due: string | null
+  /** Cue media type for cue_add. Null for every other kind. */
+  media: CueMedia | null
   /** 0..1. Below CONFIDENCE_FLOOR the item is demoted to the inbox. */
   confidence: number
 }
@@ -96,7 +102,7 @@ const SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['kind', 'text', 'title', 'back', 'project', 'due', 'confidence'],
+        required: ['kind', 'text', 'title', 'back', 'project', 'due', 'media', 'confidence'],
         properties: {
           kind: {
             type: 'string',
@@ -109,7 +115,14 @@ const SCHEMA = {
               'ink_thought',
               'break_lookup',
               'break_flashcard',
+              'cue_add',
               'unknown',
+            ],
+          },
+          media: {
+            anyOf: [
+              { type: 'string', enum: ['movie', 'tv', 'book', 'podcast', 'music', 'article', 'video'] },
+              { type: 'null' },
             ],
           },
           text: { type: 'string' },
@@ -151,13 +164,14 @@ The kinds:
 - ink_thought — a personal reflection, observation, or idea about himself. Not work, not an action.
 - break_lookup — something he wants to LOOK UP or learn about later. Usually phrased as a question or a term he does not know yet.
 - break_flashcard — he wants a flashcard MADE, signalled by the word "flashcard". \`text\` is the front (the prompt side: the word, term, or question, exactly as he said it). \`back\` is the answer side, which you must WRITE yourself — he only ever dictates the front. For a vocabulary word, the back is a concise definition, part of speech first ("adj. — biased toward a particular viewpoint"). For a question, the back is the answer. Keep it to one or two lines; it is read on a phone. \`back\` must never be null for this kind.
+- cue_add — a movie, show, book, podcast, album, or article he wants to watch, read, or listen to later, to save in his Cue list. Signalled by "Cue", "watch", "read", "recommend", or a bare title. \`text\` is ONLY the title, properly capitalised ("Gone Girl"), with no "watch"/"read" verb and no year unless he said one. \`media\` is the format: movie, tv, book, podcast, music, article, or video. When he names the format ("cue book: Gone Girl", "the Gone Girl book") use it. When he does not and the title is both a film and a book, prefer the screen version (movie or tv). \`media\` must be null for every other kind.
 - unknown — you cannot tell. Use this freely; an honest \`unknown\` is far better than a confident wrong route, because a wrong route hides the capture in an app he will not think to check.
 
 The difference between stock_out, stock_staple, and stock_idea matters: stock_out changes what he buys this week, stock_staple changes what he keeps forever, stock_idea is a dish he might cook. "I'm out of butter" is stock_out. "Add butter to my staples" is stock_staple. "Steak butter" is stock_idea — a thing to make, not a thing to buy.
 
 Likewise break_lookup vs break_flashcard: "look up what a mansard roof is" is break_lookup, "add mansard roof to my flashcards" is break_flashcard. The word "flashcard" is the tell.
 
-If he names an app out loud ("Course Plus...", "Stock...", "Ink...", "Break..."), that overrides your own read of the content. He often leads with the app name and then the content ("course plus, hawaii trip, figure out activities for big island"), and he may say "Course Plus" as "course+".
+If he names an app out loud or as a written prefix ("Course Plus...", "stock:", "Ink...", "Break...", "cue:"), that overrides your own read of the content. He often leads with the app name and then the content ("course plus, hawaii trip, figure out activities for big island"), and he may say "Course Plus" as "course+".
 
 \`confidence\` is your genuine belief that this item is routed to the right kind, 0 to 1. Use the full range. Anything below ${CONFIDENCE_FLOOR} is filed to the inbox for manual triage instead, which is a good outcome when you are unsure.
 

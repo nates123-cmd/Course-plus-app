@@ -21,6 +21,7 @@ import {
   writeBreakLookup,
   writeCourseNote,
   writeCourseTask,
+  writeCueAdd,
   writeInbox,
   writeInkThought,
   writeStockIdea,
@@ -100,6 +101,8 @@ async function dispatch(
   ownerId: string,
   item: RoutedItem,
   byName: Map<string, { id: string; name: string; status: string }>,
+  raw: string,
+  src: string,
 ): Promise<WriteResult> {
   // The classifier returns a project NAME copied from the list we gave it;
   // resolving it to an id here means a hallucinated name degrades to "no
@@ -114,7 +117,7 @@ async function dispatch(
     case 'course_note':
       return writeCourseNote(admin, ownerId, item, projectId, projectName)
     case 'stock_out':
-      return writeStockOut(admin, ownerId, item)
+      return writeStockOut(admin, ownerId, item, src)
     case 'stock_staple':
       return writeStockStaple(admin, ownerId, item)
     case 'stock_idea':
@@ -125,6 +128,8 @@ async function dispatch(
       return writeBreakLookup(admin, ownerId, item)
     case 'break_flashcard':
       return writeBreakFlashcard(admin, ownerId, item)
+    case 'cue_add':
+      return writeCueAdd(admin, ownerId, item, raw)
     default:
       throw new Error(`unroutable kind: ${item.kind}`)
   }
@@ -167,7 +172,7 @@ export async function route(
       }
 
       try {
-        const result = await dispatch(admin, ownerId, item, byName)
+        const result = await dispatch(admin, ownerId, item, byName, text, src)
         logged.push({ ...result, kind: item.kind, confidence: item.confidence })
       } catch (err) {
         // One writer failing must not take the other items down with it.
@@ -210,6 +215,41 @@ export async function route(
   await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
   return logged.map((l) => l.line).join('; ')
+}
+
+/**
+ * Suggest-only: classify without writing anything. Used by reminder triage,
+ * where Nate confirms (or changes) the destination before anything is filed.
+ * Returns the items plus the project names they may reference, so a picker can
+ * offer the same list. Throws on classifier failure; the caller decides.
+ */
+export async function suggest(
+  admin: SupabaseClient,
+  ownerId: string,
+  text: string,
+): Promise<{ items: RoutedItem[]; projects: string[] }> {
+  const { names } = await openProjects(admin, ownerId)
+  const items = await classify(text, names)
+  return { items, projects: names }
+}
+
+/**
+ * Write one item Nate has already confirmed, with no classification. The item
+ * goes straight to its writer and is recorded in capture_log like any routed
+ * capture, so it stays reviewable. There is no inbox fallback and no Telegram
+ * escalation: he is looking at the screen, so a failure is returned to him.
+ */
+export async function applyItem(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+  raw: string,
+  src: string,
+): Promise<string> {
+  const { byName } = await openProjects(admin, ownerId)
+  const result = await dispatch(admin, ownerId, item, byName, raw, src)
+  await recordLog(admin, ownerId, raw, src, [{ ...result, kind: item.kind, confidence: item.confidence }])
+  return result.line
 }
 
 /**

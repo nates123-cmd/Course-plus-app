@@ -296,6 +296,7 @@ Deno.serve(async (req) => {
       back: body.back == null ? null : String(body.back),
       project: body.project == null ? null : String(body.project),
       due: body.due == null ? null : String(body.due),
+      media: null, // refile does not offer cue_add yet
       confidence: 1, // he said so himself; this is not a guess
     }
 

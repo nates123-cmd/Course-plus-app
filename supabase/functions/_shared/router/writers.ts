@@ -160,6 +160,7 @@ export async function writeStockOut(
   admin: SupabaseClient,
   ownerId: string,
   item: RoutedItem,
+  src = 'watch',
 ): Promise<WriteResult> {
   const name = item.text.trim()
 
@@ -200,7 +201,7 @@ export async function writeStockOut(
       amount: null,
       addedAt: new Date().toISOString(),
       originId: 'manual', // see landmine above — must stay 'manual'
-      originLabel: 'added by voice',
+      originLabel: src === 'reminders' ? 'from Reminders' : 'added by voice',
     },
   })
   if (error) throw new Error(`extras: ${error.message}`)
@@ -380,6 +381,78 @@ export async function writeInkThought(
   if (thoughtErr) throw new Error(`thoughts: ${thoughtErr.message}`)
 
   return { table: 'thoughts', record_id: entry.id, line: 'Ink: thought saved' }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cue                                                                 */
+/* ------------------------------------------------------------------ */
+
+/** Mirrors `defaultCoverKind()` in cue-app/src/lib/items.js. */
+function cueCoverKind(media: string): string {
+  if (media === 'video') return 'thumb'
+  if (media === 'movie' || media === 'tv') return 'poster'
+  return 'type'
+}
+
+/**
+ * "cue: Gone Girl" — a title to watch/read later, saved to Cue's list.
+ *
+ * Cue lives on Ink's `recommendations` table. A "want" item is
+ * `status = 'queued'`; the column DEFAULT is 'saved', which Cue does not treat
+ * as its queue, so the status must be written explicitly.
+ *
+ * LANDMINE — `user_id` defaults to `auth.uid()`, null under the service key,
+ * so omitting it inserts a row nobody can see. Always pass it.
+ *
+ * Enrichment (poster, synopsis, genre) is client-side only in Cue, so the row
+ * is written bare with `extension.needs_enrich = true`, and Cue's
+ * `enrichCaptured()` fills it in the next time the app loads.
+ *
+ * Duplicate guard: the same title + media type already in the list (any
+ * status) is reported, not re-added. Re-adding a finished title would put it
+ * back in the queue, and a double entry is worse than a "you already have it".
+ */
+export async function writeCueAdd(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+  raw: string,
+): Promise<WriteResult> {
+  const title = item.text.trim()
+  const media = item.media ?? 'movie'
+  if (!title) throw new Error('cue_add needs a title')
+
+  const { data: existing, error: findErr } = await admin
+    .from('recommendations')
+    .select('id, status')
+    .eq('user_id', ownerId)
+    .eq('media_type', media)
+    .ilike('title', literal(title))
+    .limit(1)
+  if (findErr) throw new Error(`recommendations lookup: ${findErr.message}`)
+  if (existing?.[0]) {
+    const s = existing[0].status === 'done' ? 'already finished' : 'already in your list'
+    return { table: 'recommendations', record_id: existing[0].id, line: `Cue: ${title} (${media}) ${s}` }
+  }
+
+  const { data, error } = await admin
+    .from('recommendations')
+    .insert({
+      user_id: ownerId,
+      title,
+      media_type: media,
+      status: 'queued',
+      recommended_by: 'me',
+      cover_kind: cueCoverKind(media),
+      raw_input: raw,
+      source_query: title,
+      extension: { needs_enrich: true },
+    })
+    .select('id')
+    .single()
+  if (error) throw new Error(`recommendations: ${error.message}`)
+
+  return { table: 'recommendations', record_id: data.id, line: `Cue: ${title} (${media}) -> queued` }
 }
 
 /* ------------------------------------------------------------------ */
