@@ -8,7 +8,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { useApp } from './ctx'
 import { useData } from './DataContext'
 import { Icon, Btn } from './kit'
-import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported } from './lib/recorder'
+import { useRecorder, fmtClock, getRecovered, clearRecovered, tabAudioSupported, getPreferredMic, setPreferredMic } from './lib/recorder'
 import { splitInlineSpeakers } from './lib/speakerSplit'
 import { transcribeAudio } from './lib/transcribe'
 import { transcribeInBrowser, transcribeInBrowserDetailed, browserWhisperSupported } from './lib/whisper'
@@ -83,6 +83,10 @@ export function RecorderProvider({ go, children }) {
   const [engine, setEngine] = useState('cloud')
   // tabAudio: also capture tab/system audio (browser calls) when supported.
   const [tabAudio, setTabAudio] = useState(false)
+  // micId: the pinned input device ('' = browser/OS default). Device-level,
+  // so it lives in localStorage rather than the per-note draft.
+  const [micId, setMicIdState] = useState(() => getPreferredMic())
+  const setMicId = (id) => { setMicIdState(id || ''); setPreferredMic(id || '') }
   // On-device speaker labeling (Me vs Computer) for the browser engine — needs a
   // one-time voice enrollment ([[lib/diarize]]). hasVoice tracks the stored
   // voiceprint; labelSpeakers is the per-session toggle (on once enrolled).
@@ -131,6 +135,7 @@ export function RecorderProvider({ go, children }) {
     if ('diarize' in patch) setDiarize(patch.diarize)
     if ('engine' in patch) setEngine(browserWhisperSupported ? patch.engine : 'cloud')
     if ('tabAudio' in patch) setTabAudio(tabAudioSupported ? !!patch.tabAudio : false)
+    if ('micId' in patch) setMicId(patch.micId)
   }
 
   // Run the chosen transcription engine on a blob → { text, lines }.
@@ -181,6 +186,10 @@ export function RecorderProvider({ go, children }) {
   const draftSavedRef = useRef(false)   // has the incomplete note been written?
   const hydratedRef = useRef(false)
   const [recoveredBlob, setRecoveredBlob] = useState(null) // orphaned interrupted-recording audio
+  // Why the recovered audio is being held: 'interrupted' (reload mid-recording)
+  // or 'silent' (the last recording was held back because nothing reached the
+  // mic). Drives the card copy; 'silent' also carries the input label.
+  const [recoveredReason, setRecoveredReason] = useState(null) // null | { kind, label, silentPct, mins }
 
   const meaningful = () => !!(title.trim() || notes.trim() || agenda.trim() || transcriptText.trim())
 
@@ -348,13 +357,20 @@ export function RecorderProvider({ go, children }) {
   const recoverAudio = async () => {
     const blob = recoveredBlob
     if (!blob) return
+    if (recoveredReason?.kind === 'silent') {
+      // Held back by the silence gate this session: push it through the normal
+      // path (appends to any existing transcript, runs the completeness check).
+      setRecoveredBlob(null); setRecoveredReason(null)
+      await stopAndTranscribe({ force: true, blob })
+      return
+    }
     setSource('record'); setError(null); setProc('transcribing')
     try {
       const { text, lines: dl } = await runEngine(blob)
       setTranscriptText(text)
       setLines(dl || linesFor(text))
       setProc('ready')
-      setRecoveredBlob(null)
+      setRecoveredBlob(null); setRecoveredReason(null)
       clearRecovered().catch(() => {})
     } catch (e) { setError(humanize(e)); setProc('ready') }
   }
@@ -369,7 +385,7 @@ export function RecorderProvider({ go, children }) {
     document.body.appendChild(a); a.click(); a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
-  const dismissRecovered = () => { setRecoveredBlob(null); clearRecovered().catch(() => {}) }
+  const dismissRecovered = () => { setRecoveredBlob(null); setRecoveredReason(null); clearRecovered().catch(() => {}) }
 
   // Rename a diarized speaker (e.g. "Speaker A" → "Nate") everywhere: the line
   // labels AND the raw transcript, so synthesis + the saved note use real names.
@@ -486,7 +502,7 @@ export function RecorderProvider({ go, children }) {
     setError(null); setWarn(null); setCost(null)
     setTStatus(''); setModelPct(0)
     setProc(PROC_IDLE)
-    await recorder.start({ tabAudio })
+    await recorder.start({ tabAudio, deviceId: micId })
   }
   const pause = () => recorder.pause()
   const resume = () => recorder.resume()
@@ -563,11 +579,31 @@ export function RecorderProvider({ go, children }) {
   }
 
   // Stop the recorder → blob, then transcribe (speaker-labeled) and parse.
-  const stopAndTranscribe = async () => {
+  // force = transcribe even though the silence gate would hold the audio back.
+  const stopAndTranscribe = async ({ force = false, blob: given = null } = {}) => {
     setError(null)
-    let blob = null
-    try { blob = await recorder.stop() } catch (e) { setError(humanize(e)); setProc(PROC_IDLE); return }
+    let blob = given
+    if (!blob) {
+      try { blob = await recorder.stop() } catch (e) { setError(humanize(e)); setProc(PROC_IDLE); return }
+    }
     if (!blob || !blob.size) { setError('No audio was captured.'); setProc(PROC_IDLE); return }
+    const stats = recorder.getStats()
+    const mins = Math.max(1, Math.round(seconds / 60))
+    // Silence gate: a recording that was near-silent for almost all of its
+    // length is a dead or wrong input, not a quiet meeting. Sending it to the
+    // transcriber returns a few hundred words of hallucinated filler that LOOKS
+    // like a transcript (seen Oct 8–9 2026: "3 liters of lotion" in a Citrix
+    // pricing session). Hold the audio instead and say which mic it came from;
+    // the user can still download it or transcribe anyway.
+    if (!force && seconds >= 60 && stats.samples >= 20 && stats.silentFrac >= 0.9) {
+      const silentPct = Math.round(stats.silentFrac * 100)
+      setRecoveredBlob(blob)
+      setRecoveredReason({ kind: 'silent', label: stats.label, silentPct, mins })
+      setError(`Nothing reached the mic${stats.label ? ` (${stats.label})` : ''} for ${silentPct}% of this ${mins}-min recording, so it wasn't sent for transcription. `
+        + 'Check the input device below, then record again — or recover the audio anyway.')
+      setProc(PROC_IDLE)
+      return
+    }
     setProc('transcribing')
     try {
       const { text, lines: dl } = await runEngine(blob)
@@ -589,10 +625,13 @@ export function RecorderProvider({ go, children }) {
       const words = (segText || '').split(/\s+/).filter(Boolean).length
       const expected = (seconds / 60) * 120
       if (seconds > 120 && (interrupted || words < expected * 0.4)) {
-        const mins = Math.round(seconds / 60)
-        setWarn(`This transcript looks short — ~${words.toLocaleString()} words for a ${mins}-min recording. ` +
-          (interrupted ? 'The tab went to the background mid-recording, ' : 'Audio capture likely paused, ') +
-          'so it may be missing audio. Keep this tab in front (and the screen on) while recording.')
+        const silentPct = Math.round((stats.silentFrac || 0) * 100)
+        const mic = stats.label ? ` (${stats.label})` : ''
+        const why = silentPct >= 50
+          ? `The mic${mic} delivered silence for ${silentPct}% of it — a dead or wrong input device, so the words here may be the transcriber guessing. Pick the right mic below before the next recording.`
+          : interrupted ? 'The tab went to the background mid-recording, so it may be missing audio. Keep this tab in front (and the screen on) while recording.'
+          : `Audio capture likely paused${mic ? ` on${mic}` : ''}, so it may be missing audio. Keep this tab in front (and the screen on) while recording.`
+        setWarn(`This transcript looks short — ~${words.toLocaleString()} words for a ${mins}-min recording. ${why}`)
       } else setWarn(null)
       setSource('record')
       setProc('ready')
@@ -682,7 +721,7 @@ export function RecorderProvider({ go, children }) {
     setTitle(''); setSeriesId(null); setQuick(false)
     setNoteId(null); setNoteIncomplete(true); setMeetingDate(null); setDateIso(null); setSaveState('idle')
     draftIdRef.current = null; draftSavedRef.current = false; lastSavedRef.current = null; frozenRef.current = false
-    setRecoveredBlob(null)
+    setRecoveredBlob(null); setRecoveredReason(null)
     try { if (id) localStorage.removeItem(DRAFT_PREFIX + id) } catch {}
     clearRecovered().catch(() => {})
   }
@@ -690,7 +729,8 @@ export function RecorderProvider({ go, children }) {
   const value = useMemo(() => ({
     phase, seconds, error, warn, interrupted,
     title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost,
-    speakers, diarize, recoveredBlob,
+    speakers, diarize, recoveredBlob, recoveredReason,
+    micId, inputLabel: recorder.inputLabel, silentFor: recorder.silentFor,
     noteId, noteIncomplete, meetingDate, saveState, open, flushSave,
     engine, browserWhisperSupported, tStatus, modelPct,
     diarizeSupported, hasVoice, labelSpeakers, setLabelSpeakers, enrollVoice, clearVoice, enrollStatus, labelPct,
@@ -699,7 +739,7 @@ export function RecorderProvider({ go, children }) {
     setMeta, setProjects, setError, setWarn, setTranscriptFromPaste,
     start, pause, resume, stopAndTranscribe, synthesize, reset, clear,
     finalizeNote, discard, recoverAudio, dismissRecovered, downloadRecovered, loadDraftFromNote, renameSpeaker,
-  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins, noteId, noteIncomplete, meetingDate, dateIso, saveState, allNotes, series])
+  }), [phase, seconds, error, warn, interrupted, title, home, pillar, projects, seriesId, people, agenda, notes, source, detail, quick, lines, transcriptText, synth, cost, speakers, diarize, recoveredBlob, engine, tStatus, modelPct, hasVoice, labelSpeakers, enrollStatus, labelPct, tabAudio, tabMixed, storageWarn, pins, noteId, noteIncomplete, meetingDate, dateIso, saveState, allNotes, series, recoveredReason, micId, recorder.inputLabel, recorder.silentFor])
 
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>
 }

@@ -9,7 +9,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Card, Label, Tag, Avatar, AreaDot, areaColor, Popover, PopRow, Markish, STATUS } from '../kit'
-import { fmtClock } from '../lib/recorder'
+import { fmtClock, listMics, SILENT_BANNER_S } from '../lib/recorder'
 import { UPLOAD_MAX_BYTES } from '../lib/transcribe'
 import { markdownToBlocks } from '../lib/blocks'
 import { createTask } from '../lib/db'
@@ -129,6 +129,35 @@ function SpeakerLabeler({ speakers, people, onRename }) {
     <Card style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
       {speakers.map((sp) => <SpeakerRow key={sp} sp={sp} people={people} onRename={onRename} />)}
     </Card>
+  </div>
+}
+
+// Which microphone to record from. "System default" follows the OS, which on
+// macOS silently flips to the last USB audio device that appeared — including
+// a desk speaker's empty headset jack — and that produced half-hour recordings
+// of nothing. Pinning a device here is remembered on this browser. Labels are
+// blank until the site has had mic permission once; a first recording fixes that.
+function MicPicker({ value, onChange, locked }) {
+  const { t, f } = useApp()
+  const [mics, setMics] = useState([])
+  useEffect(() => {
+    let dead = false
+    const load = () => listMics().then((m) => { if (!dead) setMics(m) })
+    load()
+    try { navigator.mediaDevices?.addEventListener?.('devicechange', load) } catch {}
+    return () => { dead = true; try { navigator.mediaDevices?.removeEventListener?.('devicechange', load) } catch {} }
+  }, [])
+  if (!mics.length) return null
+  const pinnedGone = value && !mics.some((m) => m.id === value)
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}><Icon n="microphone" s={13} c={t.t3} />Mic</span>
+    <select value={pinnedGone ? '' : value} disabled={locked} onChange={(e) => onChange(e.target.value)}
+      title="Which input to record from — pin one so an OS default flip can't hand you a dead mic"
+      style={{ fontFamily: f.ui, fontSize: 12, fontWeight: 600, color: t.t1, background: t.sel, border: '1px solid ' + t.line2, borderRadius: 'calc(7px * var(--rs))', padding: '4px 8px', maxWidth: 280, opacity: locked ? 0.6 : 1 }}>
+      <option value="">System default</option>
+      {mics.map((m, i) => <option key={m.id} value={m.id}>{m.label || `Microphone ${i + 1}`}</option>)}
+    </select>
+    {pinnedGone && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.risk }}>pinned mic not found — using system default</span>}
   </div>
 }
 
@@ -308,7 +337,8 @@ export function RecordScreen() {
         ? 'Labeling speakers on this device…' + (rec.labelPct > 0 ? ` ${rec.labelPct}%` : '')
         : 'Transcribing on this device…')
     : 'Transcribing…'
-  const statusText = phase === 'recording' ? 'Recording — audio captured'
+  const micSilent = live && rec.silentFor >= SILENT_BANNER_S
+  const statusText = phase === 'recording' ? (micSilent ? 'Recording — nothing reaching the mic' : 'Recording — audio captured')
     : phase === 'paused' ? 'Paused' : phase === 'transcribing' ? transcribingText
     : phase === 'ready' ? 'Transcribed — ready to synthesize' : phase === 'synth' ? 'Synthesizing…'
     : phase === 'done' ? 'Synthesized' : 'Ready to record'
@@ -373,11 +403,13 @@ export function RecordScreen() {
     {rec.recoveredBlob && <Card style={{ marginBottom: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 11, borderColor: t.accentLine, background: t.accentBg, flexWrap: 'wrap' }}>
       <Icon n="microphone" s={18} c={t.accent} />
       <div style={{ flex: 1, minWidth: 160 }}>
-        <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>Interrupted recording found</div>
-        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>Audio from a recording that didn’t finish (~{Math.max(1, Math.round(rec.recoveredBlob.size / 1048576))} MB) — recover it to transcribe.
+        <div style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 600, color: t.t1 }}>{rec.recoveredReason?.kind === 'silent' ? 'Recording held — it was silent' : 'Interrupted recording found'}</div>
+        <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3 }}>{rec.recoveredReason?.kind === 'silent'
+          ? <>Nothing reached the mic{rec.recoveredReason.label ? <> (<b>{rec.recoveredReason.label}</b>)</> : null} for {rec.recoveredReason.silentPct}% of {rec.recoveredReason.mins} min. Transcribing it would return made-up filler. Pick the right mic below and record again, or recover it anyway.</>
+          : <>Audio from a recording that didn’t finish (~{Math.max(1, Math.round(rec.recoveredBlob.size / 1048576))} MB) — recover it to transcribe.</>}
           {rec.recoveredBlob.size > UPLOAD_MAX_BYTES && <> Too big for cloud transcription — switch <b>Transcribe with</b> to <b>On device</b> first, or download the audio to keep it.</>}</div>
       </div>
-      <Btn kind="primary" size="sm" icon="wand" onClick={() => rec.recoverAudio()}>Recover</Btn>
+      <Btn kind={rec.recoveredReason?.kind === 'silent' ? 'outline' : 'primary'} size="sm" icon="wand" onClick={() => rec.recoverAudio()}>{rec.recoveredReason?.kind === 'silent' ? 'Transcribe anyway' : 'Recover'}</Btn>
       <Btn kind="ghost" size="sm" icon="download" onClick={() => rec.downloadRecovered()}>Download</Btn>
       <Btn kind="ghost" size="sm" onClick={() => rec.dismissRecovered()}>Discard</Btn>
     </Card>}
@@ -583,6 +615,8 @@ export function RecordScreen() {
               })()}
               {tabAudio && <span style={{ fontFamily: f.ui, fontSize: 11, color: t.t3 }}>records both sides — pick the meeting tab &amp; tick &ldquo;Share tab audio&rdquo;</span>}
             </div>}
+            {/* which mic — pinned per browser; see MicPicker */}
+            <MicPicker value={rec.micId} locked={phase !== 'idle'} onChange={(id) => rec.setMeta({ micId: id })} />
             {/* recorder card */}
             <Card style={{ padding: '22px 24px', background: t.panel }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
@@ -604,6 +638,8 @@ export function RecordScreen() {
                   <div style={{ marginTop: 6 }}><Levels live={live} getAnalyser={rec.getAnalyser} color={t.accent} faint={t.line2} /></div>
                   {tabMixed && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, fontFamily: f.ui, fontSize: 11, fontWeight: 600, color: t.accent }}>
                     <Icon n="device-desktop" s={12} c={t.accent} />Capturing call audio — mic + shared tab</div>}
+                  {rec.inputLabel && (phase === 'recording' || phase === 'paused') && <div style={{ marginTop: 5, fontFamily: f.ui, fontSize: 11, color: micSilent ? t.risk : t.t3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Recording from {rec.inputLabel}</div>}
                 </div>
                 {(phase === 'recording' || phase === 'paused') && <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Btn kind="outline" size="sm" icon="pin" onClick={() => rec.addPin()} title="Mark this moment — flagged for the summary">Pin</Btn>
@@ -612,6 +648,11 @@ export function RecordScreen() {
                 </div>}
               </div>
             </Card>
+            {/* dead-mic warning — nothing has reached the recorder for a while.
+                Clears itself the moment sound arrives, so a long pause only
+                shows it briefly; a wrong/dead input shows it the whole time. */}
+            {micSilent && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(8px * var(--rs))', padding: '7px 11px' }}>
+              <Icon n="alert-triangle" s={14} c={t.risk} />Nothing has reached the mic{rec.inputLabel ? ` (${rec.inputLabel})` : ''} for {fmtClock(rec.silentFor)}. If people are talking, this is the wrong input — stop, pick another mic, and record again.</div>}
             {/* storage-full warning — recording continues in memory, but a reload
                 mid-recording would no longer be recoverable */}
             {storageWarn && (phase === 'recording' || phase === 'paused') && <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, fontFamily: f.ui, fontSize: 11.5, color: t.risk, background: t.riskBg, border: '1px solid ' + t.riskLine, borderRadius: 'calc(8px * var(--rs))', padding: '7px 11px' }}>
