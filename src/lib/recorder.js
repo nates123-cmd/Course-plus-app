@@ -23,6 +23,35 @@ function pickMime() {
 export const tabAudioSupported = typeof navigator !== 'undefined'
   && !!navigator.mediaDevices?.getDisplayMedia
 
+// ── mic choice ──────────────────────────────────────────────────────
+// The browser's "default" mic follows the OS default input, and macOS flips
+// that to whatever USB audio device last appeared — including ones with a
+// dead mic jack (a desk speaker's headset port). That produced 30-minute
+// recordings of pure silence that the transcriber turned into a few hundred
+// words of hallucinated filler. Pinning the mic here sidesteps the OS default.
+const MIC_KEY = 'course.micDeviceId'
+export const getPreferredMic = () => { try { return localStorage.getItem(MIC_KEY) || '' } catch { return '' } }
+export const setPreferredMic = (id) => { try { id ? localStorage.setItem(MIC_KEY, id) : localStorage.removeItem(MIC_KEY) } catch {} }
+// Audio inputs the browser will let us pick. Labels are empty until the site
+// has been granted mic permission once (Chrome/Safari privacy rule).
+export async function listMics() {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices()
+    return all.filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+      .map((d) => ({ id: d.deviceId, label: d.label || '' }))
+  } catch { return [] }
+}
+
+// Silence detection. Time-domain peak below this (≈ −48 dBFS) is treated as
+// "nothing reaching the mic": digital silence from a dead input, a muted track,
+// or a jack with nothing plugged in. Normal room noise with AGC off still sits
+// above it; speech peaks are 20–100× higher.
+const SILENCE_PEAK = 0.004
+const SILENCE_SAMPLE_MS = 250
+// Live banner after this much continuous silence. Short enough to catch a dead
+// mic before the meeting really starts, long enough not to fire on a pause.
+export const SILENT_BANNER_S = 20
+
 // ── tiny IndexedDB chunk store (crash recovery) ──────────────────────
 const DB = 'scribe-rec', STORE = 'chunks'
 function idb() {
@@ -71,11 +100,41 @@ export function useRecorder() {
   // storage quota is full). The recording itself continues in memory, but a
   // reload mid-recording would no longer be recoverable — surface it.
   const [storageWarn, setStorageWarn] = useState(false)
+  // inputLabel = the mic the browser actually opened (device label), so the UI
+  // can show "Recording from: KT USB Audio" and the user can catch a wrong pick.
+  const [inputLabel, setInputLabel] = useState('')
+  // silentFor = seconds of CONTINUOUS near-silence reaching the recorder right
+  // now (0 while sound is arriving). Drives the live "nothing reaching the mic"
+  // banner. Reset on every start.
+  const [silentFor, setSilentFor] = useState(0)
   const mr = useRef(null), stream = useRef(null), chunks = useRef([]), timer = useRef(null), wakeLock = useRef(null)
   // Web Audio graph: mic (+ optional tab) → analyser (live waveform) + a
   // MediaStreamDestination that MediaRecorder actually records.
   const audioCtx = useRef(null), analyser = useRef(null)
   const micStream = useRef(null), tabStream = useRef(null)
+  // Silence monitor: a wider analyser (46 ms window) sampled 4×/s. stats
+  // survive teardown so stopAndTranscribe can read them after the blob lands.
+  const monitor = useRef(null), monTimer = useRef(null)
+  const stats = useRef({ samples: 0, silent: 0, run: 0, label: '' })
+  const sampleLevel = () => {
+    const an = monitor.current
+    // A suspended context (backgrounded tab) hands back a flat buffer that
+    // would read as silence while the raw mic track is still recording fine.
+    if (!an || audioCtx.current?.state !== 'running') return
+    const buf = new Uint8Array(an.fftSize)
+    an.getByteTimeDomainData(buf)
+    let peak = 0
+    for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128); if (v > peak) peak = v }
+    const st = stats.current
+    st.samples++
+    if (peak / 128 < SILENCE_PEAK) {
+      st.silent++; st.run++
+      const secs = Math.floor(st.run * SILENCE_SAMPLE_MS / 1000)
+      setSilentFor((prev) => (prev === secs ? prev : secs))
+    } else if (st.run) { st.run = 0; setSilentFor(0) }
+  }
+  const startMonitor = () => { stopMonitor(); monTimer.current = setInterval(sampleLevel, SILENCE_SAMPLE_MS) }
+  const stopMonitor = () => { clearInterval(monTimer.current); monTimer.current = null }
 
   const tick = () => { timer.current = setInterval(() => {
     // Keep the audio graph running — a backgrounded tab can suspend the
@@ -123,7 +182,7 @@ export function useRecorder() {
     try { tabStream.current?.getTracks().forEach((t) => t.stop()) } catch {}
     try { stream.current?.getTracks().forEach((t) => t.stop()) } catch {}
     try { audioCtx.current?.close() } catch {}
-    micStream.current = tabStream.current = audioCtx.current = analyser.current = stream.current = null
+    micStream.current = tabStream.current = audioCtx.current = analyser.current = stream.current = monitor.current = null
   }
 
   // Build the stream MediaRecorder records. Always routes through an
@@ -153,17 +212,27 @@ export function useRecorder() {
     //    distance cue (useful later for telling the two voices apart),
     //  - noiseSuppression can eat the band-limited speaker audio as "noise".
     // Raw mono mic instead — captures both voices honestly.
-    const mic = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
-    })
+    const base = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+    let mic = null
+    // A pinned mic that has since been unplugged throws OverconstrainedError —
+    // fall back to the default input rather than failing the recording.
+    if (opts?.deviceId) {
+      try { mic = await navigator.mediaDevices.getUserMedia({ audio: { ...base, deviceId: { exact: opts.deviceId } } }) } catch { mic = null }
+    }
+    if (!mic) mic = await navigator.mediaDevices.getUserMedia({ audio: base })
     micStream.current = mic
+    const label = mic.getAudioTracks()[0]?.label || ''
+    setInputLabel(label); stats.current.label = label
     try {
       const AC = window.AudioContext || window.webkitAudioContext
       const ctx = new AC(); audioCtx.current = ctx
       ctx.resume?.()
       const an = ctx.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = 0.7
       analyser.current = an
-      ctx.createMediaStreamSource(mic).connect(an)   // mic → analyser (live waveform)
+      const micSrc = ctx.createMediaStreamSource(mic)
+      micSrc.connect(an)   // mic → analyser (live waveform)
+      const mon = ctx.createAnalyser(); mon.fftSize = 2048; monitor.current = mon
+      micSrc.connect(mon)  // mic → silence monitor
       // Background keep-alive: route an inaudible tone (−80dB) to the speakers so
       // the OS/browser counts the page as "playing audio". A page producing audio
       // is exempt from background-tab throttling AND macOS WKWebView occlusion
@@ -181,7 +250,7 @@ export function useRecorder() {
         const dest = ctx.createMediaStreamDestination()
         ctx.createMediaStreamSource(mic).connect(dest)
         const tsrc = ctx.createMediaStreamSource(tab)
-        tsrc.connect(an); tsrc.connect(dest)          // tab → analyser + recording
+        tsrc.connect(an); tsrc.connect(mon); tsrc.connect(dest) // tab → analyser + monitor + recording
         return dest.stream
       }
       // Mic-only: record the RAW mic track. getUserMedia tracks keep delivering
@@ -190,7 +259,7 @@ export function useRecorder() {
       return mic
     } catch {
       // AudioContext unavailable → record the raw mic, no waveform.
-      analyser.current = null; audioCtx.current = null
+      analyser.current = null; audioCtx.current = null; monitor.current = null
       return mic
     }
   }
@@ -215,16 +284,19 @@ export function useRecorder() {
       }
       mr.current = rec
       rec.start(5000) // flush a chunk every 5s
-      setSeconds(0); setInterrupted(false); setStorageWarn(false); setStatus('recording'); tick(); acquireWake()
+      stats.current = { samples: 0, silent: 0, run: 0, label: stats.current.label }
+      setSilentFor(0)
+      setSeconds(0); setInterrupted(false); setStorageWarn(false); setStatus('recording'); tick(); startMonitor(); acquireWake()
     } catch (e) { teardown(); setError(e); setStatus('idle') }
   }
 
-  const pause = () => { if (mr.current?.state === 'recording') { mr.current.pause(); stopTick(); releaseWake(); setStatus('paused') } }
-  const resume = () => { if (mr.current?.state === 'paused') { mr.current.resume(); tick(); acquireWake(); setStatus('recording') } }
+  const pause = () => { if (mr.current?.state === 'recording') { mr.current.pause(); stopTick(); stopMonitor(); releaseWake(); setStatus('paused') } }
+  const resume = () => { if (mr.current?.state === 'paused') { mr.current.resume(); tick(); startMonitor(); acquireWake(); setStatus('recording') } }
 
   const stop = () => new Promise((resolve) => {
     const rec = mr.current
-    stopTick(); releaseWake()
+    stopTick(); stopMonitor(); releaseWake()
+    setSilentFor(0)
     if (!rec || rec.state === 'inactive') { teardown(); setStatus('idle'); setTabMixed(false); return resolve(null) }
     rec.onstop = () => {
       const blob = new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' })
@@ -237,11 +309,17 @@ export function useRecorder() {
   // The live AnalyserNode (or null) — the waveform reads it directly via rAF so
   // the 60fps amplitude updates never churn React state.
   const getAnalyser = () => analyser.current
+  // What reached the recorder over the last session: fraction of sampled time
+  // that was silent, and which input it came from. Valid after stop().
+  const getStats = () => {
+    const { samples, silent, label } = stats.current
+    return { label, samples, silentFrac: samples ? silent / samples : 0 }
+  }
 
   // Stop tracks if the component unmounts mid-recording.
-  useEffect(() => () => { stopTick(); releaseWake(); teardown() }, [])
+  useEffect(() => () => { stopTick(); stopMonitor(); releaseWake(); teardown() }, [])
 
-  return { status, seconds, error, interrupted, tabMixed, storageWarn, start, pause, resume, stop, getAnalyser }
+  return { status, seconds, error, interrupted, tabMixed, storageWarn, inputLabel, silentFor, start, pause, resume, stop, getAnalyser, getStats }
 }
 
 export const fmtClock = (s) => {
