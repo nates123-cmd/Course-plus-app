@@ -20,7 +20,7 @@ maybe Field Notes aesthetics?"* and *"research other ones potential layouts."*
 | Question | Owner | What it contributes |
 | --- | --- | --- |
 | Type you read | **Linear** | Inter, medium weight, tight negative tracking (`-0.035em` on titles, `-0.012em` on rows). Mono for dates/times. |
-| Ground, palette | **Field Notes** memo book | Kraft cover `#b09162`, paper `#f7f3ea`, brown-black print ink. |
+| Ground, palette | **Grey engineering pad** ("Graphite", picked 2026-10-01) | Graphite cover `#2b2d2e`, grey paper `#f2f2f0`, pencil-black ink, classic's green as accent. Replaced the original Field Notes cream/kraft, which Nate rejected. |
 | Labels | **Field Notes** | Futura-style bold caps, wide tracking (Jost 700, `0.18em`). Labels only. |
 | The motif | **Field Notes** inside cover | The fill-in form: `DATE: ____`, `IN FOCUS: ____`. The Work header is a kraft cover whose lines hold the real counts. |
 | Task state glyph | **Linear** status circle | Dashed = icebox, half = pulled into Now, quarter = waiting, filled = done (`StatusCircle` in `src/theme/memo.jsx`). |
@@ -36,24 +36,29 @@ filled in by hand. Not cute, not vintage-themed, not a dashboard.
 **If a change makes it feel more like a SaaS dashboard, or more like a
 scrapbook, it is wrong.**
 
-## Colour (memo, light)
+## Colour (memo, light) = Graphite
+
+Nate kept the memo type but rejected the cream paper (2026-10-01) and picked
+Graphite from four options (Index card, Steel, Rhodia, Graphite). Light mode is
+where he lives; dark must still work. The `--kraft*` token names are kept for the
+cover band so components did not change.
 
 | Token | Value | Role |
 | --- | --- | --- |
-| `--bg` / `--card` | `#f7f3ea` | Memo-book paper. Cards sit flush on it. |
-| `--panel` | `#f1ebde` | Sidebar / bands. |
-| `--t1` | `#2b2925` | Print ink. Titles, task text, section rules. |
-| `--t2` | `#625a4c` | Supporting prose. |
-| `--t3` | `#8f8676` | Counts, chrome, meta. |
-| `--line` / `--line2` | `#e3d9c5` / `#cbbd9f` | Row hairlines / section rules. |
-| `--accent` | `#7a5a2e` | Kraft darkened to hold text contrast. Active chip, status circles. |
-| `--kraft` | `#b09162` | The cover. Header band only. |
-| `--kraftInk` / `--kraftRule` | `#2b2116` / `#4c3729` | Ink and fill-in lines printed on kraft. |
-| `--risk` | `#a2482a` | Due / overdue. |
-| `--area_arrow` / `_sds` / `_brain` | `#3b6680` / `#8a6a3c` / `#6b4f5e` | Area labels. Field Notes steel blue first. |
+| `--bg` / `--card` | `#f2f2f0` | Grey pad paper. Cards sit flush on it. |
+| `--panel` | `#e9e9e6` | Sidebar / bands. |
+| `--t1` | `#1e1f1f` | Pencil-black ink. Titles, task text, section rules. |
+| `--t2` | `#535553` | Supporting prose. |
+| `--t3` | `#898b88` | Counts, chrome, meta. |
+| `--line` / `--line2` | `#dcdcd8` / `#bdbdb7` | Row hairlines / section rules. |
+| `--accent` | `#2f6b4f` | Classic's green, deepened. Active chip, status circles. |
+| `--kraft` | `#2b2d2e` | The graphite cover. Header band only. |
+| `--kraftInk` / `--kraftRule` | `#f2f2f0` / `#9fa3a5` | Ink and fill-in lines printed on the cover. |
+| `--risk` | `#bf4320` | Due / overdue. |
+| `--area_arrow` / `_sds` / `_brain` | `#3b6680` / `#8a6a3c` / `#6b4f5e` | Area labels. |
 
-Dark = the black-cover editions: ground `#1a1814`, ink `#efe7d6`, kraft accent
-`#c9a46a`, cover band `#8f7448`. Full sets live in `src/styles.css` under
+Dark: ground `#141515`, ink `#e8e8e5`, green accent `#62b08b`, cover band
+`#303335`. Full sets live in `src/styles.css` under
 `:root[data-look='memo'][data-theme=…]`.
 
 ## Type
@@ -83,7 +88,8 @@ never hard-code a family.
 - Bordered rounded cards as the grouping device.
 - A checkbox square for task state.
 - Truncating a task title to make room for a project chip.
-- Kraft as a page ground (it is the cover, not the paper).
+- The cover colour as a page ground (it is the cover, not the paper).
+- Cream / warm paper grounds (rejected 2026-10-01).
 - Purple/blue gradients, drop shadows on rows, emoji, unicode ★/☆.
 - An icon beside every section head (memo heads are type only).
 - Literal font families or uncalculated `borderRadius` numbers in components.
