@@ -35,10 +35,21 @@ export function useLongPress(onLong, onTap, ms = 450) {
   }
   const end = () => clear()
   const click = (e) => { if (fired.current) { e.preventDefault(); e.stopPropagation(); fired.current = false; return } onTap && onTap(e) }
+  // Right-click (two-finger tap on a trackpad) does what a hold does. With
+  // tap-to-click on, resting a finger on a Mac trackpad never sends mousedown,
+  // so a hold can't happen on desktop at all. A phone's long-press also raises
+  // contextmenu; the timer has already fired by then, so skip a second open.
+  const context = (e) => {
+    e.preventDefault()
+    if (e.target && e.target.closest && e.target.closest('.task-grip')) return
+    if (fired.current) return
+    clear(); fired.current = false
+    onLong()
+  }
   return { pressing, handlers: {
     onMouseDown: start, onMouseMove: move, onMouseUp: end, onMouseLeave: end,
     onTouchStart: start, onTouchMove: move, onTouchEnd: end, onTouchCancel: end,
-    onContextMenu: (e) => e.preventDefault(), onClick: click,
+    onContextMenu: context, onClick: click,
   } }
 }
 

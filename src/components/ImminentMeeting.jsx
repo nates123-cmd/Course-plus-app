@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../ctx'
 import { supabase } from '../lib/supabase'
 import { Icon } from '../kit'
+import { dropGhosts, rowWrittenAt } from '../lib/calendarGhosts'
 
 const LEAD_MIN = 2 // show this many minutes before start
 const GRACE_MIN = 2 // …and up to this many minutes after start
@@ -32,8 +33,8 @@ export function ImminentMeeting() {
       const { data } = await supabase.from('placed_blocks').select('*').eq('type', 'meeting').eq('date', today).order('hour')
       if (!live) return
       const seen = new Set()
-      cacheRef.current = { date: today, at: Date.now(), blocks: (data || [])
-        .map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
+      cacheRef.current = { date: today, at: Date.now(), blocks: dropGhosts((data || [])
+        .map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour), source: r.source, at: rowWrittenAt(r) })))
         .filter((b) => { const k = keyOf(b); if (seen.has(k)) return false; seen.add(k); return true }) // Today writes dup rows
         .map((b) => ({ ...b, startMin: Math.floor(b.hour) * 60 + Math.round((b.hour - Math.floor(b.hour)) * 60) })) }
       check()
