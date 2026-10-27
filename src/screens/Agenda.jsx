@@ -12,6 +12,7 @@ import { Icon, Card, Btn, TODAY, MONTHS } from '../kit'
 import { useLongPress } from './TaskSheet'
 import { createSeries, deleteNote } from '../lib/db'
 import { DiscussList } from '../components/DiscussList'
+import { dropGhosts, rowWrittenAt } from '../lib/calendarGhosts'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEK_DAYS = 7
@@ -50,6 +51,7 @@ function fromRow(r) {
   return {
     id: r.id, date: r.date, hour: Number(r.hour), duration: r.duration_minutes,
     type: r.type, title: r.title, pillar: r.pillar, source: r.source,
+    at: rowWrittenAt(r),
   }
 }
 
@@ -243,26 +245,49 @@ export function AgendaScreen() {
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [error, setError] = useState(null)
 
+  // The calendar feed runs several times a day, so re-read whenever the app
+  // comes back to the front (and every few minutes while it sits open) —
+  // otherwise a PWA left open keeps showing meetings that moved or were
+  // canceled since it loaded. Refreshes are quiet: no spinner, and a failed
+  // refresh keeps the list already on screen.
   useEffect(() => {
     let cancelled = false
+    let loaded = false
+    let lastAt = 0
+    const load = () => {
+      lastAt = Date.now()
+      const start = weekStart()
+      const startISO = isoLocal(start)
+      const endISO = isoLocal(addDays(start, WEEK_DAYS - 1))
+      supabase
+        .from('placed_blocks')
+        .select('*')
+        .gte('date', startISO)
+        .lte('date', endISO)
+        .order('date', { ascending: true })
+        .order('hour', { ascending: true })
+        .then(({ data, error }) => {
+          if (cancelled) return
+          if (error) { if (!loaded) { setError(error.message); setStatus('error') } return }
+          loaded = true
+          setBlocks(dedupe(dropGhosts((data ?? []).map(fromRow))))
+          setStatus('ready')
+        })
+    }
     setStatus('loading')
-    const start = weekStart()
-    const startISO = isoLocal(start)
-    const endISO = isoLocal(addDays(start, WEEK_DAYS - 1))
-    supabase
-      .from('placed_blocks')
-      .select('*')
-      .gte('date', startISO)
-      .lte('date', endISO)
-      .order('date', { ascending: true })
-      .order('hour', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) { setError(error.message); setStatus('error'); return }
-        setBlocks(dedupe((data ?? []).map(fromRow)))
-        setStatus('ready')
-      })
-    return () => { cancelled = true }
+    load()
+    // At most once a minute: desktop focus events fire on every window switch,
+    // and the suite shares one request budget.
+    const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - lastAt > 60 * 1000) load() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    const timer = setInterval(onVisible, 5 * 60 * 1000)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      clearInterval(timer)
+    }
   }, [])
 
   // open the meeting composer with this block's title pre-filled
