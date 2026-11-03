@@ -623,3 +623,27 @@ function FALLBACK_RESOLUTION(answer) {
     resolution: { kind: 'task', label: 'Write down the one thing that has to happen next', hint: 'Two minutes. It unblocks the rest.' },
   }
 }
+
+// Scheduled-task routing fallback. The TaskSheet picker resolves typed text
+// locally first (lib/meetingMatch); this runs only when that finds nothing, or
+// when asked. `meetings` = [{ title, hint }] the picker already knows about.
+// Returns { person: string|null, titles: string[] } using EXACT titles from the
+// list (anything else is dropped), or null when the model can't place it.
+export async function routeToMeeting(text, meetings = [], taskLabel = '') {
+  const list = meetings.slice(0, 60).map((m, i) => `${i + 1}. ${m.title}${m.hint ? ` (${m.hint})` : ''}`).join('\n')
+  const system =
+    'You route a to-do into the meeting where it should be discussed. The user typed a short instruction ' +
+    '(a person, a meeting nickname, an abbreviation, or a sentence). Pick from the numbered meetings ONLY. ' +
+    'Calendar titles often carry initials ("JS/NS 1:1" = a 1:1 between two people with those initials) or ' +
+    'pair names ("Kim <> Nate"). The user is the person common to most 1:1 titles; never route to them. ' +
+    'If the text names a person, set "person" to their first name and list every meeting they are likely in, best first. ' +
+    'If it names a meeting, set "person" to null and list the matching meeting numbers. ' +
+    'If nothing fits, return an empty list. Return strict JSON only: {"person":string|null,"picks":number[]}'
+  const user = `Meetings:\n${list || '(none)'}\n\nTask: ${taskLabel || '(untitled)'}\nTyped: ${text}`
+  const j = extractJSON(await claudeComplete(user, { system, max_tokens: 200, model: pickModel('light') }))
+  if (!j) return null
+  const titles = [...new Set((j.picks || []).map((n) => meetings[Number(n) - 1]?.title).filter(Boolean))]
+  const person = typeof j.person === 'string' && j.person.trim() ? j.person.trim().split(/\s+/)[0] : null
+  if (!titles.length) return null
+  return { person, titles }
+}
