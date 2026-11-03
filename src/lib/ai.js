@@ -624,26 +624,45 @@ function FALLBACK_RESOLUTION(answer) {
   }
 }
 
-// Scheduled-task routing fallback. The TaskSheet picker resolves typed text
-// locally first (lib/meetingMatch); this runs only when that finds nothing, or
-// when asked. `meetings` = [{ title, hint }] the picker already knows about.
-// Returns { person: string|null, titles: string[] } using EXACT titles from the
-// list (anything else is dropped), or null when the model can't place it.
-export async function routeToMeeting(text, meetings = [], taskLabel = '') {
-  const list = meetings.slice(0, 60).map((m, i) => `${i + 1}. ${m.title}${m.hint ? ` (${m.hint})` : ''}`).join('\n')
+// Scheduled-task routing: plain language -> the meeting a task should be raised
+// in. The TaskSheet picker calls this as the user types (debounced) and once on
+// open with no text, so it can read the task itself ("Ask Jon what the Deal Reg
+// ID enables" -> Jon). `meetings` = [{ title, hint }] the picker knows about.
+// `ctx` = { taskLabel, taskNotes, projectName, waiting, today }.
+// Returns { person, titles, reason } using EXACT titles from the list (anything
+// else is dropped), or null when it can't place it.
+export async function routeToMeeting(text, meetings = [], ctx = {}) {
+  const { taskLabel = '', taskNotes = '', projectName = '', waiting = '', today = '' } = typeof ctx === 'string' ? { taskLabel: ctx } : ctx
+  const list = meetings.slice(0, 80).map((m, i) => `${i + 1}. ${m.title}${m.hint ? ` (${m.hint})` : ''}`).join('\n')
   const system =
-    'You route a to-do into the meeting where it should be discussed. The user typed a short instruction ' +
-    '(a person, a meeting nickname, an abbreviation, or a sentence). Pick from the numbered meetings ONLY. ' +
-    'Calendar titles often carry initials ("JS/NS 1:1" = a 1:1 between two people with those initials) or ' +
-    'pair names ("Kim <> Nate"). The user is the person common to most 1:1 titles; never route to them. ' +
-    'If the text names a person, set "person" to their first name and list every meeting they are likely in, best first. ' +
-    'If it names a meeting, set "person" to null and list the matching meeting numbers. ' +
-    'If nothing fits, return an empty list. Return strict JSON only: {"person":string|null,"picks":number[]}'
-  const user = `Meetings:\n${list || '(none)'}\n\nTask: ${taskLabel || '(untitled)'}\nTyped: ${text}`
-  const j = extractJSON(await claudeComplete(user, { system, max_tokens: 200, model: pickModel('light') }))
+    'You decide which meeting a to-do should be raised in. You get the user\'s calendar (numbered), the task, and ' +
+    'optionally what the user just typed in plain language ("bring it up when I see Jon", "the pricing working session", ' +
+    '"whatever my next 1:1 with my boss is", "next week\'s SGS sync", "standup tomorrow"). Understand intent like a ' +
+    'human assistant would: people, nicknames, roles, topics, timing words (next, tomorrow, Thursday, next week). ' +
+    'Calendar titles are messy: initials ("JS/NS 1:1" = a 1:1 between two people with those initials; Jon S. fits JS), ' +
+    'pair names ("Kim <> Nate"), "w Dr Kent". The user owns the calendar and is the person common to most 1:1 titles; ' +
+    'never treat them as the target. If no text was typed, infer from the task itself (who it mentions, what topic). ' +
+    'When the target is a PERSON, set "person" to their first name and list ONLY the meetings that person is actually ' +
+    'in (named, initials, or pair), best first, so the task lands in whichever comes first; a "recurring" entry with no ' +
+    'date may be an in-app series, so also include the dated calendar meeting with their initials. Never pad the list ' +
+    'with unrelated meetings. When it is a specific meeting or topic, set "person" to null. ' +
+    'Respect timing words by preferring the occurrence they point at. Pick ONLY from the numbered list. If nothing ' +
+    'plausibly fits, return an empty list. "reason" = under 12 words, plain, why. ' +
+    'Return strict JSON only: {"person":string|null,"picks":number[],"reason":string}'
+  const user = [
+    today && `Today: ${today}`,
+    `Meetings:\n${list || '(none)'}`,
+    `Task: ${taskLabel || '(untitled)'}`,
+    projectName && `Project: ${projectName}`,
+    waiting && `Waiting on: ${waiting}`,
+    taskNotes && `Task notes: ${String(taskNotes).slice(0, 600)}`,
+    `Typed: ${text ? text : '(nothing - infer from the task)'}`,
+  ].filter(Boolean).join('\n\n')
+  const j = extractJSON(await claudeComplete(user, { system, max_tokens: 250, model: pickModel('light') }))
   if (!j) return null
   const titles = [...new Set((j.picks || []).map((n) => meetings[Number(n) - 1]?.title).filter(Boolean))]
-  const person = typeof j.person === 'string' && j.person.trim() ? j.person.trim().split(/\s+/)[0] : null
+  // First name only, minus honorifics ("Dr Kent" -> Kent).
+  const person = typeof j.person === 'string' ? j.person.trim().split(/\s+/).find((w) => !/^(dr|mr|mrs|ms|prof)\.?$/i.test(w)) || null : null
   if (!titles.length) return null
-  return { person, titles }
+  return { person, titles, reason: typeof j.reason === 'string' ? j.reason.trim() : '' }
 }

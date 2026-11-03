@@ -405,7 +405,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
                 Comes up in whichever is first: {pl.titles.join(', ')}.</div> })()}
             {mtgOpen && <FloatPop anchorRef={mtgAnchor} onClose={() => { setMtgOpen(false); setMtgText('') }} width={320} estHeight={380} maxHeight={380}>
               <MeetingPicker agenda={agenda} text={mtgText} setText={setMtgText} hintFor={hintFor} sameMeeting={sameMeeting}
-                onPick={pickMeeting} onPickPerson={pickPerson} assigned={task.meetingId} taskLabel={task.label} />
+                onPick={pickMeeting} onPickPerson={pickPerson} assigned={task.meetingId} task={task} projectName={project?.name || pillarName || ""} />
             </FloatPop>}
           </span>
         })())}
@@ -430,76 +430,127 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   </div>
 }
 
-// The Scheduled picker. Typing resolves locally first (lib/meetingMatch):
-//   a person ("ask Jon next meeting", "Har")  -> "Next meeting with X" + their meetings
-//   a meeting ("rev ops", "sgs standup")      -> matching titles
-// Both can show at once ("Jon at rev ops"). When nothing local fits, Enter (or
-// the Ask AI row) hands the text, the task and the known meetings to Claude,
-// which can only answer with titles from that list. Untyped: recurring meetings,
-// then the rest of this week.
-function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, assigned, taskLabel }) {
+// The Scheduled picker. Claude does the routing: it reads plain language
+// ("bring it up when I see Jon", "the pricing working session", "standup
+// tomorrow") against the calendar, and on open with nothing typed it reads the
+// task itself ("Ask Jon what ..." -> Jon). Its answer leads as "Suggested" and
+// is what Enter picks. Local matching (lib/meetingMatch) stays underneath as an
+// instant preview while Claude thinks, and as the fallback if it fails.
+// Untyped and before a suggestion: recurring meetings, then the rest of this week.
+const AI_DEBOUNCE_MS = 700
+
+function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, assigned, task, projectName }) {
   const { t, f } = useApp()
   const q = text.trim()
   const { person, matches } = q ? resolveFreeText(q, agenda.all) : { person: null, matches: [] }
-  const [ai, setAi] = useState({ q: '', status: 'idle', result: null })
-  const aiHere = ai.q === q ? ai : { status: 'idle', result: null }
+  // AI state is keyed by the text it answered, so a stale reply never shows
+  // against newer typing. '' = the on-open suggestion from the task itself.
+  const [ai, setAi] = useState({ q: null, status: 'idle', result: null })
+  const enterQueued = useRef(false)
+  const seq = useRef(0)
+  const aiHere = ai.q === q ? ai : { status: q ? 'pending' : 'idle', result: null }
   const head = (label) => <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px' }}>{label}</div>
   const pl = parsePersonLink(assigned)
   const byTitle = (title) => agenda.all.find((m) => normalizeTitle(m.title) === normalizeTitle(title))
-  const aiMeetings = (aiHere.result?.titles || []).map(byTitle).filter(Boolean)
-  const aiPerson = aiHere.result?.person && aiMeetings.length ? aiHere.result.person : null
-  const nothingLocal = !!q && !person && !matches.length
+  const aiRaw = (aiHere.result?.titles || []).map(byTitle).filter(Boolean)
+  const aiPerson = aiHere.result?.person && aiRaw.length ? aiHere.result.person : null
+  // Claude names the person; which meetings they're in is checked locally, so a
+  // padded list gets trimmed and an initials-only calendar 1:1 is never missed.
+  const aiMeetings = (() => {
+    if (!aiPerson) return aiRaw
+    const theirs = resolveFreeText(aiPerson, agenda.all).person?.meetings || []
+    if (!theirs.length) return aiRaw.slice(0, 3)
+    const ids = new Set(theirs.map((m) => m.id))
+    return [...aiRaw.filter((m) => ids.has(m.id)), ...theirs.filter((m) => !aiRaw.some((a) => a.id === m.id))]
+  })()
 
-  const askAI = async () => {
-    if (!q || aiHere.status === 'loading') return
-    setAi({ q, status: 'loading', result: null })
+  const runAI = async (forText) => {
+    const id = ++seq.current
+    setAi({ q: forText, status: 'loading', result: null })
+    const now = new Date()
+    const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
     try {
-      const result = await routeToMeeting(q, agenda.all.map((m) => ({ title: m.title, hint: hintFor(m) })), taskLabel)
-      setAi({ q, status: result ? 'done' : 'none', result })
+      const result = await routeToMeeting(forText, agenda.all.map((m) => ({ title: m.title, hint: hintFor(m) + (m.date && !m.last ? ` ${m.date}` : '') })),
+        { taskLabel: task?.label || '', taskNotes: task?.notes || '', waiting: task?.waiting || '', projectName, today })
+      if (id !== seq.current) return
+      setAi({ q: forText, status: result ? 'done' : 'none', result })
     } catch (e) {
+      if (id !== seq.current) return
       console.warn('[course+] routeToMeeting', e)
-      setAi({ q, status: 'error', result: null })
+      setAi({ q: forText, status: 'error', result: null })
     }
   }
-  const onEnter = () => {
-    if (person) return onPickPerson(person.name, person.meetings)
-    if (matches.length === 1) return onPick(matches[0].title)
-    if (aiPerson) return onPickPerson(aiPerson, aiMeetings)
-    if (aiMeetings.length === 1) return onPick(aiMeetings[0].title)
-    if (nothingLocal) askAI()
+
+  // As you type: ask Claude once you pause. Nothing typed: suggest from the
+  // task, once, unless it's already assigned.
+  useEffect(() => {
+    if (!agenda.loaded || !agenda.all.length) return
+    if (!q) { if (!assigned && task?.label && ai.q !== '') runAI(''); return }
+    if (q.length < 2) return
+    const h = setTimeout(() => runAI(q), AI_DEBOUNCE_MS)
+    return () => clearTimeout(h)
+  }, [q, agenda.loaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickAI = () => {
+    if (aiPerson) { onPickPerson(aiPerson, aiMeetings); return true }
+    if (aiMeetings.length) { onPick(aiMeetings[0].title); return true }
+    return false
   }
+  const pickLocal = () => {
+    if (person) { onPickPerson(person.name, person.meetings); return true }
+    if (matches.length) { onPick(matches[0].title); return true }
+    return false
+  }
+  // Enter = Claude's answer. If it's still thinking, wait for it; if it failed
+  // or found nothing, take the best local match.
+  const onEnter = () => {
+    if (!q) return
+    if (aiHere.status === 'done') { pickAI(); return }
+    if (aiHere.status === 'none' || aiHere.status === 'error') { pickLocal(); return }
+    enterQueued.current = true
+    if (aiHere.status !== 'loading') runAI(q)
+  }
+  useEffect(() => {
+    if (!enterQueued.current || ai.q !== q || ai.status === 'loading') return
+    enterQueued.current = false
+    if (ai.status === 'done') pickAI(); else pickLocal()
+  }, [ai]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const meetingRow = (m, k) => <PopRow key={k + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />
-  const personBlock = (name, list, weak, label) => <>
-    {head(label || 'Meetings with ' + name)}
+  const personBlock = (name, list, label) => <>
+    {head(label)}
     <PopRow icon="user" label={'Next meeting with ' + name}
       hint={list.length > 1 ? 'whichever is first' : 'recommended'} on={!!pl && pl.name.toLowerCase() === name.toLowerCase()}
       onClick={() => onPickPerson(name, list)} />
     {list.map((m) => meetingRow(m, 'p' + label))}
-    {weak && <div style={{ padding: '4px 12px 6px', fontFamily: f.ui, fontSize: 11, color: t.t3, lineHeight: 1.45 }}>
-      Some matched by initials only. Pick the right one and it will stick for this task.</div>}
   </>
-  const note = (s) => <div style={{ padding: '8px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>{s}</div>
+  const note = (s, icon) => <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.45 }}>
+    {icon && <Icon n={icon} s={12} c={t.t3} />}{s}</div>
+  const thinking = aiHere.status === 'loading' || aiHere.status === 'pending'
+  const showAI = aiHere.status === 'done' && aiMeetings.length > 0
+  // Local preview only while Claude is thinking, or when it came up empty.
+  const showLocal = q && !showAI && (person || matches.length)
 
   return <div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 4px 4px', padding: '0 10px', height: 36, borderRadius: 'calc(8px * var(--rs))', background: t.sel }}>
-      <Icon n="sparkles" s={14} c={t.t3} />
-      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Or type it: ask Jon, rev ops, standup"
+      <Icon n="sparkles" s={14} c={thinking ? t.accent : t.t3} />
+      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Say it: bring this up when I see Jon"
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } }}
         style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 13, color: t.t1 }} />
     </div>
     {!agenda.loaded && note('Loading your calendar…')}
-    {person && personBlock(person.name, person.meetings, person.weak)}
-    {matches.length > 0 && <>{head('Matching meetings')}{matches.map((m) => meetingRow(m, 'q'))}</>}
-    {q && agenda.loaded && aiHere.status === 'done' && (aiPerson
-      ? personBlock(aiPerson, aiMeetings, false, 'AI suggests')
-      : <>{head('AI suggests')}{aiMeetings.map((m) => meetingRow(m, 'a'))}</>)}
-    {q && agenda.loaded && aiHere.status === 'loading' && note('Asking AI…')}
-    {q && agenda.loaded && aiHere.status === 'none' && note(`AI couldn't place “${q}” either. Try a first name or part of the meeting title.`)}
-    {q && agenda.loaded && aiHere.status === 'error' && note('AI routing failed. Check your connection and try again.')}
-    {q && agenda.loaded && (aiHere.status === 'idle' || aiHere.status === 'error') && <>
-      {nothingLocal && note(`Nothing in the last four or next five weeks matches “${q}” by name.`)}
-      <PopRow icon="sparkles" label={nothingLocal ? 'Ask AI to find it' : 'Not it? Ask AI'} hint={nothingLocal ? 'Enter' : ''} onClick={askAI} />
+    {showAI && <>
+      {aiPerson ? personBlock(aiPerson, aiMeetings, q ? 'Suggested' : 'Suggested from the task')
+        : <>{head(q ? 'Suggested' : 'Suggested from the task')}{aiMeetings.map((m) => meetingRow(m, 'a'))}</>}
+      {aiHere.result.reason && note(aiHere.result.reason, 'sparkles')}
     </>}
+    {agenda.loaded && thinking && (q || (!assigned && task?.label)) && note(q ? 'Working out which meeting…' : 'Reading the task…', 'sparkles')}
+    {showLocal && <>
+      {person && personBlock(person.name, person.meetings, 'Meetings with ' + person.name)}
+      {matches.length > 0 && <>{head('Matching meetings')}{matches.map((m) => meetingRow(m, 'q'))}</>}
+    </>}
+    {q && agenda.loaded && aiHere.status === 'none' && !showLocal && note(`Couldn't place “${q}”. Say who it's with or what the meeting is about.`)}
+    {q && agenda.loaded && aiHere.status === 'error' && note('AI routing failed, showing word matches. Check your connection.')}
     {!q && agenda.recurring.length > 0 && <>{head('Recurring')}
       {agenda.recurring.map((m) => <PopRow key={'c' + m.id} icon="repeat" label={m.title} hint={m.date ? 'next ' + hintFor({ ...m, recurring: false }) : 'series'} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}</>}
     {!q && agenda.week.length > 0 && <>{head('This week')}
