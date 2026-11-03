@@ -11,6 +11,7 @@ import { PRESETS, matchPreset, recurrenceLabel, normalizeRule, nextDate, todayYm
 import { normalizeTitle } from '../lib/seriesAgenda'
 import { resolveFreeText, encodePersonLink, parsePersonLink, meetingLabel, isPersonLink } from '../lib/meetingMatch'
 import { MeetingSource } from '../components/MeetingSource'
+import { routeToMeeting } from '../lib/ai'
 
 // ── useLongPress — tap vs hold, movement-cancel + suppressed click ──
 export function useLongPress(onLong, onTap, ms = 450) {
@@ -255,15 +256,18 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
     let live = true
     const iso = (n) => { const d = new Date(TODAY.y, TODAY.m, TODAY.d + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
     ;(async () => {
-      const { data } = await supabase.from('placed_blocks').select('id,title,date,hour').eq('type', 'meeting').gte('date', iso(0)).lte('date', iso(35)).order('date').order('hour')
+      // Also the last four weeks: a 1:1 that's fortnightly, or just fell off
+      // the feed's horizon ("Kim <> Nate Sync"), is still where a task goes.
+      const { data } = await supabase.from('placed_blocks').select('id,title,date,hour').eq('type', 'meeting').gte('date', iso(-28)).lte('date', iso(35)).order('date').order('hour')
       if (!live) return
       const now = new Date()
       const startOf = (b) => { const [y, m, d] = b.date.split('-').map(Number); const hr = Math.floor(b.hour); return new Date(y, m - 1, d, hr, Math.round((b.hour - hr) * 60)) }
       const seen = new Set()
-      const blocks = (data || []).map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
-        .filter((b) => startOf(b) > now) // future meetings only — drop ones that already happened today
+      const rows = (data || []).map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
+        .filter((b) => !/^\s*(\[external\]\s*)?(canceled|cancelled)\b/i.test(b.title))
         .filter((b) => { const k = [b.date, b.hour, normalizeTitle(b.title)].join('|'); if (seen.has(k)) return false; seen.add(k); return true })
         .map((b) => ({ ...b, when: startOf(b).getTime() }))
+      const blocks = rows.filter((b) => b.when > now.getTime()) // upcoming — drop ones that already happened today
       // One entry per title: its next occurrence, and whether it repeats.
       const byTitle = new Map()
       for (const b of blocks) {
@@ -271,6 +275,15 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
         const cur = byTitle.get(k)
         if (!cur) byTitle.set(k, { ...b, count: 1 })
         else cur.count += 1
+      }
+      // Held recently: counts toward "repeats"; a title with no upcoming
+      // occurrence is still offered, as "last <day>", for typed routing.
+      const pastOnly = new Map()
+      for (const b of rows) {
+        if (b.when > now.getTime()) continue
+        const k = normalizeTitle(b.title)
+        if (byTitle.has(k)) byTitle.get(k).count += 1
+        else { const cur = pastOnly.get(k); if (!cur) pastOnly.set(k, { ...b, count: 1 }); else { cur.count += 1; if (b.when > cur.when) Object.assign(cur, { date: b.date, hour: b.hour, when: b.when }) } }
       }
       const series = activeSeries()
       const seriesFor = (title) => series.find((s) => [s.name, ...(s.calendarTitles || [])].some((x) => normalizeTitle(x) === normalizeTitle(title)))
@@ -281,9 +294,11 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
       // the next Jon 1:1" shouldn't depend on the calendar feed's horizon.
       for (const s of series) if (s.name && !byTitle.has(normalizeTitle(s.name)) && !(s.calendarTitles || []).some((x) => byTitle.has(normalizeTitle(x))))
         all.push({ id: 's-' + s.id, title: s.name, when: null, recurring: true, people: s.people || [] })
+      for (const [k, b] of pastOnly) if (!all.some((m) => normalizeTitle(m.title) === k)) { const s = seriesFor(b.title)
+        all.push({ id: 'p-' + b.id, title: b.title, when: null, last: b.date, recurring: b.count > 1 || !!s, people: s ? s.people : [] }) }
       setAgenda({
         loaded: true, all,
-        recurring: all.filter((m) => m.recurring).sort((a, b) => (a.when ?? 9e15) - (b.when ?? 9e15)),
+        recurring: all.filter((m) => m.recurring && !m.last).sort((a, b) => (a.when ?? 9e15) - (b.when ?? 9e15)),
         week: blocks.filter((b) => b.when <= weekEnd && !all.find((m) => m.recurring && normalizeTitle(m.title) === normalizeTitle(b.title))),
       })
     })()
@@ -293,7 +308,8 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   const blockHint = (b) => { const [y, m, d] = b.date.split('-').map(Number); const hr = Math.floor(b.hour), mm = String(Math.round((b.hour - hr) * 60)).padStart(2, '0'); const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr; return `${WD[new Date(y, m - 1, d).getDay()]} · ${h12}:${mm}${hr < 12 ? 'a' : 'p'}` }
   const pickMeeting = (title) => { setMtgOpen(false); setMtgText(''); onPatch({ workType: 'scheduled', meetingId: title }) }
   const pickPerson = (name, meetings) => pickMeeting(encodePersonLink(name, meetings.map((m) => m.title)))
-  const hintFor = (m) => m.date ? (m.recurring ? 'recurring · next ' : '') + blockHint(m) : 'recurring'
+  const lastHint = (ymd) => { const [y, mo, d] = ymd.split('-').map(Number); return `last held ${WD[new Date(y, mo - 1, d).getDay()]} ${mo}/${d}` }
+  const hintFor = (m) => m.last ? lastHint(m.last) : m.date ? (m.recurring ? 'recurring · next ' : '') + blockHint(m) : 'recurring'
   const sameMeeting = (title) => !isPersonLink(task.meetingId) && normalizeTitle(task.meetingId || '') === normalizeTitle(title)
   const chooseWork = (id) => {
     if (task.workType === id) { onPatch(id === 'scheduled' ? { workType: null, meetingId: null } : { workType: null }); return }
@@ -389,7 +405,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
                 Comes up in whichever is first: {pl.titles.join(', ')}.</div> })()}
             {mtgOpen && <FloatPop anchorRef={mtgAnchor} onClose={() => { setMtgOpen(false); setMtgText('') }} width={320} estHeight={380} maxHeight={380}>
               <MeetingPicker agenda={agenda} text={mtgText} setText={setMtgText} hintFor={hintFor} sameMeeting={sameMeeting}
-                onPick={pickMeeting} onPickPerson={pickPerson} assigned={task.meetingId} />
+                onPick={pickMeeting} onPickPerson={pickPerson} assigned={task.meetingId} task={task} projectName={project?.name || pillarName || ""} />
             </FloatPop>}
           </span>
         })())}
@@ -414,44 +430,132 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   </div>
 }
 
-// The Scheduled picker. Typing "ask Jon next meeting" finds Jon's meetings (by
-// name in the title or the series' people, or by initials as in "JS/NS 1:1")
-// and offers "Next meeting with Jon" (lands in whichever comes first) or any
-// one of them. Below: recurring meetings, then the rest of this week.
-function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, assigned }) {
+// The Scheduled picker. Claude does the routing: it reads plain language
+// ("bring it up when I see Jon", "the pricing working session", "standup
+// tomorrow") against the calendar, and on open with nothing typed it reads the
+// task itself ("Ask Jon what ..." -> Jon). Its answer leads as "Suggested" and
+// is what Enter picks. Local matching (lib/meetingMatch) stays underneath as an
+// instant preview while Claude thinks, and as the fallback if it fails.
+// Untyped and before a suggestion: recurring meetings, then the rest of this week.
+const AI_DEBOUNCE_MS = 700
+
+function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, assigned, task, projectName }) {
   const { t, f } = useApp()
   const q = text.trim()
-  const resolved = q ? resolveFreeText(q, agenda.all) : null
-  const titleHits = q && !resolved ? agenda.all.filter((m) => normalizeTitle(m.title).includes(normalizeTitle(q))) : []
+  const { person, matches } = q ? resolveFreeText(q, agenda.all) : { person: null, matches: [] }
+  // AI state is keyed by the text it answered, so a stale reply never shows
+  // against newer typing. '' = the on-open suggestion from the task itself.
+  const [ai, setAi] = useState({ q: null, status: 'idle', result: null })
+  const enterQueued = useRef(false)
+  const seq = useRef(0)
+  const aiHere = ai.q === q ? ai : { status: q ? 'pending' : 'idle', result: null }
   const head = (label) => <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px' }}>{label}</div>
   const pl = parsePersonLink(assigned)
+  const byTitle = (title) => agenda.all.find((m) => normalizeTitle(m.title) === normalizeTitle(title))
+  const aiRaw = (aiHere.result?.titles || []).map(byTitle).filter(Boolean)
+  const aiPerson = aiHere.result?.person && aiRaw.length ? aiHere.result.person : null
+  // Claude names the person; which meetings they're in is checked locally, so a
+  // padded list gets trimmed and an initials-only calendar 1:1 is never missed.
+  const aiMeetings = (() => {
+    if (!aiPerson) return aiRaw
+    const theirs = resolveFreeText(aiPerson, agenda.all).person?.meetings || []
+    if (!theirs.length) return aiRaw.slice(0, 3)
+    const ids = new Set(theirs.map((m) => m.id))
+    return [...aiRaw.filter((m) => ids.has(m.id)), ...theirs.filter((m) => !aiRaw.some((a) => a.id === m.id))]
+  })()
+
+  const runAI = async (forText) => {
+    const id = ++seq.current
+    setAi({ q: forText, status: 'loading', result: null })
+    const now = new Date()
+    const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+    try {
+      const result = await routeToMeeting(forText, agenda.all.map((m) => ({ title: m.title, hint: hintFor(m) + (m.date && !m.last ? ` ${m.date}` : '') })),
+        { taskLabel: task?.label || '', taskNotes: task?.notes || '', waiting: task?.waiting || '', projectName, today })
+      if (id !== seq.current) return
+      setAi({ q: forText, status: result ? 'done' : 'none', result })
+    } catch (e) {
+      if (id !== seq.current) return
+      console.warn('[course+] routeToMeeting', e)
+      setAi({ q: forText, status: 'error', result: null })
+    }
+  }
+
+  // As you type: ask Claude once you pause. Nothing typed: suggest from the
+  // task, once, unless it's already assigned.
+  useEffect(() => {
+    if (!agenda.loaded || !agenda.all.length) return
+    if (!q) { if (!assigned && task?.label && ai.q !== '') runAI(''); return }
+    if (q.length < 2) return
+    const h = setTimeout(() => runAI(q), AI_DEBOUNCE_MS)
+    return () => clearTimeout(h)
+  }, [q, agenda.loaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickAI = () => {
+    if (aiPerson) { onPickPerson(aiPerson, aiMeetings); return true }
+    if (aiMeetings.length) { onPick(aiMeetings[0].title); return true }
+    return false
+  }
+  const pickLocal = () => {
+    if (person) { onPickPerson(person.name, person.meetings); return true }
+    if (matches.length) { onPick(matches[0].title); return true }
+    return false
+  }
+  // Enter = Claude's answer. If it's still thinking, wait for it; if it failed
+  // or found nothing, take the best local match.
+  const onEnter = () => {
+    if (!q) return
+    if (aiHere.status === 'done') { pickAI(); return }
+    if (aiHere.status === 'none' || aiHere.status === 'error') { pickLocal(); return }
+    enterQueued.current = true
+    if (aiHere.status !== 'loading') runAI(q)
+  }
+  useEffect(() => {
+    if (!enterQueued.current || ai.q !== q || ai.status === 'loading') return
+    enterQueued.current = false
+    if (ai.status === 'done') pickAI(); else pickLocal()
+  }, [ai]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const meetingRow = (m, k) => <PopRow key={k + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />
+  const personBlock = (name, list, label) => <>
+    {head(label)}
+    <PopRow icon="user" label={'Next meeting with ' + name}
+      hint={list.length > 1 ? 'whichever is first' : 'recommended'} on={!!pl && pl.name.toLowerCase() === name.toLowerCase()}
+      onClick={() => onPickPerson(name, list)} />
+    {list.map((m) => meetingRow(m, 'p' + label))}
+  </>
+  const note = (s, icon) => <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.45 }}>
+    {icon && <Icon n={icon} s={12} c={t.t3} />}{s}</div>
+  const thinking = aiHere.status === 'loading' || aiHere.status === 'pending'
+  const showAI = aiHere.status === 'done' && aiMeetings.length > 0
+  // Local preview only while Claude is thinking, or when it came up empty.
+  const showLocal = q && !showAI && (person || matches.length)
+
   return <div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 4px 4px', padding: '0 10px', height: 36, borderRadius: 'calc(8px * var(--rs))', background: t.sel }}>
-      <Icon n="sparkles" s={14} c={t.t3} />
-      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Or type it: ask Jon next meeting"
-        onKeyDown={(e) => { if (e.key === 'Enter' && resolved) onPickPerson(resolved.name, resolved.meetings) }}
+      <Icon n="sparkles" s={14} c={thinking ? t.accent : t.t3} />
+      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Say it: bring this up when I see Jon"
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } }}
         style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 13, color: t.t1 }} />
     </div>
-    {!agenda.loaded && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>Loading your calendar…</div>}
-    {resolved && <>
-      {head('Meetings with ' + resolved.name)}
-      <PopRow icon="user" label={'Next meeting with ' + resolved.name}
-        hint={resolved.meetings.length > 1 ? 'whichever is first' : 'recommended'} on={!!pl && pl.name.toLowerCase() === resolved.name.toLowerCase()}
-        onClick={() => onPickPerson(resolved.name, resolved.meetings)} />
-      {resolved.meetings.map((m) => <PopRow key={'r' + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}
-      {resolved.weak && <div style={{ padding: '4px 12px 6px', fontFamily: f.ui, fontSize: 11, color: t.t3, lineHeight: 1.45 }}>
-        Matched by initials. Pick the right one and it will stick for this task.</div>}
+    {!agenda.loaded && note('Loading your calendar…')}
+    {showAI && <>
+      {aiPerson ? personBlock(aiPerson, aiMeetings, q ? 'Suggested' : 'Suggested from the task')
+        : <>{head(q ? 'Suggested' : 'Suggested from the task')}{aiMeetings.map((m) => meetingRow(m, 'a'))}</>}
+      {aiHere.result.reason && note(aiHere.result.reason, 'sparkles')}
     </>}
-    {q && !resolved && (titleHits.length
-      ? <>{head('Matching')}{titleHits.map((m) => <PopRow key={'q' + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}</>
-      : agenda.loaded && <div style={{ padding: '8px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>
-          No meeting in the next five weeks matches “{q}”. Try a first name or part of the meeting title.</div>)}
+    {agenda.loaded && thinking && (q || (!assigned && task?.label)) && note(q ? 'Working out which meeting…' : 'Reading the task…', 'sparkles')}
+    {showLocal && <>
+      {person && personBlock(person.name, person.meetings, 'Meetings with ' + person.name)}
+      {matches.length > 0 && <>{head('Matching meetings')}{matches.map((m) => meetingRow(m, 'q'))}</>}
+    </>}
+    {q && agenda.loaded && aiHere.status === 'none' && !showLocal && note(`Couldn't place “${q}”. Say who it's with or what the meeting is about.`)}
+    {q && agenda.loaded && aiHere.status === 'error' && note('AI routing failed, showing word matches. Check your connection.')}
     {!q && agenda.recurring.length > 0 && <>{head('Recurring')}
       {agenda.recurring.map((m) => <PopRow key={'c' + m.id} icon="repeat" label={m.title} hint={m.date ? 'next ' + hintFor({ ...m, recurring: false }) : 'series'} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}</>}
     {!q && agenda.week.length > 0 && <>{head('This week')}
       {agenda.week.map((b) => <PopRow key={'w' + b.id} icon="users" label={b.title} hint={hintFor(b)} on={sameMeeting(b.title)} onClick={() => onPick(b.title)} />)}</>}
-    {!q && agenda.loaded && !agenda.recurring.length && !agenda.week.length && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>
-      No meetings in the next five weeks and no series yet. Schedule one in Today, or hold a meeting on the Agenda to make it a series.</div>}
+    {!q && agenda.loaded && !agenda.recurring.length && !agenda.week.length && note('No meetings in the next five weeks and no series yet. Schedule one in Today, or hold a meeting on the Agenda to make it a series.')}
     {assigned && <div style={{ borderTop: '1px solid ' + t.line, marginTop: 4 }}><PopRow icon="x" label="Clear assignment" onClick={() => onPick(null)} /></div>}
   </div>
 }
