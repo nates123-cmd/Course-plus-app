@@ -1,7 +1,7 @@
 // Regression check for the Scheduled picker's typed routing (src/lib/meetingMatch.js).
 // Titles are the shapes on the real calendar feed. Run: node scripts/test-meeting-match.mjs
 import assert from 'node:assert/strict'
-import { resolveFreeText, linkMatchesTitle, encodePersonLink } from '../src/lib/meetingMatch.js'
+import { resolveFreeText, linkMatchesTitle, encodePersonLink, encodePending, isPendingLink, pendingText, meetingLabel } from '../src/lib/meetingMatch.js'
 
 const titles = ['Citrix Discount Tiered Pricing - Working Session', 'Connor/Nate Housewarming', 'Ed <> Nate Weekly',
   'Flight 2 of 2 | DL0630 | SFO to JFK', 'Gabe Hangs', 'Global Citrix Team & Markets - Monthly Connect', 'Haritha <> Nate Bi-Weekly',
@@ -48,5 +48,22 @@ ok('person links still match', () => {
   assert.ok(linkMatchesTitle(encodePersonLink('Jon', ['Jon 1 on 1', 'JS/NS 1:1']), 'JS/NS 1:1'))
   assert.ok(linkMatchesTitle('@Jon', 'Lunch with Jon'))
   assert.ok(!linkMatchesTitle('@Jon', 'Jonathan <> Nate'))
+})
+ok('Agathe-Nate 1:1 resolves for "next Agathe 1 on 1"', () => {
+  const x = resolveFreeText('next Agathe 1 on 1', [...all, { id: 'a', title: 'Agathe-Nate 1:1', when: 99, recurring: true, people: [] }])
+  assert.equal(x.person?.name, 'Agathe')
+  assert.deepEqual(titlesOf(x.person.meetings), ['Agathe-Nate 1:1'])
+  assert.equal(x.person.weak, false)
+})
+ok('pending links round-trip, label, and wait for a fitting title', () => {
+  const p = encodePending('  next Agathe   1 on 1 ')
+  assert.ok(isPendingLink(p))
+  assert.equal(pendingText(p), 'next Agathe 1 on 1')
+  assert.equal(meetingLabel(p), 'Finding: next Agathe 1 on 1')
+  assert.ok(linkMatchesTitle(p, 'Agathe-Nate 1:1'))
+  assert.ok(linkMatchesTitle(p, 'Nate/Agathe 1:1'))
+  assert.ok(!linkMatchesTitle(p, 'JS/NS 1:1'))
+  assert.ok(!linkMatchesTitle(encodePending('next 1 on 1'), 'JS/NS 1:1')) // nothing meaningful typed: never matches
+  assert.ok(linkMatchesTitle(encodePending('the pricing working session'), 'Citrix Discount Tiered Pricing - Working Session'))
 })
 console.log(`meetingMatch: ${n} checks passed`)

@@ -12,8 +12,17 @@
 import { normalizeTitle } from './seriesAgenda.js'
 
 const PERSON = '@'
+// A PENDING link ("?next Agathe 1 on 1") is what was typed, saved the moment it
+// was said, while Claude works out the meeting in the background (see
+// lib/meetingRouter). It resolves into a person link or a title once the
+// meeting is found, which may be days later when it lands on the calendar.
+// Until then it already shows in any meeting whose title fits every word.
+const PENDING = '?'
 
 export function isPersonLink(meetingId) { return typeof meetingId === 'string' && meetingId.startsWith(PERSON) }
+export function isPendingLink(meetingId) { return typeof meetingId === 'string' && meetingId.startsWith(PENDING) }
+export const encodePending = (text) => PENDING + String(text || '').trim().replace(/\s+/g, ' ')
+export const pendingText = (meetingId) => isPendingLink(meetingId) ? meetingId.slice(1).trim() : ''
 
 export function encodePersonLink(name, titles = []) {
   const uniq = [...new Set(titles.map((x) => (x || '').trim()).filter(Boolean))]
@@ -32,6 +41,7 @@ export function parsePersonLink(meetingId) {
 
 // What a scheduled task's chip reads.
 export function meetingLabel(meetingId) {
+  if (isPendingLink(meetingId)) return 'Finding: ' + pendingText(meetingId)
   const p = parsePersonLink(meetingId)
   return p ? 'Next with ' + p.name : (meetingId || '')
 }
@@ -41,7 +51,8 @@ const words = (s) => String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Bo
 // ── Who a meeting is with ────────────────────────────────────────────────────
 // Only words in a person POSITION count, so "SGS CRM Daily Standup" or "Citrix
 // Pricing" never read as people:
-//   "Kim <> Nate Sync", "Connor/Nate", "Ed x Nate"   either side of a pair mark
+//   "Kim <> Nate Sync", "Connor/Nate", "Ed x Nate",   either side of a pair mark
+//   "Agathe-Nate 1:1"
 //   "Therapy w Dr Kent", "Lunch with Sophie"          after w / with / Dr
 //   "Jon 1 on 1", "Gabe Hangs", "Ed 1:1"              before a 1:1 word
 // 2-3 letter all-caps tokens in those spots are initials ("JS/NS 1:1").
@@ -52,7 +63,8 @@ const isName = (w) => /^[A-Z][a-z][A-Za-z'-]*$/.test(w)
 const isInit = (w) => /^[A-Z]{2,3}$/.test(w)
 
 export function peopleIn(title) {
-  const raw = String(title || '').replace(/1 on 1/gi, '1on1')
+  // "Agathe-Nate 1:1": a hyphen between two capitalised names is a pair mark.
+  const raw = String(title || '').replace(/1 on 1/gi, '1on1').replace(/\b([A-Z][a-z]+)-(?=[A-Z][a-z])/g, '$1 / ')
   const tok = raw.match(/<->|<>|\/\/|\/|[A-Za-z][A-Za-z'.-]*\/?|\d:\d|\d+on\d+|\S/g) || []
   const names = new Set(), inits = new Set()
   const add = (w) => { if (!w) return; const c = w.replace(/[/.]$/, ''); if (isName(c)) names.add(c.toLowerCase()); else if (isInit(c)) inits.add(c.toLowerCase()) }
@@ -95,10 +107,20 @@ export function personScore(name, meeting, self = null) {
 export function linkMatchesTitle(meetingId, title) {
   const want = normalizeTitle(title)
   if (!want || !meetingId) return false
+  if (isPendingLink(meetingId)) return pendingFits(pendingText(meetingId), title)
   const p = parsePersonLink(meetingId)
   if (!p) return normalizeTitle(meetingId) === want
   if (p.titles.some((x) => normalizeTitle(x) === want)) return true
   return words(title).includes(p.name.toLowerCase())
+}
+
+// A pending link fits a title when every meaningful typed word starts a title
+// word ("next Agathe 1 on 1" -> "Agathe-Nate 1:1"). Defined below STOP; hoisted.
+function pendingFits(text, title) {
+  const qs = words(text).filter((q) => !STOP.has(q) && !/^\d+$/.test(q))
+  if (!qs.length) return false
+  const tw = words(title)
+  return qs.every((q) => tw.some((w) => w.startsWith(q)))
 }
 
 // Words that are never the person or the meeting in "ask Jon at the next meeting".
