@@ -26,8 +26,8 @@ const TITLE_MAX = 80
 export interface WriteResult {
   /** Table the record landed in. Recorded in capture_log so undo can find it. */
   table: string
-  /** Primary key of the new row, for undo. */
-  record_id: string
+  /** Primary key of the new row, for undo. Null when nothing was written. */
+  record_id: string | null
   /** One line, shown to Nate on the watch. */
   line: string
 }
@@ -162,6 +162,32 @@ export async function writeStockOut(
   item: RoutedItem,
   src = 'watch',
 ): Promise<WriteResult> {
+  return writeStockStatus(admin, ownerId, item, src, 'out')
+}
+
+/**
+ * "Low on peanut butter" — the item is still there, just running down. Same
+ * writer as `out` with a different status: Stock's shopping list surfaces
+ * `low` as a "Running low · restock" row (and, unlike `out`, keeps the
+ * have-toggle live). An item that is not in the pantry at all cannot be
+ * "low", so it falls through to the shopping list like an `out` would.
+ */
+export async function writeStockLow(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+  src = 'watch',
+): Promise<WriteResult> {
+  return writeStockStatus(admin, ownerId, item, src, 'low')
+}
+
+async function writeStockStatus(
+  admin: SupabaseClient,
+  ownerId: string,
+  item: RoutedItem,
+  src: string,
+  status: 'out' | 'low',
+): Promise<WriteResult> {
   const name = item.text.trim()
 
   const { data: matches, error: findErr } = await admin
@@ -173,7 +199,7 @@ export async function writeStockOut(
 
   const hit = matches?.[0]
   if (hit) {
-    const next = { ...hit.data, status: 'out', statusUpdatedAt: new Date().toISOString() }
+    const next = { ...hit.data, status, statusUpdatedAt: new Date().toISOString() }
     const { error } = await admin
       .from('pantry_items')
       .update({ data: next, updated_at: new Date().toISOString() })
@@ -181,12 +207,12 @@ export async function writeStockOut(
       .eq('id', hit.id)
     if (error) throw new Error(`pantry_items: ${error.message}`)
 
-    // 'out' auto-promotes to the shopping list in Stock, so this is the whole
-    // action — no extras row is needed and adding one would duplicate the item.
+    // Both statuses auto-promote to the shopping list in Stock, so this is the
+    // whole action — an extras row on top would duplicate the item.
     return {
       table: 'pantry_items',
       record_id: hit.id,
-      line: `Stock: ${next.canonicalName} marked out`,
+      line: `Stock: ${next.canonicalName} marked ${status}`,
     }
   }
 
@@ -201,7 +227,7 @@ export async function writeStockOut(
       amount: null,
       addedAt: new Date().toISOString(),
       originId: 'manual', // see landmine above — must stay 'manual'
-      originLabel: src === 'reminders' ? 'from Reminders' : 'added by voice',
+      originLabel: src === 'reminders' ? 'from Reminders' : src === 'suite' ? 'from Suite' : 'added by voice',
     },
   })
   if (error) throw new Error(`extras: ${error.message}`)

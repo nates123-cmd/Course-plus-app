@@ -25,6 +25,7 @@ import {
   writeInbox,
   writeInkThought,
   writeStockIdea,
+  writeStockLow,
   writeStockOut,
   writeStockStaple,
   type WriteResult,
@@ -34,6 +35,8 @@ import {
 interface LoggedItem extends WriteResult {
   kind: string
   confidence: number | null
+  /** The classifier's item text ("peanut butter"), so a caller can learn the phrase around it. */
+  text?: string
   /** Why this landed in the inbox instead of its real destination. */
   demoted_reason?: string
 }
@@ -118,6 +121,14 @@ async function dispatch(
       return writeCourseNote(admin, ownerId, item, projectId, projectName)
     case 'stock_out':
       return writeStockOut(admin, ownerId, item, src)
+    case 'stock_low':
+      return writeStockLow(admin, ownerId, item, src)
+    case 'question':
+      // Nothing to file. From the Suite bar the phone answers it (Google sheet
+      // or Claude); from the watch there is no screen, so the question becomes
+      // a Break look-up so it is not lost.
+      if (src === 'suite') return { table: 'none', record_id: null, line: `Question: ${item.text}` }
+      return writeBreakLookup(admin, ownerId, item)
     case 'stock_staple':
       return writeStockStaple(admin, ownerId, item)
     case 'stock_idea':
@@ -135,6 +146,12 @@ async function dispatch(
   }
 }
 
+/** What `routeDetailed` hands back: the line plus every item it produced. */
+export interface RouteOutcome {
+  line: string
+  items: LoggedItem[]
+}
+
 /**
  * Route one capture. Returns the line to show Nate — always non-empty, and
  * always naming what actually happened rather than just acknowledging receipt.
@@ -145,6 +162,21 @@ export async function route(
   text: string,
   src: string,
 ): Promise<string> {
+  return (await routeDetailed(admin, ownerId, text, src)).line
+}
+
+/**
+ * Same contract as `route()`, with the items exposed. The Suite bar uses the
+ * items to LEARN: "low on peanut butter" -> kind stock_low, text "peanut
+ * butter", so it can store "low on …" as a local grammar rule and never ask
+ * a model for that phrase again.
+ */
+export async function routeDetailed(
+  admin: SupabaseClient,
+  ownerId: string,
+  text: string,
+  src: string,
+): Promise<RouteOutcome> {
   const logged: LoggedItem[] = []
 
   let items: RoutedItem[] = []
@@ -152,7 +184,7 @@ export async function route(
   try {
     const { names, byName } = await openProjects(admin, ownerId)
 
-    items = await classify(text, names)
+    items = await classify(text, names, { fast: src === 'suite' })
 
     for (const item of items) {
       const lowConfidence = item.confidence < CONFIDENCE_FLOOR
@@ -173,7 +205,7 @@ export async function route(
 
       try {
         const result = await dispatch(admin, ownerId, item, byName, text, src)
-        logged.push({ ...result, kind: item.kind, confidence: item.confidence })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, text: item.text })
       } catch (err) {
         // One writer failing must not take the other items down with it.
         console.error('writer failed:', err instanceof Error ? err.message : err)
@@ -214,7 +246,7 @@ export async function route(
   // breaks the moment he says the same thing twice.
   await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
-  return logged.map((l) => l.line).join('; ')
+  return { line: logged.map((l) => l.line).join('; '), items: logged }
 }
 
 /**
