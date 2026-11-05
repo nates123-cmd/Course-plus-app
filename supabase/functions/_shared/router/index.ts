@@ -25,6 +25,7 @@ import {
   writeInbox,
   writeInkThought,
   writeStockIdea,
+  writeStockLow,
   writeStockOut,
   writeStockStaple,
   type WriteResult,
@@ -34,6 +35,8 @@ import {
 interface LoggedItem extends WriteResult {
   kind: string
   confidence: number | null
+  /** The classifier's item text ("peanut butter"), so a caller can learn the phrase around it. */
+  text?: string
   /** Why this landed in the inbox instead of its real destination. */
   demoted_reason?: string
 }
@@ -118,6 +121,14 @@ async function dispatch(
       return writeCourseNote(admin, ownerId, item, projectId, projectName)
     case 'stock_out':
       return writeStockOut(admin, ownerId, item, src)
+    case 'stock_low':
+      return writeStockLow(admin, ownerId, item, src)
+    case 'question':
+      // Nothing to file. From the Suite bar the phone answers it (Google sheet
+      // or Claude); from the watch there is no screen, so the question becomes
+      // a Break look-up so it is not lost.
+      if (src === 'suite') return { table: 'none', record_id: null, line: `Question: ${item.text}` }
+      return writeBreakLookup(admin, ownerId, item)
     case 'stock_staple':
       return writeStockStaple(admin, ownerId, item)
     case 'stock_idea':
@@ -135,6 +146,12 @@ async function dispatch(
   }
 }
 
+/** What `routeDetailed` hands back: the line plus every item it produced. */
+export interface RouteOutcome {
+  line: string
+  items: LoggedItem[]
+}
+
 /**
  * Route one capture. Returns the line to show Nate — always non-empty, and
  * always naming what actually happened rather than just acknowledging receipt.
@@ -145,6 +162,21 @@ export async function route(
   text: string,
   src: string,
 ): Promise<string> {
+  return (await routeDetailed(admin, ownerId, text, src)).line
+}
+
+/**
+ * Same contract as `route()`, with the items exposed. The Suite bar uses the
+ * items to LEARN: "low on peanut butter" -> kind stock_low, text "peanut
+ * butter", so it can store "low on …" as a local grammar rule and never ask
+ * a model for that phrase again.
+ */
+export async function routeDetailed(
+  admin: SupabaseClient,
+  ownerId: string,
+  text: string,
+  src: string,
+): Promise<RouteOutcome> {
   const logged: LoggedItem[] = []
 
   let items: RoutedItem[] = []
@@ -152,38 +184,48 @@ export async function route(
   try {
     const { names, byName } = await openProjects(admin, ownerId)
 
-    items = await classify(text, names)
+    items = await classify(text, names, { fast: src === 'suite' })
 
     for (const item of items) {
       const lowConfidence = item.confidence < CONFIDENCE_FLOOR
       const unroutable = item.kind === 'unknown'
 
       if (lowConfidence || unroutable) {
+        const demoted_reason = unroutable ? 'unknown kind' : 'low confidence'
+        // From the Suite bar he is looking at the screen: nothing is written and
+        // the phone asks back (best guess / Google / Claude / inbox) with the
+        // item's kind and text so a chip can apply the guess. Elsewhere there is
+        // no screen, so the inbox row keeps the capture safe.
+        if (src === 'suite') {
+          logged.push({
+            table: 'none', record_id: null, line: `Not sure: ${item.text || text}`,
+            kind: item.kind, confidence: item.confidence, text: item.text, demoted_reason,
+          })
+          continue
+        }
         // Demoted, not dropped. The inbox row carries the item's own text so a
         // multi-item capture does not lose the part that routed cleanly.
         const result = await writeInbox(admin, ownerId, item.text || text, src)
-        logged.push({
-          ...result,
-          kind: item.kind,
-          confidence: item.confidence,
-          demoted_reason: unroutable ? 'unknown kind' : 'low confidence',
-        })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, demoted_reason })
         continue
       }
 
       try {
         const result = await dispatch(admin, ownerId, item, byName, text, src)
-        logged.push({ ...result, kind: item.kind, confidence: item.confidence })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, text: item.text })
       } catch (err) {
         // One writer failing must not take the other items down with it.
         console.error('writer failed:', err instanceof Error ? err.message : err)
+        const demoted_reason = `writer error: ${err instanceof Error ? err.message : 'unknown'}`
+        if (src === 'suite') {
+          logged.push({
+            table: 'none', record_id: null, line: `Not saved: ${item.text || text}`,
+            kind: item.kind, confidence: item.confidence, text: item.text, demoted_reason,
+          })
+          continue
+        }
         const result = await writeInbox(admin, ownerId, item.text || text, src)
-        logged.push({
-          ...result,
-          kind: item.kind,
-          confidence: item.confidence,
-          demoted_reason: `writer error: ${err instanceof Error ? err.message : 'unknown'}`,
-        })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, demoted_reason })
       }
     }
   } catch (err) {
@@ -192,15 +234,18 @@ export async function route(
   }
 
   // Nothing was written: the classifier died, or it returned no items at all.
-  // Either way the raw text still has to land somewhere.
+  // Either way the raw text still has to land somewhere (unless he is on screen).
   if (logged.length === 0) {
-    const result = await writeInbox(admin, ownerId, text, src)
-    logged.push({
-      ...result,
-      kind: 'unknown',
-      confidence: null,
-      demoted_reason: classifierFailed ? 'classifier unavailable' : 'no items returned',
-    })
+    const demoted_reason = classifierFailed ? 'classifier unavailable' : 'no items returned'
+    if (src === 'suite') {
+      logged.push({
+        table: 'none', record_id: null, line: 'Not sure: ' + text,
+        kind: 'unknown', confidence: null, text: '', demoted_reason,
+      })
+    } else {
+      const result = await writeInbox(admin, ownerId, text, src)
+      logged.push({ ...result, kind: 'unknown', confidence: null, demoted_reason })
+    }
   }
 
   const logId = await recordLog(admin, ownerId, text, src, logged)
@@ -212,9 +257,10 @@ export async function route(
   // The log id rides along so a Telegram reply can name the exact capture it
   // is correcting. Without it the re-file has to guess from the text, which
   // breaks the moment he says the same thing twice.
-  await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
+  // Suite demotions were answered on screen; nothing to escalate.
+  if (src !== 'suite') await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
-  return logged.map((l) => l.line).join('; ')
+  return { line: logged.map((l) => l.line).join('; '), items: logged }
 }
 
 /**

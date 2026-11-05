@@ -18,15 +18,23 @@
 // Auth: shared secret in CAPTURE_KEY, compared in constant time. Deployed with
 // --no-verify-jwt because Shortcuts carries no Supabase JWT.
 //
-// Responses are always a single short line of text/plain, because the string is
-// rendered verbatim in a watch notification. A failed insert must never look
+// Responses are a single short line of text/plain, because the string is
+// rendered verbatim in a watch notification. The Suite app sends
+// `accept: application/json` and gets the same line plus the routed items, so
+// the phone can learn the phrase it just saw ("low on …" -> stock_low).
+//
+// Suite also skips the classifier once it has learned a phrase: a JSON body
+// `{"text": "peanut butter", "kind": "stock_low"}` goes straight to that
+// writer (applyItem), no model call, which is what keeps the bar fast. A failed insert must never look
 // like a success: a dropped thought you think you saved is the worst outcome
 // this system can produce. For the same reason the line now names the outcome
 // ("Stock: butter -> shopping list") rather than just acknowledging receipt —
 // if a capture is misrouted, that notification is where it gets caught.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { route } from '../_shared/router/index.ts'
+import { applyItem, routeDetailed } from '../_shared/router/index.ts'
+import { writeInbox } from '../_shared/router/writers.ts'
+import type { Kind, RoutedItem } from '../_shared/router/classify.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -36,6 +44,23 @@ const CAPTURE_KEY = Deno.env.get('CAPTURE_KEY') || '' // shared secret guarding 
 const MAX_BYTES = 8 * 1024 // dictation should never approach this
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
+
+/**
+ * Kinds a caller may force without a classifier. `unknown`/`question` write nothing, so no.
+ * `inbox` is the one non-kind: the Suite "Inbox" chip files the raw text to cp_inbox.
+ */
+type Forced = Kind | 'inbox'
+const APPLY_KINDS = new Set<Forced>([
+  'course_task', 'course_note', 'stock_out', 'stock_low', 'stock_staple', 'stock_idea',
+  'ink_thought', 'break_lookup', 'break_flashcard', 'cue_add', 'inbox',
+])
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  })
+}
 
 // One short line, always text/plain. Nothing here is read by a browser.
 function line(body: string, status = 200): Response {
@@ -79,7 +104,26 @@ Deno.serve(async (req) => {
   }
   if (raw.byteLength > MAX_BYTES) return line('Capture too long', 413)
 
-  const text = new TextDecoder().decode(raw).trim()
+  const wantsJSON = (req.headers.get('accept') || '').includes('application/json')
+  const isJSONBody = (req.headers.get('content-type') || '').includes('application/json')
+  let text = new TextDecoder().decode(raw).trim()
+
+  // Forced kind: Suite already knows where this goes. No classifier, no inbox
+  // fallback — he is looking at the screen, so an error is shown, not hidden.
+  let forced: Forced | null = null
+  if (isJSONBody) {
+    let body: { text?: unknown; kind?: unknown }
+    try {
+      body = JSON.parse(text)
+    } catch {
+      return line('Bad JSON', 400)
+    }
+    text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (typeof body.kind === 'string') {
+      if (!APPLY_KINDS.has(body.kind as Forced)) return line(`Unknown kind: ${body.kind}`, 400)
+      forced = body.kind as Forced
+    }
+  }
   if (!text) return line('Empty capture', 400)
 
   // route() is contractually total: it never throws and always lands the text
@@ -90,9 +134,40 @@ Deno.serve(async (req) => {
     // Where the capture came from, for provenance labels and the inbox id.
     // Allow-listed: anything else (including no header, the watch Shortcut)
     // stays 'watch', which is what every capture was labelled before.
-    const src = req.headers.get('x-capture-src') === 'reminders' ? 'reminders' : 'watch'
-    const outcome = await route(admin, OWNER_ID, text, src)
-    return line(outcome)
+    const hdr = req.headers.get('x-capture-src')
+    const src = hdr === 'reminders' || hdr === 'suite' ? hdr : 'watch'
+
+    if (forced) {
+      try {
+        if (forced === 'inbox') {
+          const r = await writeInbox(admin, OWNER_ID, text, src)
+          return wantsJSON ? jsonResponse({ line: r.line, items: [{ kind: 'inbox', text, confidence: 1 }] }) : line(r.line)
+        }
+        const item: RoutedItem = {
+          kind: forced, text, title: null, back: null, project: null, due: null, media: null, confidence: 1,
+        }
+        const out = await applyItem(admin, OWNER_ID, item, text, src)
+        return wantsJSON ? jsonResponse({ line: out, items: [{ kind: forced, text, confidence: 1 }] }) : line(out)
+      } catch (err) {
+        const msg = `Not saved: ${err instanceof Error ? err.message : 'writer error'}`
+        return wantsJSON ? jsonResponse({ line: msg, items: [] }, 500) : line(msg, 500)
+      }
+    }
+
+    const outcome = await routeDetailed(admin, OWNER_ID, text, src)
+    if (!wantsJSON) return line(outcome.line)
+    return jsonResponse({
+      line: outcome.line,
+      items: outcome.items.map((i) => ({
+        kind: i.kind,
+        text: i.text ?? '',
+        line: i.line,
+        confidence: i.confidence,
+        table: i.table,
+        record_id: i.record_id,
+        demoted: i.demoted_reason ?? null,
+      })),
+    })
   } catch (err) {
     console.error('router threw:', err instanceof Error ? err.message : err)
     return line('Not saved: router error', 500)

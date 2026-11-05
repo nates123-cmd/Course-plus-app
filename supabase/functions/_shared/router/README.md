@@ -29,13 +29,25 @@ Tick is the only suite app in a separate project, and nothing here targets it.
 | `course_task` | `cp_tasks` | "course plus, hawaii trip, figure out activities for big island" |
 | `course_note` | `cp_notes` | "note for the CSA program, Mayra said the deadline moved" |
 | `stock_out` | `pantry_items` -> out, else `extras` | "I'm out of butter" |
+| `stock_low` | `pantry_items` -> low, else `extras` | "low on peanut butter" |
 | `stock_staple` | `pantry_items` (`isStaple`) | "add butter to stock staples" |
 | `stock_idea` | `pipeline_ideas` | "stock idea: steak butter" |
 | `ink_thought` | `entries` + `thoughts` | "ink - I feel better in the morning when I hydrate" |
 | `break_lookup` | `look_up_later` | "look up what a mansard roof is" |
 | `break_flashcard` | `flashcards` | "add tendentious to break flashcards" |
 | `cue_add` | `recommendations` (status `queued`, `extension.needs_enrich`) | "cue: Gone Girl", "cue book: Gone Girl" |
+| `question` | nothing (Suite answers it on screen); `look_up_later` from the watch | "who directed Heat" |
 | `unknown` | `cp_inbox` | anything ambiguous |
+
+## Suite (the iOS command bar)
+
+Suite sends `x-capture-src: suite` and `accept: application/json`. That path
+uses the fast model (`claude-haiku-5-5`) and returns `{line, items:[{kind,
+text, line, confidence, table, record_id, demoted}]}` so the phone can learn the
+phrase around the item ("low on" + "peanut butter" -> `stock_low`) as a local
+grammar rule. Once learned, Suite posts `{"text": "peanut butter", "kind":
+"stock_low"}` as JSON and the endpoint calls `applyItem` directly: no model, no
+inbox fallback, errors returned to the screen.
 
 Three distinctions the prompt works hard to hold, because the tables are
 different and the mistake is silent:
