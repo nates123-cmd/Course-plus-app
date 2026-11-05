@@ -255,7 +255,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   useEffect(() => {
     if (!wantsMeetings || agenda.loaded) return
     let live = true
-    loadMeetingCatalog(activeSeries()).then((c) => { if (live) setAgenda(c) })
+    loadMeetingCatalog(activeSeries || []).then((c) => { if (live) setAgenda(c) })
       .catch((e) => { console.warn('[course+] meeting catalog', e); if (live) setAgenda({ loaded: true, all: [], recurring: [], week: [] }) })
     return () => { live = false }
   }, [wantsMeetings]) // eslint-disable-line react-hooks/exhaustive-deps
