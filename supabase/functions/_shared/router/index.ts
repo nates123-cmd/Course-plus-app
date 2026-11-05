@@ -191,15 +191,22 @@ export async function routeDetailed(
       const unroutable = item.kind === 'unknown'
 
       if (lowConfidence || unroutable) {
+        const demoted_reason = unroutable ? 'unknown kind' : 'low confidence'
+        // From the Suite bar he is looking at the screen: nothing is written and
+        // the phone asks back (best guess / Google / Claude / inbox) with the
+        // item's kind and text so a chip can apply the guess. Elsewhere there is
+        // no screen, so the inbox row keeps the capture safe.
+        if (src === 'suite') {
+          logged.push({
+            table: 'none', record_id: null, line: `Not sure: ${item.text || text}`,
+            kind: item.kind, confidence: item.confidence, text: item.text, demoted_reason,
+          })
+          continue
+        }
         // Demoted, not dropped. The inbox row carries the item's own text so a
         // multi-item capture does not lose the part that routed cleanly.
         const result = await writeInbox(admin, ownerId, item.text || text, src)
-        logged.push({
-          ...result,
-          kind: item.kind,
-          confidence: item.confidence,
-          demoted_reason: unroutable ? 'unknown kind' : 'low confidence',
-        })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, demoted_reason })
         continue
       }
 
@@ -209,13 +216,16 @@ export async function routeDetailed(
       } catch (err) {
         // One writer failing must not take the other items down with it.
         console.error('writer failed:', err instanceof Error ? err.message : err)
+        const demoted_reason = `writer error: ${err instanceof Error ? err.message : 'unknown'}`
+        if (src === 'suite') {
+          logged.push({
+            table: 'none', record_id: null, line: `Not saved: ${item.text || text}`,
+            kind: item.kind, confidence: item.confidence, text: item.text, demoted_reason,
+          })
+          continue
+        }
         const result = await writeInbox(admin, ownerId, item.text || text, src)
-        logged.push({
-          ...result,
-          kind: item.kind,
-          confidence: item.confidence,
-          demoted_reason: `writer error: ${err instanceof Error ? err.message : 'unknown'}`,
-        })
+        logged.push({ ...result, kind: item.kind, confidence: item.confidence, demoted_reason })
       }
     }
   } catch (err) {
@@ -224,15 +234,18 @@ export async function routeDetailed(
   }
 
   // Nothing was written: the classifier died, or it returned no items at all.
-  // Either way the raw text still has to land somewhere.
+  // Either way the raw text still has to land somewhere (unless he is on screen).
   if (logged.length === 0) {
-    const result = await writeInbox(admin, ownerId, text, src)
-    logged.push({
-      ...result,
-      kind: 'unknown',
-      confidence: null,
-      demoted_reason: classifierFailed ? 'classifier unavailable' : 'no items returned',
-    })
+    const demoted_reason = classifierFailed ? 'classifier unavailable' : 'no items returned'
+    if (src === 'suite') {
+      logged.push({
+        table: 'none', record_id: null, line: 'Not sure: ' + text,
+        kind: 'unknown', confidence: null, text: '', demoted_reason,
+      })
+    } else {
+      const result = await writeInbox(admin, ownerId, text, src)
+      logged.push({ ...result, kind: 'unknown', confidence: null, demoted_reason })
+    }
   }
 
   const logId = await recordLog(admin, ownerId, text, src, logged)
@@ -244,7 +257,8 @@ export async function routeDetailed(
   // The log id rides along so a Telegram reply can name the exact capture it
   // is correcting. Without it the re-file has to guess from the text, which
   // breaks the moment he says the same thing twice.
-  await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
+  // Suite demotions were answered on screen; nothing to escalate.
+  if (src !== 'suite') await escalate(text, src, logged.filter((l) => l.demoted_reason), logId)
 
   return { line: logged.map((l) => l.line).join('; '), items: logged }
 }

@@ -33,6 +33,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { applyItem, routeDetailed } from '../_shared/router/index.ts'
+import { writeInbox } from '../_shared/router/writers.ts'
 import type { Kind, RoutedItem } from '../_shared/router/classify.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -44,10 +45,14 @@ const MAX_BYTES = 8 * 1024 // dictation should never approach this
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } })
 
-/** Kinds a caller may force without a classifier. `unknown`/`question` write nothing, so no. */
-const APPLY_KINDS = new Set<Kind>([
+/**
+ * Kinds a caller may force without a classifier. `unknown`/`question` write nothing, so no.
+ * `inbox` is the one non-kind: the Suite "Inbox" chip files the raw text to cp_inbox.
+ */
+type Forced = Kind | 'inbox'
+const APPLY_KINDS = new Set<Forced>([
   'course_task', 'course_note', 'stock_out', 'stock_low', 'stock_staple', 'stock_idea',
-  'ink_thought', 'break_lookup', 'break_flashcard', 'cue_add',
+  'ink_thought', 'break_lookup', 'break_flashcard', 'cue_add', 'inbox',
 ])
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -105,7 +110,7 @@ Deno.serve(async (req) => {
 
   // Forced kind: Suite already knows where this goes. No classifier, no inbox
   // fallback — he is looking at the screen, so an error is shown, not hidden.
-  let forced: Kind | null = null
+  let forced: Forced | null = null
   if (isJSONBody) {
     let body: { text?: unknown; kind?: unknown }
     try {
@@ -115,8 +120,8 @@ Deno.serve(async (req) => {
     }
     text = typeof body.text === 'string' ? body.text.trim() : ''
     if (typeof body.kind === 'string') {
-      if (!APPLY_KINDS.has(body.kind as Kind)) return line(`Unknown kind: ${body.kind}`, 400)
-      forced = body.kind as Kind
+      if (!APPLY_KINDS.has(body.kind as Forced)) return line(`Unknown kind: ${body.kind}`, 400)
+      forced = body.kind as Forced
     }
   }
   if (!text) return line('Empty capture', 400)
@@ -133,10 +138,14 @@ Deno.serve(async (req) => {
     const src = hdr === 'reminders' || hdr === 'suite' ? hdr : 'watch'
 
     if (forced) {
-      const item: RoutedItem = {
-        kind: forced, text, title: null, back: null, project: null, due: null, media: null, confidence: 1,
-      }
       try {
+        if (forced === 'inbox') {
+          const r = await writeInbox(admin, OWNER_ID, text, src)
+          return wantsJSON ? jsonResponse({ line: r.line, items: [{ kind: 'inbox', text, confidence: 1 }] }) : line(r.line)
+        }
+        const item: RoutedItem = {
+          kind: forced, text, title: null, back: null, project: null, due: null, media: null, confidence: 1,
+        }
         const out = await applyItem(admin, OWNER_ID, item, text, src)
         return wantsJSON ? jsonResponse({ line: out, items: [{ kind: forced, text, confidence: 1 }] }) : line(out)
       } catch (err) {
