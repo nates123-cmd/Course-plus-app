@@ -157,14 +157,23 @@ function LiveGrid({ a, live }) {
 function OpenTaskRow({ x, first, onToggle, onOpen }) {
   const { t, f, go, look } = useApp()
   const { pressing, handlers } = useLongPress(() => onOpen(x), () => onToggle(x), 450)
+  const [hover, setHover] = useState(false)
   const due = dueText(x)
+  // Desktop way into the Task Sheet: a hold needs a physical press, which a
+  // tap-to-click trackpad never sends. task-grip keeps it out of the hold.
+  const edit = <span className="task-grip" title="Edit task" onClick={(e) => { e.stopPropagation(); onOpen(x) }}
+    style={{ flex: 'none', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24,
+      marginTop: look === 'memo' ? 14 : 0, borderRadius: 'calc(7px * var(--rs))', cursor: 'pointer', color: t.t3,
+      opacity: hover ? 1 : 0, transition: 'opacity .12s' }}>
+    <Icon n="pencil" s={14} c="currentColor" /></span>
+  const hoverProps = { onMouseEnter: () => setHover(true), onMouseLeave: (e) => { setHover(false); handlers.onMouseLeave(e) } }
   const stop = {
     onMouseDown: (e) => e.stopPropagation(), onTouchStart: (e) => e.stopPropagation(),
     onClick: (e) => { e.stopPropagation(); go(x.projectId ? { screen: 'project', id: x.projectId } : { screen: 'area', id: x.area }) },
   }
   // Memo look: project rides ABOVE the title as a caps label (like a form line),
   // so the title gets the full row width and wraps instead of squeezing to "Hando…".
-  if (look === 'memo') return <div {...handlers} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0',
+  if (look === 'memo') return <div {...handlers} {...hoverProps} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 0',
     borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
     touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
     background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
@@ -184,8 +193,9 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
       color: t.risk, fontVariantNumeric: 'tabular-nums' }}>{due}</span>
       : x.next && <span style={{ flex: 'none', zIndex: 1, marginTop: 18, fontFamily: f.label, fontSize: 9.5, fontWeight: 700,
       letterSpacing: f.labelSpacing, textTransform: 'uppercase', color: t.accent }}>Next</span>}
+    {edit}
   </div>
-  return <div {...handlers} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+  return <div {...handlers} {...hoverProps} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
     borderTop: first ? 'none' : '1px solid ' + t.line, cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none',
     touchAction: 'manipulation', position: 'relative', overflow: 'hidden',
     background: pressing ? t.sel : 'transparent', transition: 'background .15s' }}>
@@ -206,6 +216,7 @@ function OpenTaskRow({ x, first, onToggle, onOpen }) {
       onMouseEnter={(e) => e.currentTarget.style.color = t.t1}
       onMouseLeave={(e) => e.currentTarget.style.color = t.t2}>
       <AreaDot areaId={x.area} s={6} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.projectName}</span></span>
+    {edit}
   </div>
 }
 
