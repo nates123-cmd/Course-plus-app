@@ -9,7 +9,9 @@ import { holdView } from './kit'
 import { seriesForTitle, normalizeTitle } from './lib/seriesAgenda'
 import { findMeetingNote } from './lib/meetingKey'
 import { parseNextSteps, isDuplicateStep } from './lib/nextSteps'
-import { linkMatchesTitle } from './lib/meetingMatch'
+import { linkMatchesTitle, isPendingLink, encodePending, pendingText } from './lib/meetingMatch'
+import { loadMeetingCatalog } from './lib/meetingCatalog'
+import { resolveMeetingText } from './lib/meetingRouter'
 
 // Human line for a project.hold in Claude-facing digests (was '[object Object]').
 const holdLine = (hold) => { const v = holdView(hold); if (!v) return ''; return 'Waiting: ' + (v.reason || '—') + (v.resurfaceText ? ' (resurface ' + v.resurfaceText + ')' : '') }
@@ -311,6 +313,74 @@ export function DataProvider({ children }) {
     try { await updateTask(cur.id, { recurSpawned: true, recurParent: seriesId }) } catch {}
     return nextId
   }
+  // ── Scheduled tasks: background meeting routing ──────────────────────
+  // "Schedule for the next Agathe 1 on 1" must not depend on the picker staying
+  // open. routeTaskMeeting saves what was typed as a pending link right away
+  // ("?next Agathe 1 on 1", chip reads "Finding: …"), then resolves it here in
+  // the background. If nothing on the calendar fits yet, the pending link stays
+  // and the sweep below retries it on later loads (and when the app comes back
+  // to the foreground), so a meeting that isn't on the agenda yet gets linked
+  // once Today's feed brings it in. Refs keep the async work on current state.
+  const areasRef = useRef(areas); areasRef.current = areas
+  const seriesRef = useRef(series); seriesRef.current = series
+  const patchRef = useRef(null); patchRef.current = patchTask
+  const routingRef = useRef(new Map()) // taskId -> pending link in flight
+  const catalogRef = useRef({ at: 0, p: null })
+  const meetingCatalog = () => {
+    const c = catalogRef.current
+    if (!c.p || Date.now() - c.at > 120000) {
+      const p = loadMeetingCatalog(seriesRef.current.filter((s) => !s.archived))
+      p.catch(() => { if (catalogRef.current.p === p) catalogRef.current = { at: 0, p: null } })
+      catalogRef.current = { at: Date.now(), p }
+    }
+    return catalogRef.current.p
+  }
+  const projectNameOfTask = (id) => {
+    for (const a of areasRef.current) {
+      if ((a.areaTasks || []).some((x) => x.id === id)) return a.name || ''
+      for (const p of a.projects) if ((p.tasks || []).some((x) => x.id === id)) return p.name || ''
+    }
+    return ''
+  }
+  const resolvePending = async (id, pending, snapshot) => {
+    if (!isPendingLink(pending) || routingRef.current.get(id) === pending) return
+    routingRef.current.set(id, pending)
+    try {
+      const task = snapshot || _findTask(areasRef.current, id) || {}
+      const mid = await resolveMeetingText({ text: pendingText(pending), task, projectName: projectNameOfTask(id), catalog: await meetingCatalog() })
+      // Only if nobody re-picked while Claude was thinking.
+      const now = _findTask(areasRef.current, id)
+      if (mid && now && now.meetingId === pending) await patchRef.current(id, { meetingId: mid }, { noUndo: true })
+    } catch (e) {
+      console.warn('[course+] background meeting routing', e)
+    } finally {
+      if (routingRef.current.get(id) === pending) routingRef.current.delete(id)
+    }
+  }
+  const routeTaskMeeting = (id, text) => {
+    const pending = encodePending(text)
+    const cur = _findTask(areas, id)
+    if (!cur || pendingText(pending).length < 2) return false // not a saved task (e.g. a Record action): caller patches itself
+    patchTask(id, { workType: 'scheduled', meetingId: pending }).catch(() => {})
+    resolvePending(id, pending, { ...cur, meetingId: pending })
+    return true
+  }
+  const sweptAt = useRef(0)
+  useEffect(() => {
+    if (status !== 'ready') return
+    const sweep = () => {
+      if (Date.now() - sweptAt.current < 30 * 60e3) return
+      sweptAt.current = Date.now()
+      for (const a of areasRef.current)
+        for (const tk of [...(a.areaTasks || []), ...a.projects.flatMap((p) => p.tasks || [])])
+          if (!tk.done && isPendingLink(tk.meetingId)) resolvePending(tk.id, tk.meetingId, tk)
+    }
+    sweep()
+    const onVis = () => { if (document.visibilityState === 'visible') sweep() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const removeTask = async (id, opts = {}) => {
     const cur = _findTask(areas, id)
     if (cur && !opts.noUndo) recordUndo(async () => { await addTask(cur.project ?? null, cur) })
@@ -673,7 +743,7 @@ export function DataProvider({ children }) {
       addAgendaItem, patchAgendaItem, removeAgendaItem, discussListFor, agendaItemsForNote,
       upsertNoteLocal, removeNoteLocal, meetingNoteFor, unfinishedMeetings,
       snoozeNudge, rememberQuestion,
-      patchTask, addTask, removeTask, undoRecurrence, acceptConsider, dismissConsider,
+      patchTask, routeTaskMeeting, addTask, removeTask, undoRecurrence, acceptConsider, dismissConsider,
       allProjects, looseTasks, looseTasksInArea, projectById, areaById, noteById, artifactById, noteByTitle, projectName, areaName, areaOfProject,
       ownedNotes, linkedMeetings, notesInArea, actionsForProject, notesByTag, ALL_TAGS, globalSearch, projectDigest, areaDigest, lastTouchAt,
       assetsForProject, assetsForNote, assetsInProject,

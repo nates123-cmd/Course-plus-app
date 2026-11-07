@@ -32,12 +32,14 @@ export type Kind =
   | 'course_task'
   | 'course_note'
   | 'stock_out'
+  | 'stock_low'
   | 'stock_staple'
   | 'stock_idea'
   | 'ink_thought'
   | 'break_lookup'
   | 'break_flashcard'
   | 'cue_add'
+  | 'question'
   | 'unknown'
 
 /** Cue's `recommendations.media_type` values a capture can produce. */
@@ -110,12 +112,14 @@ const SCHEMA = {
               'course_task',
               'course_note',
               'stock_out',
+              'stock_low',
               'stock_staple',
               'stock_idea',
               'ink_thought',
               'break_lookup',
               'break_flashcard',
               'cue_add',
+              'question',
               'unknown',
             ],
           },
@@ -158,13 +162,15 @@ The kinds:
 
 - course_task — an action he or someone else needs to take. Work items, follow-ups, errands with a clear verb. Put the action in \`text\`, written as a task ("Ask Mayra to register the CSA deal"), not as he said it. Set \`project\` only when the capture clearly names one of the projects listed below, copied verbatim. Set \`due\` when a time is stated or implied.
 - course_note — information worth keeping about work, with no action attached. A decision, a number, something someone said. \`title\` is a short headline; \`text\` is the body.
-- stock_out — he is out of, low on, or wants to buy a grocery or kitchen item RIGHT NOW. \`text\` is ONLY the item name, singular and lowercase ("butter", "olive oil"). One entry per item.
+- stock_out — he is OUT of a grocery or kitchen item, or wants to buy one RIGHT NOW ("out of butter", "need eggs", "buy olive oil"). \`text\` is ONLY the item name, singular and lowercase ("butter", "olive oil"). One entry per item.
+- stock_low — he is LOW on an item but not out yet ("low on peanut butter", "running low on rice", "almost out of coffee"). Same \`text\` rule: ONLY the item name. "Low" and "out" are different pantry states; "almost out" is low.
 - stock_staple — he wants an item to become part of his standing pantry list, not a one-off purchase. Signalled by the word "staple" or "always keep" ("add butter to stock staples"). This is about the item's STANDING, not about being out of it right now. \`text\` is ONLY the item name, singular and lowercase.
 - stock_idea — a meal, dish, or cooking idea to try later, NOT a shopping need. Usually a dish name rather than an ingredient ("stock idea: steak butter", "we should try smash burgers"). \`text\` is the idea itself; \`title\` is a short name for it.
 - ink_thought — a personal reflection, observation, or idea about himself. Not work, not an action.
 - break_lookup — something he wants to LOOK UP or learn about later. Usually phrased as a question or a term he does not know yet.
 - break_flashcard — he wants a flashcard MADE, signalled by the word "flashcard". \`text\` is the front (the prompt side: the word, term, or question, exactly as he said it). \`back\` is the answer side, which you must WRITE yourself — he only ever dictates the front. For a vocabulary word, the back is a concise definition, part of speech first ("adj. — biased toward a particular viewpoint"). For a question, the back is the answer. Keep it to one or two lines; it is read on a phone. \`back\` must never be null for this kind.
 - cue_add — a movie, show, book, podcast, album, or article he wants to watch, read, or listen to later, to save in his Cue list. Signalled by "Cue", "watch", "read", "recommend", or a bare title. \`text\` is ONLY the title, properly capitalised ("Gone Girl"), with no "watch"/"read" verb and no year unless he said one. \`media\` is the format: movie, tv, book, podcast, music, article, or video. When he names the format ("cue book: Gone Girl", "the Gone Girl book") use it. When he does not and the title is both a film and a book, prefer the screen version (movie or tv). \`media\` must be null for every other kind.
+- question — a general-knowledge question he wants answered from the web or a reference ("who directed Heat", "how many grams in a cup of flour", "what's the capital of Peru"). It is about the world, not about his own data, and there is nothing to file. \`text\` is the question as asked. Contrast break_lookup, which is a thing to learn LATER; a question is a thing he wants answered NOW.
 - unknown — you cannot tell. Use this freely; an honest \`unknown\` is far better than a confident wrong route, because a wrong route hides the capture in an app he will not think to check.
 
 The difference between stock_out, stock_staple, and stock_idea matters: stock_out changes what he buys this week, stock_staple changes what he keeps forever, stock_idea is a dish he might cook. "I'm out of butter" is stock_out. "Add butter to my staples" is stock_staple. "Steak butter" is stock_idea — a thing to make, not a thing to buy.
@@ -194,8 +200,14 @@ ${projectNames.map((n) => `- ${n}`).join('\n')}`
 export async function classify(
   text: string,
   projectNames: string[],
+  opts: { fast?: boolean } = {},
 ): Promise<RoutedItem[]> {
   if (!ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY not set')
+
+  // The Suite command bar blocks a result line on this call and budgets ~2 s
+  // for a miss, so it takes the small fast model. The watch path keeps the
+  // bigger one: dictation is messier and nobody is staring at a spinner.
+  const model = opts.fast ? 'claude-haiku-5-5' : 'claude-opus-5'
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -205,7 +217,7 @@ export async function classify(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-opus-5',
+      model,
       // Thinking is on by default on this model and max_tokens caps thinking
       // plus text together, so this is sized well above the tiny JSON payload.
       max_tokens: 16000,

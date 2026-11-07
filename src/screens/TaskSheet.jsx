@@ -5,12 +5,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
-import { supabase } from '../lib/supabase'
 import { Icon, IconBtn, Btn, Popover, FloatPop, PopRow, AreaDot, areaColor, DatePill, fmtDate, TODAY } from '../kit'
 import { PRESETS, matchPreset, recurrenceLabel, normalizeRule, nextDate, todayYmd } from '../lib/recurrence'
 import { normalizeTitle } from '../lib/seriesAgenda'
-import { resolveFreeText, encodePersonLink, parsePersonLink, meetingLabel, isPersonLink } from '../lib/meetingMatch'
+import { resolveFreeText, encodePersonLink, parsePersonLink, meetingLabel, isPersonLink, isPendingLink, encodePending, pendingText } from '../lib/meetingMatch'
+import { loadMeetingCatalog, hintFor, aiMeetingList } from '../lib/meetingCatalog'
+import { aiPick } from '../lib/meetingRouter'
 import { MeetingSource } from '../components/MeetingSource'
+import { routeToMeeting } from '../lib/ai'
 
 // ── useLongPress — tap vs hold, movement-cancel + suppressed click ──
 export function useLongPress(onLong, onTap, ms = 450) {
@@ -192,7 +194,7 @@ function RepeatField({ task, onPatch }) {
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
   const { t, f, go, isMobile } = useApp()
-  const { projectById, allProjects, areas, areaName, activeSeries } = useData()
+  const { projectById, allProjects, areas, areaName, activeSeries, routeTaskMeeting } = useData()
   const project = projectById(projectId)
   // Pillar-only task (no project): show its pillar instead of "No project".
   const pillarId = !project ? (task.area || null) : null
@@ -224,7 +226,7 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   const armed = useRef(false)
 
   useEffect(() => { const r = requestAnimationFrame(() => setMounted(true)); const a = setTimeout(() => { armed.current = true }, 300); return () => { cancelAnimationFrame(r); clearTimeout(a) } }, [])
-  const close = () => { setMounted(false); setTimeout(onClose, 180) }
+  const close = () => { closeMtg(); setMounted(false); setTimeout(onClose, 180) }
   useEffect(() => { const onKey = (e) => { if (e.key === 'Escape') close() }; document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey) }, [])
 
   const status = taskStatus(task)
@@ -264,47 +266,22 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   useEffect(() => {
     if (!wantsMeetings || agenda.loaded) return
     let live = true
-    const iso = (n) => { const d = new Date(TODAY.y, TODAY.m, TODAY.d + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
-    ;(async () => {
-      const { data } = await supabase.from('placed_blocks').select('id,title,date,hour').eq('type', 'meeting').gte('date', iso(0)).lte('date', iso(35)).order('date').order('hour')
-      if (!live) return
-      const now = new Date()
-      const startOf = (b) => { const [y, m, d] = b.date.split('-').map(Number); const hr = Math.floor(b.hour); return new Date(y, m - 1, d, hr, Math.round((b.hour - hr) * 60)) }
-      const seen = new Set()
-      const blocks = (data || []).map((r) => ({ id: r.id, title: r.title || 'Meeting', date: r.date, hour: Number(r.hour) }))
-        .filter((b) => startOf(b) > now) // future meetings only — drop ones that already happened today
-        .filter((b) => { const k = [b.date, b.hour, normalizeTitle(b.title)].join('|'); if (seen.has(k)) return false; seen.add(k); return true })
-        .map((b) => ({ ...b, when: startOf(b).getTime() }))
-      // One entry per title: its next occurrence, and whether it repeats.
-      const byTitle = new Map()
-      for (const b of blocks) {
-        const k = normalizeTitle(b.title)
-        const cur = byTitle.get(k)
-        if (!cur) byTitle.set(k, { ...b, count: 1 })
-        else cur.count += 1
-      }
-      const series = activeSeries()
-      const seriesFor = (title) => series.find((s) => [s.name, ...(s.calendarTitles || [])].some((x) => normalizeTitle(x) === normalizeTitle(title)))
-      const weekEnd = startOf({ date: iso(6), hour: 23.99 }).getTime()
-      const all = [...byTitle.values()].map((b) => { const s = seriesFor(b.title)
-        return { id: b.id, title: b.title, date: b.date, hour: b.hour, when: b.when, recurring: b.count > 1 || !!s, people: s ? s.people : [] } })
-      // Series with no occurrence in the window are still offered — "raise it at
-      // the next Jon 1:1" shouldn't depend on the calendar feed's horizon.
-      for (const s of series) if (s.name && !byTitle.has(normalizeTitle(s.name)) && !(s.calendarTitles || []).some((x) => byTitle.has(normalizeTitle(x))))
-        all.push({ id: 's-' + s.id, title: s.name, when: null, recurring: true, people: s.people || [] })
-      setAgenda({
-        loaded: true, all,
-        recurring: all.filter((m) => m.recurring).sort((a, b) => (a.when ?? 9e15) - (b.when ?? 9e15)),
-        week: blocks.filter((b) => b.when <= weekEnd && !all.find((m) => m.recurring && normalizeTitle(m.title) === normalizeTitle(b.title))),
-      })
-    })()
+    loadMeetingCatalog(activeSeries || []).then((c) => { if (live) setAgenda(c) })
+      .catch((e) => { console.warn('[course+] meeting catalog', e); if (live) setAgenda({ loaded: true, all: [], recurring: [], week: [] }) })
     return () => { live = false }
   }, [wantsMeetings]) // eslint-disable-line react-hooks/exhaustive-deps
-  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const blockHint = (b) => { const [y, m, d] = b.date.split('-').map(Number); const hr = Math.floor(b.hour), mm = String(Math.round((b.hour - hr) * 60)).padStart(2, '0'); const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr; return `${WD[new Date(y, m - 1, d).getDay()]} · ${h12}:${mm}${hr < 12 ? 'a' : 'p'}` }
   const pickMeeting = (title) => { setMtgOpen(false); setMtgText(''); onPatch({ workType: 'scheduled', meetingId: title }) }
   const pickPerson = (name, meetings) => pickMeeting(encodePersonLink(name, meetings.map((m) => m.title)))
-  const hintFor = (m) => m.date ? (m.recurring ? 'recurring · next ' : '') + blockHint(m) : 'recurring'
+  // Typed but not picked: save the words now, route in the background (see
+  // DataContext.routeTaskMeeting). Never lost to a closed popover or sheet.
+  const pickText = (text) => {
+    const v = (text || '').trim()
+    setMtgOpen(false); setMtgText('')
+    if (v.length < 2) return
+    if (!routeTaskMeeting(task.id, v)) onPatch({ workType: 'scheduled', meetingId: encodePending(v) })
+  }
+  // Closing with words typed and no meeting yet counts as "go find it".
+  const closeMtg = () => { if (mtgOpen && mtgText.trim().length >= 2 && !task.meetingId) pickText(mtgText); else { setMtgOpen(false); setMtgText('') } }
   const sameMeeting = (title) => !isPersonLink(task.meetingId) && normalizeTitle(task.meetingId || '') === normalizeTitle(title)
   const chooseWork = (id) => {
     if (task.workType === id) { onPatch(id === 'scheduled' ? { workType: null, meetingId: null } : { workType: null }); return }
@@ -394,13 +371,15 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
             <span ref={mtgAnchor} onClick={() => setMtgOpen((o) => !o)} title="Which meeting on your agenda will this be discussed in?"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: f.ui, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', borderRadius: 'calc(8px * var(--rs))', padding: '6px 11px',
                 color: assigned ? t.t1 : t.risk, background: assigned ? t.sel : t.riskBg, border: '1px solid ' + (assigned ? 'transparent' : t.riskLine) }}>
-              <Icon n={isPersonLink(assigned) ? 'user' : 'calendar-event'} s={14} />{assigned ? meetingLabel(assigned) : 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
+              <Icon n={isPendingLink(assigned) ? 'sparkles' : isPersonLink(assigned) ? 'user' : 'calendar-event'} s={14} />{assigned ? meetingLabel(assigned) : 'Pick a meeting'}<Icon n="chevron-down" s={13} c={t.t3} /></span>
             {isPersonLink(assigned) && (() => { const pl = parsePersonLink(assigned)
               return pl.titles.length > 0 && <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.5, marginTop: 7 }}>
                 Comes up in whichever is first: {pl.titles.join(', ')}.</div> })()}
-            {mtgOpen && <FloatPop anchorRef={mtgAnchor} onClose={() => { setMtgOpen(false); setMtgText('') }} width={320} estHeight={380} maxHeight={380}>
+            {isPendingLink(assigned) && <div style={{ fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.5, marginTop: 7 }}>
+              Working it out in the background. If it isn't on your calendar yet, it links once it shows up.</div>}
+            {mtgOpen && <FloatPop anchorRef={mtgAnchor} onClose={closeMtg} width={320} estHeight={380} maxHeight={380}>
               <MeetingPicker agenda={agenda} text={mtgText} setText={setMtgText} hintFor={hintFor} sameMeeting={sameMeeting}
-                onPick={pickMeeting} onPickPerson={pickPerson} assigned={task.meetingId} />
+                onPick={pickMeeting} onPickPerson={pickPerson} onPickText={pickText} assigned={task.meetingId} task={task} projectName={project?.name || pillarName || ""} />
             </FloatPop>}
           </span>
         })())}
@@ -425,44 +404,117 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
   </div>
 }
 
-// The Scheduled picker. Typing "ask Jon next meeting" finds Jon's meetings (by
-// name in the title or the series' people, or by initials as in "JS/NS 1:1")
-// and offers "Next meeting with Jon" (lands in whichever comes first) or any
-// one of them. Below: recurring meetings, then the rest of this week.
-function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, assigned }) {
+// The Scheduled picker. Claude does the routing: it reads plain language
+// ("bring it up when I see Jon", "the pricing working session", "standup
+// tomorrow") against the calendar, and on open with nothing typed it reads the
+// task itself ("Ask Jon what ..." -> Jon). Its answer leads as "Suggested" and
+// is what Enter picks. Local matching (lib/meetingMatch) stays underneath as an
+// instant preview while Claude thinks, and as the fallback if it fails.
+// Untyped and before a suggestion: recurring meetings, then the rest of this week.
+const AI_DEBOUNCE_MS = 700
+
+function MeetingPicker({ agenda, text, setText, hintFor, sameMeeting, onPick, onPickPerson, onPickText, assigned, task, projectName }) {
   const { t, f } = useApp()
   const q = text.trim()
-  const resolved = q ? resolveFreeText(q, agenda.all) : null
-  const titleHits = q && !resolved ? agenda.all.filter((m) => normalizeTitle(m.title).includes(normalizeTitle(q))) : []
+  const { person, matches } = q ? resolveFreeText(q, agenda.all) : { person: null, matches: [] }
+  // AI state is keyed by the text it answered, so a stale reply never shows
+  // against newer typing. '' = the on-open suggestion from the task itself.
+  const [ai, setAi] = useState({ q: null, status: 'idle', result: null })
+  const seq = useRef(0)
+  const aiHere = ai.q === q ? ai : { status: q ? 'pending' : 'idle', result: null }
   const head = (label) => <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px' }}>{label}</div>
   const pl = parsePersonLink(assigned)
+  const { person: aiPerson, meetings: aiMeetings } = aiPick(aiHere.result, agenda.all)
+
+  const runAI = async (forText) => {
+    const id = ++seq.current
+    setAi({ q: forText, status: 'loading', result: null })
+    const now = new Date()
+    const today = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })
+    try {
+      const result = await routeToMeeting(forText, aiMeetingList(agenda.all),
+        { taskLabel: task?.label || '', taskNotes: task?.notes || '', waiting: task?.waiting || '', projectName, today })
+      if (id !== seq.current) return
+      setAi({ q: forText, status: result ? 'done' : 'none', result })
+    } catch (e) {
+      if (id !== seq.current) return
+      console.warn('[course+] routeToMeeting', e)
+      setAi({ q: forText, status: 'error', result: null })
+    }
+  }
+
+  // As you type: ask Claude once you pause. Nothing typed: suggest from the
+  // task, once, unless it's already assigned.
+  useEffect(() => {
+    if (!agenda.loaded || !agenda.all.length) return
+    if (!q) { if (!assigned && task?.label && ai.q !== '') runAI(''); return }
+    if (q.length < 2) return
+    const h = setTimeout(() => runAI(q), AI_DEBOUNCE_MS)
+    return () => clearTimeout(h)
+  }, [q, agenda.loaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickAI = () => {
+    if (aiPerson) { onPickPerson(aiPerson, aiMeetings); return true }
+    if (aiMeetings.length) { onPick(aiMeetings[0].title); return true }
+    return false
+  }
+  const pickLocal = () => {
+    if (person) { onPickPerson(person.name, person.meetings); return true }
+    if (matches.length) { onPick(matches[0].title); return true }
+    return false
+  }
+  // Enter = Claude's answer if it's in. Otherwise the words are saved as they
+  // are and routed in the background, so nothing waits on the popover staying
+  // open, and a meeting that isn't on the calendar yet still gets linked later.
+  const onEnter = () => {
+    if (!q) return
+    if (aiHere.status === 'done' && pickAI()) return
+    if ((aiHere.status === 'none' || aiHere.status === 'error') && person && !person.weak) { pickLocal(); return }
+    onPickText(q)
+  }
+
+  const meetingRow = (m, k) => <PopRow key={k + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />
+  const personBlock = (name, list, label) => <>
+    {head(label)}
+    <PopRow icon="user" label={'Next meeting with ' + name}
+      hint={list.length > 1 ? 'whichever is first' : 'recommended'} on={!!pl && pl.name.toLowerCase() === name.toLowerCase()}
+      onClick={() => onPickPerson(name, list)} />
+    {list.map((m) => meetingRow(m, 'p' + label))}
+  </>
+  const note = (s, icon) => <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontFamily: f.ui, fontSize: 11.5, color: t.t3, lineHeight: 1.45 }}>
+    {icon && <Icon n={icon} s={12} c={t.t3} />}{s}</div>
+  const thinking = aiHere.status === 'loading' || aiHere.status === 'pending'
+  const showAI = aiHere.status === 'done' && aiMeetings.length > 0
+  // Local preview only while Claude is thinking, or when it came up empty.
+  const showLocal = q && !showAI && (person || matches.length)
+
   return <div>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 4px 4px', padding: '0 10px', height: 36, borderRadius: 'calc(8px * var(--rs))', background: t.sel }}>
-      <Icon n="sparkles" s={14} c={t.t3} />
-      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Or type it: ask Jon next meeting"
-        onKeyDown={(e) => { if (e.key === 'Enter' && resolved) onPickPerson(resolved.name, resolved.meetings) }}
+      <Icon n="sparkles" s={14} c={thinking ? t.accent : t.t3} />
+      <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Say it: bring this up when I see Jon"
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter() } }}
         style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', fontFamily: f.ui, fontSize: 13, color: t.t1 }} />
     </div>
-    {!agenda.loaded && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3 }}>Loading your calendar…</div>}
-    {resolved && <>
-      {head('Meetings with ' + resolved.name)}
-      <PopRow icon="user" label={'Next meeting with ' + resolved.name}
-        hint={resolved.meetings.length > 1 ? 'whichever is first' : 'recommended'} on={!!pl && pl.name.toLowerCase() === resolved.name.toLowerCase()}
-        onClick={() => onPickPerson(resolved.name, resolved.meetings)} />
-      {resolved.meetings.map((m) => <PopRow key={'r' + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}
-      {resolved.weak && <div style={{ padding: '4px 12px 6px', fontFamily: f.ui, fontSize: 11, color: t.t3, lineHeight: 1.45 }}>
-        Matched by initials. Pick the right one and it will stick for this task.</div>}
+    {!agenda.loaded && note('Loading your calendar…')}
+    {showAI && <>
+      {aiPerson ? personBlock(aiPerson, aiMeetings, q ? 'Suggested' : 'Suggested from the task')
+        : <>{head(q ? 'Suggested' : 'Suggested from the task')}{aiMeetings.map((m) => meetingRow(m, 'a'))}</>}
+      {aiHere.result.reason && note(aiHere.result.reason, 'sparkles')}
     </>}
-    {q && !resolved && (titleHits.length
-      ? <>{head('Matching')}{titleHits.map((m) => <PopRow key={'q' + m.id} icon={m.recurring ? 'repeat' : 'users'} label={m.title} hint={hintFor(m)} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}</>
-      : agenda.loaded && <div style={{ padding: '8px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>
-          No meeting in the next five weeks matches “{q}”. Try a first name or part of the meeting title.</div>)}
+    {agenda.loaded && thinking && (q || (!assigned && task?.label)) && note(q ? 'Working out which meeting…' : 'Reading the task…', 'sparkles')}
+    {showLocal && <>
+      {person && personBlock(person.name, person.meetings, 'Meetings with ' + person.name)}
+      {matches.length > 0 && <>{head('Matching meetings')}{matches.map((m) => meetingRow(m, 'q'))}</>}
+    </>}
+    {q.length >= 2 && !showAI && <div style={{ borderTop: showLocal ? '1px solid ' + t.line : 0, marginTop: showLocal ? 4 : 0 }}>
+      <PopRow icon="sparkles" label={`Find “${q}” in the background`}
+        hint={aiHere.status === 'none' ? 'not on your calendar yet, links when it is' : 'Enter, or just close'} onClick={() => onPickText(q)} /></div>}
+    {q && agenda.loaded && aiHere.status === 'error' && note('AI routing failed, showing word matches. Check your connection.')}
     {!q && agenda.recurring.length > 0 && <>{head('Recurring')}
       {agenda.recurring.map((m) => <PopRow key={'c' + m.id} icon="repeat" label={m.title} hint={m.date ? 'next ' + hintFor({ ...m, recurring: false }) : 'series'} on={sameMeeting(m.title)} onClick={() => onPick(m.title)} />)}</>}
     {!q && agenda.week.length > 0 && <>{head('This week')}
       {agenda.week.map((b) => <PopRow key={'w' + b.id} icon="users" label={b.title} hint={hintFor(b)} on={sameMeeting(b.title)} onClick={() => onPick(b.title)} />)}</>}
-    {!q && agenda.loaded && !agenda.recurring.length && !agenda.week.length && <div style={{ padding: '10px 12px', fontFamily: f.ui, fontSize: 12, color: t.t3, lineHeight: 1.5 }}>
-      No meetings in the next five weeks and no series yet. Schedule one in Today, or hold a meeting on the Agenda to make it a series.</div>}
+    {!q && agenda.loaded && !agenda.recurring.length && !agenda.week.length && note('No meetings in the next five weeks and no series yet. Schedule one in Today, or hold a meeting on the Agenda to make it a series.')}
     {assigned && <div style={{ borderTop: '1px solid ' + t.line, marginTop: 4 }}><PopRow icon="x" label="Clear assignment" onClick={() => onPick(null)} /></div>}
   </div>
 }
