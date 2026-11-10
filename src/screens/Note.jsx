@@ -76,6 +76,20 @@ function Body({ blocks }) {
 }
 
 // ── Transcript turns ─────────────────────────────────────────────
+// Save a meeting's transcript as a plain .txt file — a short header (title,
+// date, who was there) then the transcript exactly as stored.
+function downloadTranscript(n) {
+  const head = [n.title || 'Untitled meeting', n.date, (n.people || []).join(', ')].filter(Boolean).join('\n')
+  const blob = new Blob([head + '\n\n' + n.transcript.trim() + '\n'], { type: 'text/plain;charset=utf-8' })
+  const name = [n.date, n.title || 'meeting', 'transcript'].filter(Boolean).join(' - ')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = name + '.txt'
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 // A saved transcript is "Name: text" lines. Parse it back into attributed
 // speaker turns so a viewed meeting reads like the recorder/composer, not a
 // raw monospace blob.
@@ -512,7 +526,11 @@ export function NoteScreen() {
         borderRadius: 'calc(10px * var(--rs))', cursor: 'pointer', background: t.panel, border: '1px solid ' + t.line, fontFamily: f.ui, fontSize: 12.5, color: t.t2 }}>
         <Icon n={rawOpen ? 'chevron-down' : 'chevron-right'} s={14} />
         <Icon n="file-text" s={14} c={t.t3} />Transcript
-        <span style={{ color: t.t3 }}>· {words ? words + ' words · ' : ''}source material</span></div>
+        <span style={{ color: t.t3 }}>· {words ? words + ' words · ' : ''}source material</span>
+        <button title="Download the transcript as a .txt file" onClick={(e) => { e.stopPropagation(); downloadTranscript(n) }}
+          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 'calc(7px * var(--rs))',
+            background: 'transparent', border: '1px solid ' + t.line, cursor: 'pointer', color: t.t2, fontFamily: f.ui, fontSize: 11.5 }}>
+          <Icon n="download" s={13} />.txt</button></div>
       {rawOpen && <div style={{ padding: '16px 18px', background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px' }}>
         <MeetingTranscript text={n.transcript} /></div>}
     </div>}
