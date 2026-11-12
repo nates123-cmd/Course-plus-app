@@ -454,6 +454,13 @@ export function RecorderProvider({ go, children }) {
     const tIso = target.date || todayIso()
     const bare = !target.noteId && target.title == null && !target.series && !target.quick && !target.project
     if (bare) return true
+    // reload: the caller just wrote this note (Note edit → Record), so re-read
+    // it from the DB instead of keeping the bound copy, and DON'T flush that
+    // stale copy first or it would overwrite the edits that were just saved.
+    if (target.noteId && target.reload && target.noteId === noteId) {
+      const fresh = noteById(target.noteId)
+      if (fresh) { clearTimers(); loadDraftFromNote(fresh); return true }
+    }
     if (target.noteId) { if (target.noteId === noteId) return true }
     else if (target.title != null && noteId && normalizeTitle(target.title) === normalizeTitle(title) && (!dateIso || dateIso === tIso)) return true
     else if (target.quick && noteId && quick) return true

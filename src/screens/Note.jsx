@@ -257,6 +257,7 @@ export function NoteScreen() {
   const [eBody, setEBody] = useState('')
   const [eSummary, setESummary] = useState('') // meeting summary (inline edit)
   const [eNext, setENext] = useState('')       // meeting next steps (inline edit)
+  const [eTranscript, setETranscript] = useState('') // meeting transcript (paste / edit)
   const [eProject, setEProject] = useState(null) // primary (home) project id
   const [eProjects, setEProjects] = useState([]) // projects discussed (linked)
   const [homeOpen, setHomeOpen] = useState(false)
@@ -304,7 +305,7 @@ export function NoteScreen() {
   const resumeMeeting = () => go({ screen: 'meeting', noteId: n.id })
   const startEdit = () => {
     setETitle(n.title); setEBody(blocksToText(n.body || [])); setErr(null)
-    if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || '') }
+    if (isMeeting) { setESummary(n.summary || ''); setENext(n.nextSteps || ''); setETranscript(n.transcript || '') }
     setEProject(n.project || null)
     // linked projects always include the primary, like the composer does
     setEProjects([...new Set([n.project, ...(n.projects || [])].filter(Boolean))])
@@ -315,18 +316,35 @@ export function NoteScreen() {
     try { await deleteNote(n.id); await reload(); go(n.project ? { screen: 'project', id: n.project } : { screen: 'library' }) }
     catch (e) { window.alert('Could not delete: ' + (e?.message || e)) }
   }
+  const writeEdit = async () => {
+    const patch = { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }
+    if (isMeeting) {
+      patch.summary = eSummary; patch.nextSteps = eNext
+      // Only touch the transcript when it was changed here, so a save never
+      // rewrites (or normalizes) a recorded transcript nobody edited.
+      if (eTranscript.trim() !== (n.transcript || '').trim()) patch.transcript = eTranscript.trim() || null
+    }
+    // project links: primary + the discussed list (primary always included)
+    const linked = [...new Set([eProject, ...eProjects].filter(Boolean))]
+    patch.project = eProject || null
+    patch.projects = linked
+    patch.area = eProject ? (areaOfProject(eProject)?.id || null) : n.area
+    await updateNote(n.id, patch); await reload()
+  }
   const saveEdit = async () => {
     setSaving(true); setErr(null)
-    try {
-      const patch = { title: eTitle.trim() || 'Untitled', body: markdownToBlocks(eBody) }
-      if (isMeeting) { patch.summary = eSummary; patch.nextSteps = eNext }
-      // project links: primary + the discussed list (primary always included)
-      const linked = [...new Set([eProject, ...eProjects].filter(Boolean))]
-      patch.project = eProject || null
-      patch.projects = linked
-      patch.area = eProject ? (areaOfProject(eProject)?.id || null) : n.area
-      await updateNote(n.id, patch); await reload(); setEditing(false)
-    } catch (e) { setErr(e) } finally { setSaving(false) }
+    try { await writeEdit(); setEditing(false) }
+    catch (e) { setErr(e) } finally { setSaving(false) }
+  }
+  // Record onto this meeting from edit mode: save the edits first (so the
+  // composer loads them, not an older copy), then open the composer bound to
+  // this note and start recording. New audio APPENDS to any transcript.
+  const recBusy = rec.phase === 'recording' || rec.phase === 'paused' || rec.phase === 'transcribing' || rec.phase === 'synth'
+  const recordFromEdit = async () => {
+    if (recBusy) return
+    setSaving(true); setErr(null)
+    try { await writeEdit(); setEditing(false); go({ screen: 'meeting', noteId: n.id, record: true }) }
+    catch (e) { setErr(e) } finally { setSaving(false) }
   }
 
   const main = <div className="selectable">
@@ -485,7 +503,7 @@ export function NoteScreen() {
         background: t.panel, border: '1px solid ' + t.line, borderTop: 'none', borderRadius: '0 0 10px 10px', whiteSpace: 'pre-wrap' }}>{n.agenda}</div>}
     </div>}
 
-    {/* inline meeting editors — summary + next steps (composer owns transcript) */}
+    {/* inline meeting editors — summary, next steps, transcript (paste/edit, or Record → composer) */}
     {editing && isMeeting && <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div>
         <Label style={{ marginBottom: 8, color: t.accent }}>Summary</Label>
@@ -494,6 +512,20 @@ export function NoteScreen() {
       <div>
         <Label style={{ marginBottom: 8 }}>Suggested next steps</Label>
         <MdEditor value={eNext} onChange={setENext} minHeight={160} />
+      </div>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+          <Label style={{ margin: 0 }}>Transcript</Label>
+          <div style={{ flex: 1 }} />
+          <Btn kind="outline" size="sm" icon="microphone" onClick={recordFromEdit} style={saving || recBusy ? { opacity: 0.45, cursor: 'default' } : undefined}
+            title={recBusy ? 'Another recording is in progress - finish it first' : 'Save these edits, then record. New audio is added to the end of the transcript.'}>
+            {n.transcript || eTranscript.trim() ? 'Record more' : 'Record'}</Btn>
+        </div>
+        <textarea value={eTranscript} onChange={(e) => setETranscript(e.target.value)} spellCheck={false}
+          placeholder={'Paste a transcript (Teams / Copilot), or tap Record.\nOne turn per line works best:  Name: what they said'}
+          style={{ width: '100%', boxSizing: 'border-box', minHeight: 180, padding: '11px 13px', borderRadius: 8, resize: 'vertical',
+            border: '1px solid ' + t.line, background: 'transparent', color: t.t1, fontFamily: f.body, fontSize: 13.5, lineHeight: 1.55 }} />
+        {recBusy && <div style={{ fontFamily: f.ui, fontSize: 12, color: t.t3, marginTop: 6 }}>A recording is in progress elsewhere - finish it before recording here.</div>}
       </div>
     </div>}
 

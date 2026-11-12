@@ -281,11 +281,13 @@ export function RecordScreen() {
   useEffect(() => {
     const has = route.noteId || route.title != null || route.series || route.quick || route.project
     if (!has) return
-    const ok = rec.open({ noteId: route.noteId, title: route.title, date: route.date, series: route.series, project: route.project, agenda: route.agenda, quick: !!route.quick })
+    const ok = rec.open({ noteId: route.noteId, title: route.title, date: route.date, series: route.series, project: route.project, agenda: route.agenda, quick: !!route.quick, reload: !!route.record })
     // Quick record: one tap → recording (guard against double-mount).
     if (ok && route.quick && !autoStartedRef.current) { autoStartedRef.current = true; rec.start() }
+    // Record from a meeting's edit view: switch to record mode and start.
+    if (ok && route.record && !route.quick && !autoStartedRef.current) { autoStartedRef.current = true; rec.setMeta({ source: 'record' }); rec.start() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.noteId, route.title, route.date, route.series, route.quick, route.project])
+  }, [route.noteId, route.title, route.date, route.series, route.quick, route.project, route.record])
 
   // seed editable draft action items once synthesis completes
   useEffect(() => {
