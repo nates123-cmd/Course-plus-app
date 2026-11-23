@@ -11,10 +11,11 @@ import { useState } from 'react'
 import { useApp } from '../ctx'
 import { useData } from '../DataContext'
 import { Icon, Btn, Popover, PopRow, AreaDot, areaColor, DatePill } from '../kit'
+import { ProjectPickRows } from '../components/ProjectPickRows'
 
 export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd = false, onAdded }) {
   const { t, f } = useApp()
-  const { areas, allProjects, projectById, areaName, addTask } = useData()
+  const { areas, projectById, areaName, addTask } = useData()
   const [adding, setAdding] = useState(false)
   const [text, setText] = useState('')
   const [target, setTarget] = useState(defaultTarget || null)
@@ -63,9 +64,8 @@ export function AddTaskInline({ defaultTarget, lockTarget = false, surfaceOnAdd 
         <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '7px 12px 4px' }}>Pillar only</div>
         {(areas || []).map((a) => <PopRow key={'a-' + a.id} dot={areaColor(t, a.id)} label={a.name} hint="pillar" on={target?.area === a.id}
           onClick={() => { setTarget({ area: a.id }); setPickOpen(false) }} />)}
-        <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px', borderTop: '1px solid ' + t.line, marginTop: 4 }}>Projects</div>
-        {allProjects().map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={target?.project === p.id}
-          onClick={() => { setTarget({ project: p.id }); setPickOpen(false) }} />)}</Popover>}
+        <ProjectPickRows areas={areas} selectedId={target?.project || null}
+          onPick={(id) => { setTarget({ project: id }); setPickOpen(false) }} /></Popover>}
     </span>}
     <span style={{ flex: 'none' }}>
       <DatePill value={due} onChange={setDue} label="Due" empty="+ Due date" />
