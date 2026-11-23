@@ -197,15 +197,15 @@ export function Popover({ children, onClose, align = 'left', width = 220, top = 
     maxHeight, overflowY: maxHeight ? 'auto' : 'visible' }}>{children}</div>
 }
 
-export function PopRow({ icon, dot, label, hint, on, onClick }) {
+export function PopRow({ icon, dot, label, hint, on, dim, onClick }) {
   const { t, f } = useApp()
   return <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px',
     borderRadius: 'calc(8px * var(--rs))', cursor: 'pointer', background: on ? t.sel : 'transparent' }}
     onMouseEnter={(e) => e.currentTarget.style.background = t.sel}
     onMouseLeave={(e) => e.currentTarget.style.background = on ? t.sel : 'transparent'}>
-    {dot && <span style={{ width: 8, height: 8, borderRadius: 'calc(4px * var(--rs))', background: dot, flex: 'none' }} />}
+    {dot && <span style={{ width: 8, height: 8, borderRadius: 'calc(4px * var(--rs))', background: dot, flex: 'none', opacity: dim && !on ? 0.45 : 1 }} />}
     {icon && <Icon n={icon} s={15} c={t.t2} />}
-    <span style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 500, color: on ? t.accent : t.t1 }}>{label}</span>
+    <span style={{ fontFamily: f.ui, fontSize: 13, fontWeight: 500, color: on ? t.accent : dim ? t.t3 : t.t1 }}>{label}</span>
     {hint && <span style={{ marginLeft: 'auto', fontFamily: f.ui, fontSize: 11, color: t.t3 }}>{hint}</span>}
   </div>
 }

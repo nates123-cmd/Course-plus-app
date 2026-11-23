@@ -12,6 +12,7 @@ import { resolveFreeText, encodePersonLink, parsePersonLink, meetingLabel, isPer
 import { loadMeetingCatalog, hintFor, aiMeetingList } from '../lib/meetingCatalog'
 import { aiPick } from '../lib/meetingRouter'
 import { MeetingSource } from '../components/MeetingSource'
+import { ProjectPickRows } from '../components/ProjectPickRows'
 import { routeToMeeting } from '../lib/ai'
 
 // ── useLongPress — tap vs hold, movement-cancel + suppressed click ──
@@ -194,7 +195,7 @@ function RepeatField({ task, onPatch }) {
 
 export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReassign }) {
   const { t, f, go, isMobile } = useApp()
-  const { projectById, allProjects, areas, areaName, activeSeries, routeTaskMeeting } = useData()
+  const { projectById, areas, areaName, activeSeries, routeTaskMeeting } = useData()
   const project = projectById(projectId)
   // Pillar-only task (no project): show its pillar instead of "No project".
   const pillarId = !project ? (task.area || null) : null
@@ -317,9 +318,8 @@ export function TaskSheet({ task, projectId, onPatch, onDelete, onClose, onReass
               <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '7px 12px 4px' }}>Pillar only</div>
               {(areas || []).map((a) => <PopRow key={'a-' + a.id} dot={areaColor(t, a.id)} label={a.name} hint="pillar" on={!project && pillarId === a.id}
                 onClick={() => { setProjOpen(false); onReassign({ area: a.id }) }} />)}
-              <div style={{ fontFamily: f.label, fontSize: 9.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.t3, padding: '9px 12px 4px', borderTop: '1px solid ' + t.line, marginTop: 4 }}>Projects</div>
-              {allProjects().map((p) => <PopRow key={p.id} dot={areaColor(t, p.area)} label={p.name} hint={p.areaName} on={!!project && p.id === projectId}
-                onClick={() => { setProjOpen(false); onReassign({ project: p.id }) }} />)}</Popover>}
+              <ProjectPickRows areas={areas} selectedId={project ? projectId : null}
+                onPick={(id) => { setProjOpen(false); onReassign({ project: id }) }} /></Popover>}
           </span>
           {project && <span onClick={() => { go({ screen: 'project', id: projectId }); onClose() }} title="Open project"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: f.ui, fontSize: 11.5, color: t.t3, cursor: 'pointer' }}
